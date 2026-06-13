@@ -39,7 +39,7 @@ pub fn run_gui() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                         point(px(100.), px(100.)),
-                        size(px(1200.), px(800.)),
+                        size(px(800.), px(600.)),
                     ))),
 
                     window_background: WindowBackgroundAppearance::Opaque,
