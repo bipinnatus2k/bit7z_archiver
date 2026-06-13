@@ -63,12 +63,17 @@ impl ArchiveViewModel {
 
         let repo = self.repo.clone();
         let path_buf = path.to_path_buf();
+        let path_string = path.to_string_lossy().to_string();
         cx.spawn(async move |this, cx: &mut AsyncApp| {
             let result = repo.open(&path_buf, password.as_deref());
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(handle) => {
                         this.archive = Some(handle);
+                        // Add to recent files
+                        let mut prefs = cx.global::<crate::domain::preferences::Preferences>().clone();
+                        prefs.archive.add_recent(path_string.clone());
+                        cx.set_global(prefs);
                         this.load_page(0, cx);
                     }
                     Err(e) => {

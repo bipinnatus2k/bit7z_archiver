@@ -123,3 +123,46 @@ pub enum PreferencesError {
     #[error("Failed to parse preferences: {0}")]
     Parse(#[source] serde_json::Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_add_recent_basic() {
+        let mut prefs = ArchivePrefs::default();
+        prefs.add_recent("/path/one.7z".into());
+        assert_eq!(prefs.recent_files.len(), 1);
+        assert_eq!(prefs.recent_files[0], "/path/one.7z");
+    }
+
+    #[test]
+    fn test_add_recent_moves_to_front() {
+        let mut prefs = ArchivePrefs::default();
+        prefs.add_recent("/path/first.7z".into());
+        prefs.add_recent("/path/second.7z".into());
+        assert_eq!(prefs.recent_files[0], "/path/second.7z");
+        assert_eq!(prefs.recent_files[1], "/path/first.7z");
+    }
+
+    #[test]
+    fn test_add_recent_removes_duplicate() {
+        let mut prefs = ArchivePrefs::default();
+        prefs.add_recent("/path/a.7z".into());
+        prefs.add_recent("/path/b.7z".into());
+        prefs.add_recent("/path/a.7z".into()); // duplicate — moves to front
+        assert_eq!(prefs.recent_files.len(), 2);
+        assert_eq!(prefs.recent_files[0], "/path/a.7z");
+    }
+
+    #[test]
+    fn test_add_recent_caps_at_ten() {
+        let mut prefs = ArchivePrefs::default();
+        for i in 0..15 {
+            prefs.add_recent(format!("/path/{}.7z", i));
+        }
+        assert_eq!(prefs.recent_files.len(), 10);
+        assert_eq!(prefs.recent_files[0], "/path/14.7z");
+        assert_eq!(prefs.recent_files[9], "/path/5.7z");
+    }
+}

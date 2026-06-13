@@ -35,6 +35,7 @@ impl OpenArchiveUseCase {
 mod tests {
     use crate::domain::archive::*;
     use crate::domain::repository::*;
+    use crate::domain::repository::test_utils::MockArchiveRepository;
     use std::path::Path;
     use std::sync::Arc;
 
