@@ -1,0 +1,11 @@
+/target
+vcpkg_installed/
+build/
+*.dir/
+.idea/
+.vscode/
+.codex/
+openspec/
+cargo.log
+AGENTS.md
+bit7z-bridge/
