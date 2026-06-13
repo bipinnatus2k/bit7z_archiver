@@ -1,4 +1,7 @@
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
+use crate::domain::preferences::Preferences;
+use crate::theme::Theme;
+use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::input::{Input, InputEvent, InputState};
 
@@ -35,12 +38,37 @@ impl ArchiveBrowser {
 impl Render for ArchiveBrowser {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let vm = self.archive_vm.read(cx);
+        let prefs = cx.global::<Preferences>();
+        let recent_files = &prefs.archive.recent_files;
+        let has_recent = !recent_files.is_empty();
+
         gpui_component::v_flex().w(px(240.)).p_2().gap_2()
+            // Filter input (always visible)
             .child(Input::new(&self.input_state))
+            // Folder tree (only when archive is open)
             .child(gpui_component::v_flex().text_sm().children(
                 vm.entries.iter().filter(|e| e.is_directory).map(|e|
                     div().px_2().py_1().cursor_pointer().child(format!("📁 {}", e.name))
                 ).collect::<Vec<_>>()
+            ))
+            // Recent files section
+            .when(has_recent, |el| el.child(
+                gpui_component::v_flex().gap_1().pt_2()
+                    .child(div().px_2().py_1().text_sm().font_weight(FontWeight::BOLD).text_color(cx.global::<Theme>().muted).child("Recent Files"))
+                    .children(recent_files.iter().map(|path| {
+                        let file_name = std::path::Path::new(path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| path.clone());
+                        let path_clone = path.clone();
+                        let vm = self.archive_vm.clone();
+                        div().px_2().py_1().cursor_pointer().text_sm()
+                            .on_mouse_down(MouseButton::Left, cx.listener(move |_this: &mut ArchiveBrowser, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                let path_ref = std::path::Path::new(&path_clone);
+                                vm.update(cx, |vm, cx| vm.open_archive(path_ref, None, cx));
+                            }))
+                            .child(format!("📂 {}", file_name))
+                    }).collect::<Vec<_>>())
             ))
     }
 }
