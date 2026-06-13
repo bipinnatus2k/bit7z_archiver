@@ -22,6 +22,8 @@ pub struct ArchiveViewModel {
     pub status: ViewStatus,
     pub current_offset: usize,
     pub total_entries: Option<usize>,
+    /// Anchor for shift-click range selection.
+    selection_anchor: Option<u32>,
 }
 
 pub enum ViewStatus {
@@ -46,6 +48,7 @@ impl ArchiveViewModel {
             status: ViewStatus::Empty,
             current_offset: 0,
             total_entries: None,
+            selection_anchor: None,
         }
     }
 
@@ -108,20 +111,43 @@ impl ArchiveViewModel {
         }
     }
 
-    pub fn select(&mut self, index: u32, modifiers: &Modifiers, cx: &mut Context<Self>) {
+    /// Selection logic without cx (testable directly).
+    pub fn update_selection(&mut self, index: u32, modifiers: &Modifiers) {
         if modifiers.shift {
-            // Range select - TODO: implement shift+click range
+            let anchor = self.selection_anchor.unwrap_or(index);
+            let min = anchor.min(index);
+            let max = anchor.max(index);
+            if self.selection.len() == 1 && self.selection.contains(&min) {
+                let existing = *self.selection.iter().next().unwrap();
+                self.selection.clear();
+                for i in min..=max {
+                    self.selection.insert(i);
+                }
+                if !self.selection.contains(&existing) {
+                    self.selection.insert(existing);
+                }
+            } else {
+                self.selection.clear();
+                for i in min..=max {
+                    self.selection.insert(i);
+                }
+            }
         } else if modifiers.control {
             if self.selection.contains(&index) {
                 self.selection.remove(&index);
             } else {
                 self.selection.insert(index);
             }
+            self.selection_anchor = Some(index);
         } else {
             self.selection.clear();
             self.selection.insert(index);
+            self.selection_anchor = Some(index);
         }
-        // Emit selection changed event for preview panel
+    }
+
+    pub fn select(&mut self, index: u32, modifiers: &Modifiers, cx: &mut Context<Self>) {
+        self.update_selection(index, modifiers);
         if let Some(archive) = &self.archive {
             let first = self.selection.iter().next().copied();
             cx.emit(crate::adapters::views::root::ArchiveVmEvent::SelectionChanged(
@@ -131,7 +157,7 @@ impl ArchiveViewModel {
         cx.notify();
     }
 
-        pub fn sort_by(&mut self, column: u32, cx: &mut Context<Self>) {
+    pub fn sort_by(&mut self, column: u32, cx: &mut Context<Self>) {
         if self.sort_column == column {
             self.sort_ascending = !self.sort_ascending;
         } else {
@@ -139,7 +165,6 @@ impl ArchiveViewModel {
             self.sort_ascending = true;
         }
         let asc = self.sort_ascending;
-        // VecDeque::make_contiguous + sort on the mutable slice
         let slice = self.entries.make_contiguous();
         slice.sort_by(|a, b| {
             let cmp = match column {
@@ -156,7 +181,21 @@ impl ArchiveViewModel {
 
     pub fn set_filter(&mut self, text: &str, cx: &mut Context<Self>) {
         self.filter_text = text.to_string();
+        self.selection.clear();
+        self.selection_anchor = None;
         cx.notify();
+    }
+
+    /// Return entries matching the current filter with their original index.
+    pub fn displayed_entries(&self) -> Vec<(usize, &ArchiveEntry)> {
+        if self.filter_text.is_empty() {
+            self.entries.iter().enumerate().collect()
+        } else {
+            let lower = self.filter_text.to_lowercase();
+            self.entries.iter().enumerate()
+                .filter(|(_, e)| e.name.to_lowercase().contains(&lower))
+                .collect()
+        }
     }
 
     pub fn close(&mut self, cx: &mut Context<Self>) {
@@ -165,10 +204,10 @@ impl ArchiveViewModel {
         }
         self.entries.clear();
         self.selection.clear();
+        self.selection_anchor = None;
+        self.filter_text.clear();
         self.status = ViewStatus::Empty;
         cx.notify();
     }
 }
-
-
 

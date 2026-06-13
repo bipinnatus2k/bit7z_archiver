@@ -25,7 +25,10 @@ impl Render for Toolbar {
                         let vm = self.archive_vm.clone();
                         move |_, _, cx| {
                             vm.update(cx, |vm, cx| {
-                                vm.open_archive(&std::path::Path::new("test.7z"), None, cx);
+                                // TODO: Add native file dialog
+                                // For now, show an error encouraging file dialog integration
+                                vm.status = ViewStatus::Error("Use Open button with file dialog (WIP)".into());
+                                cx.notify();
                             });
                         }
                     })
@@ -38,13 +41,11 @@ impl Render for Toolbar {
             .child(
                 Button::new("extract")
                     .label("Extract")
-                    
                     .on_click(|_, _, _| {})
             )
             .child(
                 Button::new("test")
                     .label("Test")
-                    
                     .on_click(|_, _, _| {})
             )
     }

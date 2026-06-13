@@ -18,36 +18,53 @@ impl Render for EntryList {
                 ViewStatus::Error(msg) => vec![div().p_8().text_color(cx.global::<Theme>().error).child(format!("Error: {}", msg))],
                 ViewStatus::Ready => {
                     let mut children = vec![
-                        // Header row with sortable columns
+                        // Header row with sortable columns and sort indicators
                         div().flex().flex_row().gap_2().px_2().py_1()
                             .bg(cx.global::<Theme>().surface).font_weight(FontWeight::BOLD)
-                            .child(div().flex_1().cursor_pointer().child("Name")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
-                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(0, cx));
-                                })))
-                            .child(div().w(px(80.)).cursor_pointer().child("Size")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
-                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(1, cx));
-                                })))
-                            .child(div().w(px(80.)).cursor_pointer().child("Packed")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
-                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(2, cx));
-                                })))
-                            .child(div().w(px(80.)).cursor_pointer().child("Ratio")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
-                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(3, cx));
-                                })))
-                            .child(div().w(px(140.)).cursor_pointer().child("Date")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
-                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(4, cx));
-                                })))
+                            .child(div().flex_1().cursor_pointer().child(
+                                if vm.sort_column == 0 {
+                                    if vm.sort_ascending { "Name ▲" } else { "Name ▼" }
+                                } else { "Name" }
+                            ).on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                this.archive_vm.update(cx, |vm, cx| vm.sort_by(0, cx));
+                            })))
+                            .child(div().w(px(80.)).cursor_pointer().child(
+                                if vm.sort_column == 1 {
+                                    if vm.sort_ascending { "Size ▲" } else { "Size ▼" }
+                                } else { "Size" }
+                            ).on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                this.archive_vm.update(cx, |vm, cx| vm.sort_by(1, cx));
+                            })))
+                            .child(div().w(px(80.)).cursor_pointer().child(
+                                if vm.sort_column == 2 {
+                                    if vm.sort_ascending { "Packed ▲" } else { "Packed ▼" }
+                                } else { "Packed" }
+                            ).on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                this.archive_vm.update(cx, |vm, cx| vm.sort_by(2, cx));
+                            })))
+                            .child(div().w(px(80.)).cursor_pointer().child(
+                                if vm.sort_column == 3 {
+                                    if vm.sort_ascending { "Ratio ▲" } else { "Ratio ▼" }
+                                } else { "Ratio" }
+                            ).on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                this.archive_vm.update(cx, |vm, cx| vm.sort_by(3, cx));
+                            })))
+                            .child(div().w(px(140.)).cursor_pointer().child(
+                                if vm.sort_column == 4 {
+                                    if vm.sort_ascending { "Date ▲" } else { "Date ▼" }
+                                } else { "Date" }
+                            ).on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                this.archive_vm.update(cx, |vm, cx| vm.sort_by(4, cx));
+                            })))
                     ];
-                    for (i, entry) in vm.entries.iter().enumerate() {
-                        let selected = vm.selection.contains(&(i as u32));
+                    // Use displayed_entries() to respect filter
+                    for (original_idx, entry) in vm.displayed_entries().iter() {
+                        let idx = *original_idx as u32;
+                        let selected = vm.selection.contains(&idx);
                         let mut row = div().flex().flex_row().gap_2().px_2().py_1()
                             .cursor_pointer()
                             .on_mouse_down(MouseButton::Left, cx.listener(move |this: &mut EntryList, event: &MouseDownEvent, _window: &mut Window, cx| {
-                                this.archive_vm.update(cx, |vm, cx| vm.select(i as u32, &event.modifiers, cx));
+                                this.archive_vm.update(cx, |vm, cx| vm.select(idx, &event.modifiers, cx));
                             }))
                             .child(div().flex_1().child(
                                 if entry.is_directory { format!("📁 {}", entry.name) } else { format!("📄 {}", entry.name) }
@@ -60,7 +77,7 @@ impl Render for EntryList {
                             ));
                         if selected {
                             row = row.bg(cx.global::<Theme>().selection);
-                        } else if i % 2 == 0 {
+                        } else if original_idx % 2 == 0 {
                             row = row.bg(cx.global::<Theme>().surface);
                         }
                         children.push(row);
