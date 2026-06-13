@@ -9,6 +9,7 @@ use crate::domain::archive::*;
 use gpui::*;
 
 pub struct RootView {
+    toolbar: Entity<Toolbar>,
     archive_vm: Entity<ArchiveViewModel>,
     preview_vm: Entity<PreviewViewModel>,
     archive_browser: Entity<ArchiveBrowser>,
@@ -18,12 +19,13 @@ pub struct RootView {
 }
 
 impl RootView {
-    pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| {
             let archive_vm = cx.new(|cx| ArchiveViewModel::new(cx));
             let preview_vm = cx.new(|cx| PreviewViewModel::new(cx));
 
-            let archive_browser = cx.new(|cx| ArchiveBrowser::new(archive_vm.clone(), cx));
+            let toolbar = cx.new(|_| Toolbar::new(archive_vm.clone()));
+            let archive_browser = cx.new(|cx| ArchiveBrowser::new(archive_vm.clone(), window, cx));
             let entry_list = cx.new(|_| EntryList { archive_vm: archive_vm.clone() });
             let preview_panel = cx.new(|_| PreviewPanel::new(preview_vm.clone()));
             let status_bar = cx.new(|_| StatusBar::new(archive_vm.clone()));
@@ -39,7 +41,7 @@ impl RootView {
                 }
             }).detach();
 
-            Self { archive_vm, preview_vm, archive_browser, entry_list, preview_panel, status_bar }
+            Self { toolbar, archive_vm, preview_vm, archive_browser, entry_list, preview_panel, status_bar }
         })
     }
 }
@@ -52,11 +54,11 @@ impl EventEmitter<ArchiveVmEvent> for RootView {}
 
 impl Render for RootView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().flex().flex_col().size_full()
-            .child(Toolbar::new(self.archive_vm.clone()))
-            .child(div().flex().flex_row().flex_1()
+        gpui_component::v_flex().size_full()
+            .child(self.toolbar.clone())
+            .child(gpui_component::h_flex().flex_1()
                 .child(self.archive_browser.clone())
-                .child(div().flex().flex_col().flex_1()
+                .child(gpui_component::v_flex().flex_1()
                     .child(self.entry_list.clone())
                     .child(self.preview_panel.clone())
                 )
@@ -64,6 +66,3 @@ impl Render for RootView {
             .child(self.status_bar.clone())
     }
 }
-
-
-

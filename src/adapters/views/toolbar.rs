@@ -1,13 +1,51 @@
-use crate::adapters::view_models::archive_vm::ArchiveViewModel;
+use crate::adapters::view_models::archive_vm::{ArchiveViewModel, ViewStatus};
 use gpui::*;
+use gpui_component::button::Button;
 
-pub struct Toolbar;
+pub struct Toolbar {
+    archive_vm: Entity<ArchiveViewModel>,
+}
+
 impl Toolbar {
-    pub fn new(_archive_vm: Entity<ArchiveViewModel>) -> impl IntoElement {
-        div().flex().flex_row().gap_2().p_2().border_b_1()
-            .child(div().px_2().py_1().rounded_md().cursor_pointer().child("Open"))
-            .child(div().px_2().py_1().rounded_md().cursor_pointer().child("Create"))
-            .child(div().px_2().py_1().rounded_md().cursor_pointer().child("Extract"))
-            .child(div().px_2().py_1().rounded_md().cursor_pointer().child("Test"))
+    pub fn new(archive_vm: Entity<ArchiveViewModel>) -> Self {
+        Self { archive_vm }
+    }
+}
+
+impl Render for Toolbar {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let vm = self.archive_vm.read(cx);
+        let has_archive = matches!(vm.status, ViewStatus::Ready);
+
+        gpui_component::h_flex().gap_2().p_2()
+            .child(
+                Button::new("open")
+                    .label("Open")
+                    .on_click({
+                        let vm = self.archive_vm.clone();
+                        move |_, _, cx| {
+                            vm.update(cx, |vm, cx| {
+                                vm.open_archive(&std::path::Path::new("test.7z"), None, cx);
+                            });
+                        }
+                    })
+            )
+            .child(
+                Button::new("create")
+                    .label("Create")
+                    .on_click(|_, _, _| {})
+            )
+            .child(
+                Button::new("extract")
+                    .label("Extract")
+                    
+                    .on_click(|_, _, _| {})
+            )
+            .child(
+                Button::new("test")
+                    .label("Test")
+                    
+                    .on_click(|_, _, _| {})
+            )
     }
 }

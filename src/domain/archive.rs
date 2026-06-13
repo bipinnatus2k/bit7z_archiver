@@ -186,3 +186,84 @@ impl CreateFileItem {
             .unwrap_or_else(|| self.path.to_string_lossy().to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compression_ratio_zero_size() {
+        let entry = ArchiveEntry {
+            name: String::new(),
+            path: String::new(),
+            size: 0,
+            compressed_size: 0,
+            is_directory: false,
+            is_encrypted: false,
+            is_symlink: false,
+            modified: None,
+            crc: None,
+        };
+        assert_eq!(entry.compression_ratio(), 0.0);
+    }
+
+    #[test]
+    fn test_compression_ratio_no_compression() {
+        let entry = ArchiveEntry {
+            name: "test.bin".into(),
+            path: "test.bin".into(),
+            size: 1000,
+            compressed_size: 1000,
+            is_directory: false,
+            is_encrypted: false,
+            is_symlink: false,
+            modified: None,
+            crc: None,
+        };
+        assert_eq!(entry.compression_ratio(), 0.0);
+    }
+
+    #[test]
+    fn test_compression_ratio_positive() {
+        let entry = ArchiveEntry {
+            name: "test.txt".into(),
+            path: "test.txt".into(),
+            size: 1000,
+            compressed_size: 300,
+            is_directory: false,
+            is_encrypted: false,
+            is_symlink: false,
+            modified: None,
+            crc: None,
+        };
+        let ratio = entry.compression_ratio();
+        assert!((ratio - 0.7).abs() < 0.001, "Expected ~0.7, got {}", ratio);
+    }
+
+    #[test]
+    fn test_archive_format_extension() {
+        assert_eq!(ArchiveFormat::SevenZip.extension(), "7z");
+        assert_eq!(ArchiveFormat::Zip.extension(), "zip");
+        assert_eq!(ArchiveFormat::Tar.extension(), "tar");
+    }
+
+    #[test]
+    fn test_archive_format_supports_encryption() {
+        assert!(ArchiveFormat::SevenZip.supports_encryption());
+        assert!(ArchiveFormat::Zip.supports_encryption());
+        assert!(!ArchiveFormat::Tar.supports_encryption());
+        assert!(!ArchiveFormat::Rar.supports_encryption());
+    }
+
+    #[test]
+    fn test_archive_format_is_writable() {
+        assert!(ArchiveFormat::SevenZip.is_writable());
+        assert!(!ArchiveFormat::Rar.is_writable());
+    }
+
+    #[test]
+    fn test_archive_format_display_name() {
+        assert_eq!(ArchiveFormat::SevenZip.display_name(), "7z");
+        assert_eq!(ArchiveFormat::TarGz.display_name(), "Tar.gz");
+    }
+}
