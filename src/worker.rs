@@ -1,16 +1,15 @@
 //! Worker process entry point (no GPUI, headless archive operations).
 //! Communicates with parent via JSON-line protocol on stdin/stdout.
 
-use crate::ipc::{WorkerMessage, ParentMessage};
-use crate::domain::archive::*;
+use crate::ipc::WorkerMessage;
 use crate::domain::repository::*;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::sync::Arc;
 
 pub fn run_worker(repo: Arc<dyn ArchiveRepository>, args: WorkerArgs) {
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
-    let stdin = BufReader::new(std::io::stdin());
+    let _stdin = BufReader::new(std::io::stdin());
 
     match args.operation {
         WorkerOperation::Extract { archive_path, dest, password, indices } => {
@@ -37,11 +36,6 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>, args: WorkerArgs) {
                     code: 1, message: e.to_string(),
                 }),
             }
-        }
-        _ => {
-            send_msg(&mut stdout, &WorkerMessage::Error {
-                code: 99, message: "Unsupported worker operation".into(),
-            });
         }
     }
 }

@@ -1,5 +1,4 @@
 use crate::domain::archive::*;
-use crate::domain::preferences::Preferences;
 use crate::domain::repository::*;
 use gpui::{EventEmitter, *};
 use std::collections::{HashSet, VecDeque};
@@ -18,6 +17,8 @@ pub struct ArchiveViewModel {
     pub entries: VecDeque<ArchiveEntry>,
     pub selection: HashSet<u32>,
     pub filter_text: String,
+    pub sort_column: u32,
+    pub sort_ascending: bool,
     pub status: ViewStatus,
     pub current_offset: usize,
     pub total_entries: Option<usize>,
@@ -40,6 +41,8 @@ impl ArchiveViewModel {
             entries: VecDeque::new(),
             selection: HashSet::new(),
             filter_text: String::new(),
+            sort_column: 0,
+            sort_ascending: true,
             status: ViewStatus::Empty,
             current_offset: 0,
             total_entries: None,
@@ -107,7 +110,7 @@ impl ArchiveViewModel {
 
     pub fn select(&mut self, index: u32, modifiers: &Modifiers, cx: &mut Context<Self>) {
         if modifiers.shift {
-            // Range select
+            // Range select - TODO: implement shift+click range
         } else if modifiers.control {
             if self.selection.contains(&index) {
                 self.selection.remove(&index);
@@ -118,6 +121,41 @@ impl ArchiveViewModel {
             self.selection.clear();
             self.selection.insert(index);
         }
+        // Emit selection changed event for preview panel
+        if let Some(archive) = &self.archive {
+            let first = self.selection.iter().next().copied();
+            cx.emit(crate::adapters::views::root::ArchiveVmEvent::SelectionChanged(
+                first.map(|idx| (archive.clone(), idx)),
+            ));
+        }
+        cx.notify();
+    }
+
+        pub fn sort_by(&mut self, column: u32, cx: &mut Context<Self>) {
+        if self.sort_column == column {
+            self.sort_ascending = !self.sort_ascending;
+        } else {
+            self.sort_column = column;
+            self.sort_ascending = true;
+        }
+        let asc = self.sort_ascending;
+        // VecDeque::make_contiguous + sort on the mutable slice
+        let slice = self.entries.make_contiguous();
+        slice.sort_by(|a, b| {
+            let cmp = match column {
+                1 => a.size.cmp(&b.size),
+                2 => a.compressed_size.cmp(&b.compressed_size),
+                3 => ((a.compression_ratio() * 100.0) as u64)
+                     .cmp(&((b.compression_ratio() * 100.0) as u64)),
+                _ => a.name.cmp(&b.name),
+            };
+            if asc { cmp } else { cmp.reverse() }
+        });
+        cx.notify();
+    }
+
+    pub fn set_filter(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.filter_text = text.to_string();
         cx.notify();
     }
 
@@ -131,5 +169,6 @@ impl ArchiveViewModel {
         cx.notify();
     }
 }
+
 
 

@@ -1,6 +1,6 @@
 use crate::domain::archive::*;
 use crate::domain::repository::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub struct AddToArchiveUseCase { repo: Arc<dyn ArchiveRepository> }

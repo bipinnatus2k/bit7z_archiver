@@ -1,6 +1,5 @@
 use crate::domain::archive::*;
 use crate::domain::repository::*;
-use std::path::Path;
 use std::sync::Arc;
 
 pub struct CreateArchiveUseCase {

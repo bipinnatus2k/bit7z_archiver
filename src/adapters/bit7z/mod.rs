@@ -2,7 +2,6 @@
 
 use std::ffi::CStr;
 use std::ptr;
-use crate::domain::archive::*;
 
 /// Store opaque C++ pointers as usize to avoid autocxx c_void type mismatches.
 type Handle = usize;

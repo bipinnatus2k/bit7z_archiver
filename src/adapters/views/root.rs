@@ -18,17 +18,17 @@ pub struct RootView {
 }
 
 impl RootView {
-    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| {
             let archive_vm = cx.new(|cx| ArchiveViewModel::new(cx));
             let preview_vm = cx.new(|cx| PreviewViewModel::new(cx));
 
-            let archive_browser = cx.new(|_| ArchiveBrowser::new(archive_vm.clone()));
+            let archive_browser = cx.new(|cx| ArchiveBrowser::new(archive_vm.clone(), cx));
             let entry_list = cx.new(|_| EntryList { archive_vm: archive_vm.clone() });
             let preview_panel = cx.new(|_| PreviewPanel::new(preview_vm.clone()));
             let status_bar = cx.new(|_| StatusBar::new(archive_vm.clone()));
 
-            cx.subscribe::<ArchiveViewModel, ArchiveVmEvent>(&archive_vm, |this: &mut Self, src, event: &ArchiveVmEvent, cx| {
+            cx.subscribe::<ArchiveViewModel, ArchiveVmEvent>(&archive_vm, |this: &mut Self, _src, event: &ArchiveVmEvent, cx| {
                 match event {
                     ArchiveVmEvent::SelectionChanged(Some((handle, index))) => {
                         this.preview_vm.update(cx, |vm, cx| vm.load(handle.clone(), *index, cx));

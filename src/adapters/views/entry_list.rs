@@ -1,6 +1,5 @@
 use crate::adapters::view_models::archive_vm::{ArchiveViewModel, ViewStatus};
 use crate::theme::Theme;
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 
 pub struct EntryList {
@@ -18,27 +17,53 @@ impl Render for EntryList {
                 ViewStatus::Loading => vec![div().p_8().text_center().child("Loading...")],
                 ViewStatus::Error(msg) => vec![div().p_8().text_color(cx.global::<Theme>().error).child(format!("Error: {}", msg))],
                 ViewStatus::Ready => {
-                    let mut children = vec![div().flex().flex_row().gap_2().px_2().py_1()
-                        .bg(cx.global::<Theme>().surface).font_weight(FontWeight::BOLD)
-                        .child(div().flex_1().child("Name"))
-                        .child(div().w(px(80.)).child("Size"))
-                        .child(div().w(px(80.)).child("Packed"))
-                        .child(div().w(px(80.)).child("Ratio"))
-                        .child(div().w(px(140.)).child("Date"))];
+                    let mut children = vec![
+                        // Header row with sortable columns
+                        div().flex().flex_row().gap_2().px_2().py_1()
+                            .bg(cx.global::<Theme>().surface).font_weight(FontWeight::BOLD)
+                            .child(div().flex_1().cursor_pointer().child("Name")
+                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(0, cx));
+                                })))
+                            .child(div().w(px(80.)).cursor_pointer().child("Size")
+                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(1, cx));
+                                })))
+                            .child(div().w(px(80.)).cursor_pointer().child("Packed")
+                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(2, cx));
+                                })))
+                            .child(div().w(px(80.)).cursor_pointer().child("Ratio")
+                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(3, cx));
+                                })))
+                            .child(div().w(px(140.)).cursor_pointer().child("Date")
+                                .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut EntryList, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                                    this.archive_vm.update(cx, |vm, cx| vm.sort_by(4, cx));
+                                })))
+                    ];
                     for (i, entry) in vm.entries.iter().enumerate() {
                         let selected = vm.selection.contains(&(i as u32));
-                        children.push(
-                            div().flex().flex_row().gap_2().px_2().py_1()
-                                .when(selected, |el| el.bg(cx.global::<Theme>().selection))
-                                .cursor_pointer()
-                                .child(div().flex_1().child(if entry.is_directory { format!("📁 {}", entry.name) } else { format!("📄 {}", entry.name) }))
-                                .child(div().w(px(80.)).text_sm().child(format_size(entry.size)))
-                                .child(div().w(px(80.)).text_sm().child(format_size(entry.compressed_size)))
-                                .child(div().w(px(80.)).text_sm().child(format!("{:.0}%", entry.compression_ratio() * 100.)))
-                                .child(div().w(px(140.)).text_sm().text_color(cx.global::<Theme>().muted).child(
-                                    entry.modified.map(|t| t.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default()
-                                ))
-                        );
+                        let mut row = div().flex().flex_row().gap_2().px_2().py_1()
+                            .cursor_pointer()
+                            .on_mouse_down(MouseButton::Left, cx.listener(move |this: &mut EntryList, event: &MouseDownEvent, _window: &mut Window, cx| {
+                                this.archive_vm.update(cx, |vm, cx| vm.select(i as u32, &event.modifiers, cx));
+                            }))
+                            .child(div().flex_1().child(
+                                if entry.is_directory { format!("📁 {}", entry.name) } else { format!("📄 {}", entry.name) }
+                            ))
+                            .child(div().w(px(80.)).text_sm().child(format_size(entry.size)))
+                            .child(div().w(px(80.)).text_sm().child(format_size(entry.compressed_size)))
+                            .child(div().w(px(80.)).text_sm().child(format!("{:.0}%", entry.compression_ratio() * 100.)))
+                            .child(div().w(px(140.)).text_sm().text_color(cx.global::<Theme>().muted).child(
+                                entry.modified.map(|t| t.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default()
+                            ));
+                        if selected {
+                            row = row.bg(cx.global::<Theme>().selection);
+                        } else if i % 2 == 0 {
+                            row = row.bg(cx.global::<Theme>().surface);
+                        }
+                        children.push(row);
                     }
                     children
                 }

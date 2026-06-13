@@ -1,7 +1,7 @@
 use gpui::*;
 use crate::theme::Theme;
 use crate::domain::repository::RepoGlobal;
-use crate::adapters::bit7z::{self, Library};
+use crate::adapters::bit7z::Library;
 use crate::adapters::repository::Bit7zRepository;
 use crate::adapters::platform;
 use crate::domain::preferences::PreferencesRepository;
