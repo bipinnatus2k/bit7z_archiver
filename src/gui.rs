@@ -1,6 +1,5 @@
-use std::rc::Rc;
 use gpui::*;
-use gpui_component::{button::*, *};
+use gpui_component::*;
 use crate::theme::Theme;
 use crate::domain::repository::RepoGlobal;
 use crate::adapters::bit7z::Library;
@@ -51,7 +50,7 @@ pub fn run_gui() {
                     // 窗口的第一层应该是一个 Root。
                     cx.new(|cx| Root::new(view, window, cx))
                 })
-                .expect("Failed to open window");;
+                .expect("Failed to open window")
         }).detach();
     });
 }
