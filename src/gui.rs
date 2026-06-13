@@ -1,4 +1,6 @@
+use std::rc::Rc;
 use gpui::*;
+use gpui_component::{button::*, *};
 use crate::theme::Theme;
 use crate::domain::repository::RepoGlobal;
 use crate::adapters::bit7z::Library;
@@ -9,7 +11,9 @@ use crate::adapters::views::root::RootView;
 use std::sync::Arc;
 
 pub fn run_gui() {
-    Application::new().run(|cx: &mut App| {
+    gpui_platform::application().run(|cx: &mut App| {
+        // 使用任何 GPUI Component 功能之前必须先调用此函数。
+        gpui_component::init(cx);
         // Load preferences
         let prefs = crate::adapters::preferences_json::JsonPreferencesRepository::new()
             .load().unwrap_or_default();
@@ -30,20 +34,25 @@ pub fn run_gui() {
         cx.set_global(RepoGlobal(repo));
         cx.set_global(Theme::default());
 
-        // Open the main window
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                    point(px(100.), px(100.)),
-                    size(px(1200.), px(800.)),
-                ))),
+        cx.spawn(async move |cx| {
+            // Open the main window
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(100.), px(100.)),
+                        size(px(1200.), px(800.)),
+                    ))),
 
-                window_background: WindowBackgroundAppearance::Opaque,
-                window_decorations: Some(WindowDecorations::Client),
-                ..Default::default()
-            },
-            |window, cx| RootView::new(window, cx)
-        );
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..Default::default()
+                }, |window, cx| {
+                    let view =  RootView::new(window,cx);
+                    // 窗口的第一层应该是一个 Root。
+                    cx.new(|cx| Root::new(view, window, cx))
+                })
+                .expect("Failed to open window");;
+        }).detach();
     });
 }
 

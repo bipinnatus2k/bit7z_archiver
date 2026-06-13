@@ -19,7 +19,7 @@ impl ArchiveBrowser {
 }
 
 impl Focusable for ArchiveBrowser {
-    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
+    fn focus_handle(&self, app: &gpui::App) -> FocusHandle {
         self.filter_focus.clone()
     }
 }
@@ -32,7 +32,7 @@ impl Render for ArchiveBrowser {
                 div()
                     .key_context("FilterInput")
                     .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut ArchiveBrowser, _event: &MouseDownEvent, _window: &mut Window, _cx| {
-                        _window.focus(&this.filter_focus);
+                        _window;
                     }))
                     .on_key_down(cx.listener(|this: &mut ArchiveBrowser, event: &KeyDownEvent, _window: &mut Window, cx| {
                         let mut text = this.filter_buf.to_string();
