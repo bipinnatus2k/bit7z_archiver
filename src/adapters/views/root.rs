@@ -105,7 +105,15 @@ impl RootView {
                             cx.notify();
                         }
                         ArchiveVmEvent::RequestTest => {
-                            // Test archive — will be wired with ProgressDialog later
+                            let vm = archive_vm.read(cx);
+                            if let Some(ref archive) = vm.archive {
+                                let handle = archive.clone();
+                                let repo = repo.clone();
+                                drop(vm);
+                                std::thread::spawn(move || {
+                                    let _result = repo.test(&handle);
+                                });
+                            }
                         }
                     }
                 }
