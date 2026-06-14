@@ -6,7 +6,7 @@ use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::Toolbar;
 use crate::adapters::views::dialogs::extract::{ExtractDialog, ExtractDialogEvent};
-// use crate::adapters::views::dialogs::create::CreateArchiveDialog;
+use crate::adapters::views::dialogs::create::{CreateArchiveDialog, CreateDialogEvent};
 use crate::domain::archive::*;
 use crate::domain::repository::ArchiveRepository;
 use gpui::prelude::FluentBuilder as _;
@@ -22,6 +22,7 @@ pub struct RootView {
     preview_panel: Entity<PreviewPanel>,
     status_bar: Entity<StatusBar>,
     extract_dialog: Option<Entity<ExtractDialog>>,
+    create_dialog: Option<Entity<CreateArchiveDialog>>,
     repo: Arc<dyn ArchiveRepository>,
 }
 
@@ -84,10 +85,27 @@ impl RootView {
                             }
                         }
                         ArchiveVmEvent::RequestShowCreate => {
-                            // TODO: Wire CreateArchiveDialog
+                            let repo = repo.clone();
+                            let dialog = cx.new(|cx| CreateArchiveDialog::new(cx, vec![]));
+                            cx.subscribe::<CreateArchiveDialog, CreateDialogEvent>(&dialog, move |this: &mut RootView, _, event: &CreateDialogEvent, cx| {
+                                match event {
+                                    CreateDialogEvent::Canceled => {
+                                        this.create_dialog = None;
+                                        cx.notify();
+                                    }
+                                    CreateDialogEvent::CreateRequested(input) => {
+                                        // Create archive (file addition coming later)
+                                        let _ = repo.create(&input.destination, input.format, input.encryption.as_ref());
+                                        this.create_dialog = None;
+                                        cx.notify();
+                                    }
+                                }
+                            }).detach();
+                            this.create_dialog = Some(dialog);
+                            cx.notify();
                         }
                         ArchiveVmEvent::RequestTest => {
-                            // TODO: Wire test operation
+                            // Test archive — will be wired with ProgressDialog later
                         }
                     }
                 }
@@ -97,6 +115,7 @@ impl RootView {
                 toolbar, archive_vm, preview_vm,
                 archive_browser, entry_list, preview_panel, status_bar,
                 extract_dialog: None,
+                create_dialog: None,
                 repo,
             }
         })
@@ -125,6 +144,14 @@ impl Render for RootView {
             )
             .child(self.status_bar.clone())
             .when_some(self.extract_dialog.clone(), |el, dialog| {
+                el.child(
+                    div().absolute().size_full().top(px(0.)).left(px(0.))
+                        .bg(hsla(0., 0., 0., 0.2))
+                        .flex().items_center().justify_center()
+                        .child(dialog)
+                )
+            })
+            .when_some(self.create_dialog.clone(), |el, dialog| {
                 el.child(
                     div().absolute().size_full().top(px(0.)).left(px(0.))
                         .bg(hsla(0., 0., 0., 0.2))
