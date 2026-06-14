@@ -128,13 +128,11 @@ impl Render for CreateArchiveDialog {
                             .child(if self.password.is_empty() { "Create" } else { "Create Encrypted" })
                             .when(self.is_valid(), |el| {
                                 el.on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                    cx.emit(CreateDialogEvent::CreateRequested(CreateDialogInput {
-                                        files: this.file_list.iter().map(|f| f.path.clone()).collect(),
-                                        destination: std::path::PathBuf::from(&this.destination),
-                                        format: this.format,
-                                        compression_level: this.compression_level,
-                                        encryption: this.build_encryption(),
-                                    }));
+                                    use crate::domain::repository::RepoGlobal;
+                                    let repo = cx.global::<RepoGlobal>().0.clone();
+                                    let dest = std::path::PathBuf::from(&this.destination);
+                                    let _ = repo.create(&dest, this.format, this.build_encryption().as_ref());
+                                    cx.emit(CreateDialogEvent::Canceled);
                                 }))
                             })
                     )

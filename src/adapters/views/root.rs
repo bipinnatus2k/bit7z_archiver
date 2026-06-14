@@ -12,6 +12,7 @@ use crate::domain::repository::ArchiveRepository;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use std::sync::Arc;
+use gpui_component::Root;
 
 pub struct RootView {
     toolbar: Entity<Toolbar>,
@@ -22,7 +23,6 @@ pub struct RootView {
     preview_panel: Entity<PreviewPanel>,
     status_bar: Entity<StatusBar>,
     extract_dialog: Option<Entity<ExtractDialog>>,
-    create_dialog: Option<Entity<CreateArchiveDialog>>,
     repo: Arc<dyn ArchiveRepository>,
 }
 
@@ -85,24 +85,23 @@ impl RootView {
                             }
                         }
                         ArchiveVmEvent::RequestShowCreate => {
-                            let repo = repo.clone();
-                            let dialog = cx.new(|cx| CreateArchiveDialog::new(cx, vec![]));
-                            cx.subscribe::<CreateArchiveDialog, CreateDialogEvent>(&dialog, move |this: &mut RootView, _, event: &CreateDialogEvent, cx| {
-                                match event {
-                                    CreateDialogEvent::Canceled => {
-                                        this.create_dialog = None;
-                                        cx.notify();
+                            cx.spawn(async move |_, cx: &mut AsyncApp| {
+                                let _ = cx.open_window(
+                                    WindowOptions {
+                                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                                            point(px(100.), px(100.)),
+                                            size(px(560.), px(600.)),
+                                        ))),
+                                        window_background: WindowBackgroundAppearance::Opaque,
+                                        window_decorations: Some(WindowDecorations::Client),
+                                        ..Default::default()
+                                    },
+                                    |window, cx| {
+                                        let dialog = cx.new(|cx| CreateArchiveDialog::new(cx, vec![]));
+                                        cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
                                     }
-                                    CreateDialogEvent::CreateRequested(input) => {
-                                        // Create archive (file addition coming later)
-                                        let _ = repo.create(&input.destination, input.format, input.encryption.as_ref());
-                                        this.create_dialog = None;
-                                        cx.notify();
-                                    }
-                                }
+                                );
                             }).detach();
-                            this.create_dialog = Some(dialog);
-                            cx.notify();
                         }
                         ArchiveVmEvent::RequestTest => {
                             let vm = archive_vm.read(cx);
@@ -123,7 +122,6 @@ impl RootView {
                 toolbar, archive_vm, preview_vm,
                 archive_browser, entry_list, preview_panel, status_bar,
                 extract_dialog: None,
-                create_dialog: None,
                 repo,
             }
         })
@@ -140,7 +138,7 @@ pub enum ArchiveVmEvent {
 impl EventEmitter<ArchiveVmEvent> for RootView {}
 
 impl Render for RootView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         gpui_component::v_flex().size_full().relative()
             .child(self.toolbar.clone())
             .child(gpui_component::h_flex().flex_1()
@@ -159,13 +157,6 @@ impl Render for RootView {
                         .child(dialog)
                 )
             })
-            .when_some(self.create_dialog.clone(), |el, dialog| {
-                el.child(
-                    div().absolute().size_full().top(px(0.)).left(px(0.))
-                        .bg(hsla(0., 0., 0., 0.2))
-                        .flex().items_center().justify_center()
-                        .child(dialog)
-                )
-            })
+
     }
 }
