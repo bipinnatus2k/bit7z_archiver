@@ -70,6 +70,11 @@ impl ArchiveViewModel {
                 match result {
                     Ok(handle) => {
                         this.archive = Some(handle);
+                            // Fetch archive properties
+                            let h = crate::domain::archive::ArchiveHandle { raw: handle.raw, is_writer: false };
+                            if let Ok(props) = repo_clone.get_properties(&h) {
+                                this.properties = Some(props);
+                            }
                         // Add to recent files
                         let mut prefs = cx.global::<crate::domain::preferences::Preferences>().clone();
                         prefs.archive.add_recent(path_string.clone());
