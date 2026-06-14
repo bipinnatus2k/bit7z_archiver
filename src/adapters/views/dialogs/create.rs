@@ -86,7 +86,23 @@ impl Render for CreateArchiveDialog {
             )
             .child(
                 div().flex().flex_row().gap_2().children([
-                    div().px_2().py_1().rounded_md().hover(|mut s| { s.background = Some(cx.global::<Theme>().hover.into()); s }).cursor_pointer().child("+ Add Files").into_any(),
+                    div().px_2().py_1().rounded_md().hover(|mut s| { s.background = Some(cx.global::<Theme>().hover.into()); s }).cursor_pointer().child("+ Add Files")
+                        .on_mouse_down(MouseButton::Left, cx.listener(|this: &mut CreateArchiveDialog, _event: &MouseDownEvent, _window: &mut Window, cx| {
+                            if let Some(path) = crate::adapters::platform::pick_archive_file() {
+                                this.file_list.push(crate::domain::archive::CreateFileItem {
+                                    path: path.clone(),
+                                    is_directory: false,
+                                    size: None,
+                                });
+                                if this.destination.is_empty() {
+                                    let stem = path.file_stem()
+                                        .map(|s| s.to_string_lossy().to_string())
+                                        .unwrap_or_default();
+                                    this.destination = format!("{}.{}", stem, this.format.extension());
+                                }
+                                cx.notify();
+                            }
+                        })).into_any(),
                     div().px_2().py_1().rounded_md().hover(|mut s| { s.background = Some(cx.global::<Theme>().hover.into()); s }).cursor_pointer().child("+ Add Folder").into_any(),
                 ])
             )
