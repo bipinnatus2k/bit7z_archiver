@@ -60,6 +60,16 @@ impl Render for Toolbar {
                         }
                     })
             )
+            .child(
+                Button::new("close")
+                    .label("Close")
+                    .on_click({
+                        let vm = self.archive_vm.clone();
+                        move |_, _, cx| {
+                            vm.update(cx, |vm, cx| vm.close(cx));
+                        }
+                    })
+            )
     }
 }
 
