@@ -14,7 +14,6 @@ impl Toolbar {
 
 impl Render for Toolbar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let vm = self.archive_vm.read(cx);
 
         gpui_component::h_flex().gap_2().p_2()
             .child(
