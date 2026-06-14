@@ -1,4 +1,4 @@
-use crate::adapters::view_models::archive_vm::{ArchiveViewModel, ViewStatus};
+use crate::adapters::view_models::archive_vm::ArchiveViewModel;
 use gpui::*;
 use gpui_component::button::Button;
 
@@ -34,17 +34,32 @@ impl Render for Toolbar {
             .child(
                 Button::new("create")
                     .label("Create")
-                    .on_click(|_, _, _| {})
+                    .on_click({
+                        let vm = self.archive_vm.clone();
+                        move |_, _, cx| {
+                            vm.update(cx, |vm, cx| vm.request_create(cx));
+                        }
+                    })
             )
             .child(
                 Button::new("extract")
                     .label("Extract")
-                    .on_click(|_, _, _| {})
+                    .on_click({
+                        let vm = self.archive_vm.clone();
+                        move |_, _, cx| {
+                            vm.update(cx, |vm, cx| vm.request_extract(cx));
+                        }
+                    })
             )
             .child(
                 Button::new("test")
                     .label("Test")
-                    .on_click(|_, _, _| {})
+                    .on_click({
+                        let vm = self.archive_vm.clone();
+                        move |_, _, cx| {
+                            vm.update(cx, |vm, cx| vm.request_test(cx));
+                        }
+                    })
             )
     }
 }

@@ -203,6 +203,22 @@ impl ArchiveViewModel {
         }
     }
 
+    pub fn request_extract(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.status, ViewStatus::Ready) && !self.selection.is_empty() {
+            cx.emit(crate::adapters::views::root::ArchiveVmEvent::RequestShowExtract);
+        }
+    }
+
+    pub fn request_create(&mut self, cx: &mut Context<Self>) {
+        cx.emit(crate::adapters::views::root::ArchiveVmEvent::RequestShowCreate);
+    }
+
+    pub fn request_test(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.status, ViewStatus::Ready) {
+            cx.emit(crate::adapters::views::root::ArchiveVmEvent::RequestTest);
+        }
+    }
+
     pub fn close(&mut self, cx: &mut Context<Self>) {
         if let Some(archive) = self.archive.take() {
             self.repo.close(archive);
