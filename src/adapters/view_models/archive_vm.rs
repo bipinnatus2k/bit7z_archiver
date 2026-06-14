@@ -66,15 +66,14 @@ impl ArchiveViewModel {
         let path_string = path.to_string_lossy().to_string();
         cx.spawn(async move |this, cx: &mut AsyncApp| {
             let result = repo.open(&path_buf, password.as_deref());
+            let archive_properties = result.as_ref().ok().and_then(|handle| {
+                repo.get_properties(handle).ok()
+            });
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(handle) => {
                         this.archive = Some(handle);
-                            // Fetch archive properties
-                            let h = crate::domain::archive::ArchiveHandle { raw: handle.raw, is_writer: false };
-                            if let Ok(props) = repo_clone.get_properties(&h) {
-                                this.properties = Some(props);
-                            }
+                        this.properties = archive_properties;
                         // Add to recent files
                         let mut prefs = cx.global::<crate::domain::preferences::Preferences>().clone();
                         prefs.archive.add_recent(path_string.clone());
