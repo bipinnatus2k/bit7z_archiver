@@ -1,5 +1,7 @@
 //! Safe Rust wrappers around the C-style FFI functions for bit7z.
 
+pub mod worker;
+
 use crate::domain::archive::Password;
 use std::ffi::CStr;
 use std::ptr;
@@ -130,6 +132,48 @@ impl ArchiveReader {
 impl Drop for ArchiveReader {
     fn drop(&mut self) {
         unsafe { crate::ffi::bit7z_reader_close(self.raw as *mut _); }
+    }
+}
+
+// C-linkage callback-based extraction (declared in demo.h)
+extern "C" {
+    fn bit7z_reader_extract_to_cb_c(
+        reader: *mut std::ffi::c_void,
+        indices: *const u32,
+        count: u32,
+        dest: *const std::ffi::c_char,
+        ctx: *mut std::ffi::c_void,
+        on_overwrite: Option<unsafe extern "C" fn(*const std::ffi::c_char, *const std::ffi::c_char, u64, *mut std::ffi::c_void) -> i32>,
+        on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
+        on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
+    ) -> i32;
+}
+
+impl ArchiveReader {
+    /// Extracts items with per-file overwrite/progress/file callbacks.
+    /// `ctx` is passed to every callback as opaque user data.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn extract_to_cb(
+        &self,
+        indices: &[u32],
+        dest: &str,
+        ctx: *mut std::ffi::c_void,
+        on_overwrite: Option<unsafe extern "C" fn(*const std::ffi::c_char, *const std::ffi::c_char, u64, *mut std::ffi::c_void) -> i32>,
+        on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
+        on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
+    ) -> Result<(), String> {
+        let c_dest = std::ffi::CString::new(dest).map_err(|e| format!("{}", e))?;
+        let ret = bit7z_reader_extract_to_cb_c(
+            self.raw as *mut std::ffi::c_void,
+            indices.as_ptr(),
+            indices.len() as u32,
+            c_dest.as_ptr(),
+            ctx,
+            on_overwrite,
+            on_progress,
+            on_file,
+        );
+        if ret == 0 { Ok(()) } else { Err("extraction failed or cancelled".into()) }
     }
 }
 

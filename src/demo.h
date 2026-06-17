@@ -9,6 +9,8 @@
 #include "bit7z/biterror.hpp"
 #include "bit7z/bittypes.hpp"
 #include <bit7z/bitwindows.hpp>
+#include <sys/stat.h>
+#include <memory>
 
 // Type aliases for ergonomic Rust naming
 using ArchiveFormatFeatures = bit7z::FormatFeatures;
@@ -112,6 +114,7 @@ inline int32_t bit7z_reader_extract_to(void* reader_ptr, const uint32_t* indices
         return 0;
     } catch (...) { return -1; }
 }
+
 inline int32_t bit7z_reader_extract_item_to_buffer(void* reader_ptr, uint32_t index, void** out_data, int64_t* out_size) {
     try {
         auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
@@ -149,3 +152,86 @@ inline void* bit7z_reader_extract_item_data(void* reader_ptr, uint32_t index) {
     } catch (...) { return nullptr; }
 }
 
+// ===== Callback-based extract (supports per-file overwrite, progress, cancel) =====
+
+// C callback types — passed from Rust via function pointers.
+// on_overwrite: return 0=Overwrite, 1=Skip
+// on_progress:  return 0=cancel, non-zero=continue
+
+inline int32_t bit7z_reader_extract_to_cb(
+    void* reader_ptr,
+    const uint32_t* indices,
+    uint32_t count,
+    const char* dest_path,
+    void* ctx,
+    int32_t (*on_overwrite)(const char* src, const char* dest, uint64_t existing_size, void* ctx),
+    int32_t (*on_progress)(uint64_t processed, uint64_t total, void* ctx),
+    void      (*on_file)(const char* path, void* ctx)
+) {
+    try {
+        auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
+        std::string destDir(dest_path ? dest_path : "");
+        if (!destDir.empty() && destDir.back() != '/' && destDir.back() != '\\') {
+            destDir += '/';
+        }
+
+        // Shared state for total size (set by TotalCallback, read by ProgressCallback)
+        auto sharedTotal = std::make_shared<uint64_t>(0);
+
+        if (on_progress) {
+            reader.setTotalCallback([sharedTotal](uint64_t total) {
+                *sharedTotal = total;
+            });
+            reader.setProgressCallback([ctx, on_progress, sharedTotal](uint64_t processed) -> bool {
+                return on_progress(processed, *sharedTotal, ctx) != 0;
+            });
+        }
+
+        if (on_overwrite || on_file) {
+            reader.setFileCallback([&reader, &destDir, ctx, on_overwrite, on_file](const bit7z::tstring& path) {
+                if (on_file) {
+                    on_file(path.c_str(), ctx);
+                }
+
+                if (!on_overwrite) return;
+
+                std::string fullDest = destDir + path;
+
+                struct stat st;
+                if (stat(fullDest.c_str(), &st) == 0) {
+                    uint64_t existingSize = static_cast<uint64_t>(st.st_size);
+                    int32_t action = on_overwrite(path.c_str(), fullDest.c_str(), existingSize, ctx);
+                    switch (action) {
+                        case 0: reader.setOverwriteMode(bit7z::OverwriteMode::Overwrite); break;
+                        default: reader.setOverwriteMode(bit7z::OverwriteMode::Skip); break;
+                    }
+                } else {
+                    reader.setOverwriteMode(bit7z::OverwriteMode::Overwrite);
+                }
+            });
+        }
+
+        std::vector<uint32_t> idxs(indices, indices + count);
+        reader.extractTo(bit7z::tstring(dest_path ? dest_path : ""), idxs);
+
+        // Reset callbacks to avoid accidental reuse
+        reader.setFileCallback(nullptr);
+        reader.setProgressCallback(nullptr);
+        reader.setTotalCallback(nullptr);
+
+        return 0;
+    } catch (...) { return -1; }
+}
+// C-linkage wrapper so Rust can call it via extern "C".
+extern "C" int32_t bit7z_reader_extract_to_cb_c(
+    void* reader_ptr,
+    const uint32_t* indices,
+    uint32_t count,
+    const char* dest_path,
+    void* ctx,
+    int32_t (*on_overwrite)(const char* src, const char* dest, uint64_t existing_size, void* ctx),
+    int32_t (*on_progress)(uint64_t processed, uint64_t total, void* ctx),
+    void   (*on_file)(const char* path, void* ctx)
+) {
+    return bit7z_reader_extract_to_cb(reader_ptr, indices, count, dest_path, ctx, on_overwrite, on_progress, on_file);
+}
