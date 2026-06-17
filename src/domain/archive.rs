@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
 
 /// An entry (file or directory) inside a compressed archive.
@@ -148,10 +150,30 @@ impl EncryptionMethod {
     }
 }
 
+/// A password that is zeroized on drop and redacted in debug output.
+#[derive(Clone)]
+pub struct Password(SecretString);
+
+impl Password {
+    pub fn new(password: impl Into<String>) -> Self {
+        Self(password.into().into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.expose_secret()
+    }
+}
+
+impl fmt::Debug for Password {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Password([redacted])")
+    }
+}
+
 /// Configuration for creating encrypted archives.
 #[derive(Debug, Clone)]
 pub struct EncryptionConfig {
-    pub password: String,
+    pub password: Password,
     pub method: EncryptionMethod,
     pub encrypt_filenames: bool,
 }

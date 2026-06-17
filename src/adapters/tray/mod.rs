@@ -4,6 +4,13 @@ pub mod linux;
 pub mod windows;
 
 use crossbeam::channel::{Sender, Receiver};
+use gpui::Global;
+use std::sync::Arc;
+
+/// GPUI global for tray manager access (e.g. from progress dialogs).
+#[derive(Clone)]
+pub struct TrayGlobal(pub Arc<TrayManager>);
+impl Global for TrayGlobal {}
 
 pub enum TrayCommand {
     Show,
@@ -21,19 +28,19 @@ pub enum TrayEvent {
 pub struct TrayManager {
     pub cmd_tx: Sender<TrayCommand>,
     pub event_rx: Receiver<TrayEvent>,
-    _thread: std::thread::JoinHandle<()>,
 }
 
 impl TrayManager {
     pub fn new() -> Self {
         let (cmd_tx, cmd_rx) = crossbeam::channel::unbounded();
         let (event_tx, event_rx) = crossbeam::channel::unbounded();
-        let _thread = std::thread::spawn(move || {
-            // Platform-specific tray loop
-            let _ = cmd_rx;
-            let _ = event_tx;
+        std::thread::spawn(move || {
+            #[cfg(target_os = "windows")]
+            windows::run_tray_loop_windows(cmd_rx, event_tx);
+            #[cfg(target_os = "linux")]
+            linux::run_tray_loop_linux(cmd_rx, event_tx);
         });
-        Self { cmd_tx, event_rx, _thread }
+        Self { cmd_tx, event_rx }
     }
 
     pub fn send(&self, cmd: TrayCommand) {

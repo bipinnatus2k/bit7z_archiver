@@ -21,7 +21,7 @@ impl OpenArchiveUseCase {
     pub fn execute(
         &self,
         path: &Path,
-        password: Option<&str>,
+        password: Option<&Password>,
     ) -> Result<OpenArchiveOutput, ArchiveError> {
         let handle = self.repo.open(path, password)?;
         let properties = self.repo.get_properties(&handle)?;
@@ -54,7 +54,7 @@ mod tests {
     fn test_open_archive_not_found() {
         struct NotFoundRepo;
         impl ArchiveRepository for NotFoundRepo {
-            fn open(&self, p: &Path, _: Option<&str>) -> Result<ArchiveHandle, ArchiveError> {
+            fn open(&self, p: &Path, _: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
                 Err(ArchiveError::NotFound(p.to_string_lossy().to_string()))
             }
             fn create(&self, _: &Path, _: ArchiveFormat, _: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> { Err(ArchiveError::UnsupportedOperation) }

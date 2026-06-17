@@ -5,7 +5,8 @@ use crate::domain::repository::RepoGlobal;
 use crate::adapters::bit7z::Library;
 use crate::adapters::repository::Bit7zRepository;
 use crate::adapters::platform;
-use crate::domain::preferences::PreferencesRepository;
+use crate::adapters::tray::{TrayManager, TrayGlobal};
+use crate::domain::preferences::{PreferencesRepoGlobal, PreferencesRepository};
 use crate::adapters::views::root::RootView;
 use std::sync::Arc;
 
@@ -14,8 +15,8 @@ pub fn run_gui() {
         // 使用任何 GPUI Component 功能之前必须先调用此函数。
         gpui_component::init(cx);
         // Load preferences
-        let prefs = crate::adapters::preferences_json::JsonPreferencesRepository::new()
-            .load().unwrap_or_default();
+        let prefs_repo = crate::adapters::preferences_json::JsonPreferencesRepository::new();
+        let prefs = prefs_repo.load().unwrap_or_default();
 
         // Find and load the 7-Zip library
         let lib_path = platform::find_7z_library()
@@ -28,10 +29,15 @@ pub fn run_gui() {
         let repo: Arc<dyn crate::domain::repository::ArchiveRepository> =
             Arc::new(Bit7zRepository::new(lib));
 
+        // Initialize the system tray icon (spawns platform-specific loop)
+        let tray = Arc::new(TrayManager::new());
+
         // Set globals
         cx.set_global(prefs);
         cx.set_global(RepoGlobal(repo));
         cx.set_global(Theme::default());
+        cx.set_global(PreferencesRepoGlobal(Arc::new(prefs_repo)));
+        cx.set_global(TrayGlobal(tray));
 
         cx.spawn(async move |cx| {
             // Open the main window

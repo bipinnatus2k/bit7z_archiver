@@ -1,7 +1,7 @@
 use crate::application::events::ArchiveVmEvent;
 use crate::application::open::OpenArchiveUseCase;
 use crate::domain::archive::*;
-use crate::domain::preferences::Preferences;
+use crate::domain::preferences::{Preferences, PreferencesRepoGlobal};
 use crate::domain::repository::*;
 use gpui::{EventEmitter, *};
 use std::collections::{HashSet, VecDeque};
@@ -93,8 +93,9 @@ impl ArchiveViewModel {
 
         // Use OpenArchiveUseCase for combined open + properties + first page.
         let use_case = OpenArchiveUseCase::new(repo);
+        let pw = password.map(Password::new);
         let bg_task = cx.background_spawn(async move {
-            use_case.execute(&path_buf, password.as_deref())
+            use_case.execute(&path_buf, pw.as_ref())
         });
 
         cx.spawn(async move |this, cx| {
@@ -115,6 +116,9 @@ impl ArchiveViewModel {
                         let mut prefs = cx.global::<Preferences>().clone();
                         prefs.archive.add_recent(path_string);
                         cx.set_global(prefs);
+                        if let Err(e) = cx.global::<PreferencesRepoGlobal>().0.save(&cx.global::<Preferences>()) {
+                            log::warn!("Failed to persist preferences: {}", e);
+                        }
                         this.current_path = String::new();
                         this.path_history.clear();
                         this.re_filter();

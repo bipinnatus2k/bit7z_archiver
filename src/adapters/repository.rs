@@ -19,7 +19,7 @@ impl Bit7zRepository {
 }
 
 impl ArchiveRepository for Bit7zRepository {
-    fn open(&self, path: &Path, password: Option<&str>) -> Result<ArchiveHandle, ArchiveError> {
+        fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
         let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal("Non-UTF-8 path".into()))?;
@@ -147,5 +147,92 @@ impl ArchiveRepository for Bit7zRepository {
     fn close(&self, archive: ArchiveHandle) {
         let raw = archive.raw as usize;
         unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    /// A mock that fails open for non-existent files and delegates to inner for others.
+    struct FailOnMissingRepo {
+        inner: Arc<dyn ArchiveRepository>,
+    }
+
+    impl ArchiveRepository for FailOnMissingRepo {
+    fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
+            if !path.exists() {
+                return Err(ArchiveError::NotFound(path.to_string_lossy().to_string()));
+            }
+            self.inner.open(path, password)
+        }
+        fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
+            self.inner.create(path, format, encryption)
+        }
+        fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError> {
+            self.inner.list_page(archive, offset, limit)
+        }
+        fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
+            self.inner.get_properties(archive)
+        }
+        fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path) -> Result<(), ArchiveError> {
+            self.inner.extract(archive, indices, dest)
+        }
+        fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError> {
+            self.inner.extract_to_buffer(archive, index)
+        }
+        fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf]) -> Result<(), ArchiveError> {
+            self.inner.add(archive, files)
+        }
+        fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError> {
+            self.inner.delete(archive, indices)
+        }
+        fn rename(&self, archive: &mut ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError> {
+            self.inner.rename(archive, index, new_name)
+        }
+        fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
+            self.inner.test(archive)
+        }
+        fn close(&self, archive: ArchiveHandle) {
+            self.inner.close(archive)
+        }
+    }
+
+    #[test]
+    fn test_repository_open_nonexistent_file_returns_error() {
+        let inner = crate::domain::repository::test_utils::MockArchiveRepository::arc_with_count(0);
+        let repo = FailOnMissingRepo { inner };
+        let result = repo.open(Path::new("nonexistent.7z"), None);
+        assert!(matches!(result, Err(ArchiveError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_repository_open_existing_file_succeeds() {
+        let inner = crate::domain::repository::test_utils::MockArchiveRepository::arc_with_count(10);
+        let repo = FailOnMissingRepo { inner };
+        // Use a path that exists (this test file)
+        let result = repo.open(Path::new("Cargo.toml"), None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_repository_list_page_returns_entries() {
+        use crate::domain::repository::test_utils::MockArchiveRepository;
+        let repo = MockArchiveRepository::arc_with_count(10);
+        let handle = repo.open(Path::new("test.7z"), None).unwrap();
+        let page = repo.list_page(&handle, 0, 5).unwrap();
+        assert_eq!(page.items.len(), 5);
+        assert_eq!(page.total, Some(10));
+    }
+
+    #[test]
+    fn test_repository_extract_to_buffer_unsupported() {
+        use crate::domain::repository::test_utils::MockArchiveRepository;
+        let repo = MockArchiveRepository::arc_with_count(1);
+        let handle = repo.open(Path::new("test.7z"), None).unwrap();
+        let result = repo.extract_to_buffer(&handle, 0);
+        assert!(matches!(result, Err(ArchiveError::UnsupportedOperation)));
     }
 }

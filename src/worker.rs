@@ -3,18 +3,33 @@
 
 use crate::ipc::WorkerMessage;
 use crate::domain::repository::*;
-use std::io::{BufReader, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::sync::Arc;
 
-pub fn run_worker(repo: Arc<dyn ArchiveRepository>, args: WorkerArgs) {
+pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
-    let _stdin = BufReader::new(std::io::stdin());
+    let mut stdin = BufReader::new(std::io::stdin());
+
+    // Read one WorkerArgs JSON line from stdin
+    let mut line = String::new();
+    if stdin.read_line(&mut line).is_err() || line.trim().is_empty() {
+        let _ = writeln!(stdout, r#"{{"type":"error","code":-1,"message":"no input"}}"#);
+        return;
+    }
+    let args: WorkerArgs = match serde_json::from_str(line.trim()) {
+        Ok(a) => a,
+        Err(e) => {
+            let _ = writeln!(stdout, r#"{{"type":"error","code":-1,"message":"invalid args: {}"}}"#, e);
+            return;
+        }
+    };
 
     match args.operation {
         WorkerOperation::Extract { archive_path, dest, password, indices } => {
             // Open archive → extract → report progress → report complete/error
-            match repo.open(&archive_path, password.as_deref()) {
+            let pw = password.map(crate::domain::archive::Password::new);
+            match repo.open(&archive_path, pw.as_ref()) {
                 Ok(archive) => {
                     send_msg(&mut stdout, &WorkerMessage::Progress {
                         current: 0, total: indices.len() as u64,
@@ -44,12 +59,12 @@ fn send_msg(w: &mut impl Write, msg: &WorkerMessage) {
     let _ = writeln!(w, "{}", serde_json::to_string(msg).unwrap());
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize)]
 pub struct WorkerArgs {
     pub operation: WorkerOperation,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize)]
 pub enum WorkerOperation {
     Extract {
         archive_path: std::path::PathBuf,

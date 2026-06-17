@@ -1,6 +1,7 @@
 use crate::domain::archive::ArchiveFormat;
 use gpui::Global;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Persistent user preferences.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +28,10 @@ impl Default for Preferences {
         }
     }
 }
+
+#[derive(Clone)]
+pub struct PreferencesRepoGlobal(pub Arc<dyn PreferencesRepository>);
+impl Global for PreferencesRepoGlobal {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowPrefs {

@@ -1,5 +1,6 @@
 //! Safe Rust wrappers around the C-style FFI functions for bit7z.
 
+use crate::domain::archive::Password;
 use std::ffi::CStr;
 use std::ptr;
 
@@ -58,9 +59,9 @@ unsafe impl Send for ArchiveReader {}
 unsafe impl Sync for ArchiveReader {}
 
 impl ArchiveReader {
-    pub fn open(lib: &Library, path: &str, password: Option<&str>) -> Result<Self, String> {
+    pub fn open(lib: &Library, path: &str, password: Option<&Password>) -> Result<Self, String> {
         let c_path = std::ffi::CString::new(path).map_err(|e| format!("Invalid path: {}", e))?;
-        let c_pw = password.map(|p| std::ffi::CString::new(p)).transpose()
+        let c_pw = password.map(|p| std::ffi::CString::new(p.as_str())).transpose()
             .map_err(|e| format!("Invalid password: {}", e))?;
         let raw = unsafe {
             crate::ffi::bit7z_reader_open(

@@ -11,7 +11,7 @@ impl Global for RepoGlobal {}
 /// Core repository trait for archive operations.
 /// Implementations wrap the bit7z C++ bridge.
 pub trait ArchiveRepository: Send + Sync {
-    fn open(&self, path: &Path, password: Option<&str>) -> Result<ArchiveHandle, ArchiveError>;
+    fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError>;
     fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError>;
     fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError>;
     fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError>;
@@ -100,7 +100,7 @@ pub mod test_utils {
     }
 
     impl ArchiveRepository for MockArchiveRepository {
-        fn open(&self, path: &Path, _password: Option<&str>) -> Result<ArchiveHandle, ArchiveError> {
+        fn open(&self, path: &Path, _password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
             // Return a dummy handle
             Ok(ArchiveHandle::new_reader(std::ptr::null_mut()))
         }

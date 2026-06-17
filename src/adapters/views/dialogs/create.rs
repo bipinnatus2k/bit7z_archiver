@@ -62,7 +62,7 @@ impl CreateArchiveDialog {
     fn build_encryption(&self) -> Option<EncryptionConfig> {
         if self.password.is_empty() { return None; }
         Some(EncryptionConfig {
-            password: self.password.clone(),
+            password: Password::new(self.password.clone()),
             method: EncryptionMethod::Aes256,
             encrypt_filenames: self.encrypt_filenames && self.format.supports_encrypted_filenames(),
         })
