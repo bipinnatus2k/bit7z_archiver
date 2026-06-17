@@ -1,0 +1,1 @@
+{"name":"bit7z","version":"4.1.0","description":"A C++ static library for 7-Zip interface","homepage":"https://github.com/rikyoz/bit7z","license":"MPL-2.0","dependencies":[{"name":"vcpkg-cmake","host":true},{"name":"vcpkg-cmake-config","host":true},"7zip","ghc-filesystem"]}

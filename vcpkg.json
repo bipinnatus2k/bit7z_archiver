@@ -1,7 +1,1 @@
-{
-  "name": "bit7z-archiver",
-  "version": "0.1.0",
-  "dependencies": [
-    "bit7z"
-  ]
-}
+{"name":"bit7z-archiver","version":"0.1.0","dependencies":["bit7z","7zip"]}
