@@ -1,4 +1,5 @@
-use super::ArchiveReader;
+use super::{ArchiveReader, Library, Writer, WriterCompressionLevel, WriterFormat};
+use crate::adapters::bit7z::UpdateMode;
 use crossbeam::channel::{Receiver, Sender};
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -142,6 +143,76 @@ pub fn spawn_extract(
             }
         }
     })
+}
+
+/// Spawn a background thread that compresses files with progress, cancel and pause support.
+///
+/// # Parameters
+/// - `lib`: the 7-Zip library handle
+/// - `format`: output archive format
+/// - `files`: list of file/directory paths to compress
+/// - `dest`: output archive file path
+/// - `threads`: number of compression threads (0 = auto)
+/// - `compression_level`: compression level
+/// - `password`: optional encryption password
+/// - `update_mode`: how to handle existing archives
+/// - `cancel`: set to `true` to cancel
+/// - `pause`: set to `true` to pause
+/// - `event_tx`: channel for progress/complete/error events
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_compress(
+    lib: &Library,
+    format: WriterFormat,
+    files: Vec<String>,
+    dest: String,
+    threads: u32,
+    compression_level: WriterCompressionLevel,
+    password: Option<String>,
+    update_mode: UpdateMode,
+    cancel: Arc<AtomicBool>,
+    pause: Arc<AtomicBool>,
+    event_tx: Sender<WorkerEvent>,
+) -> Result<JoinHandle<()>, String> {
+    let writer = Writer::create(lib, format)?;
+    writer.set_threads(threads);
+    writer.set_compression_level(compression_level);
+    if let Some(ref pw) = password {
+        writer.set_password(pw);
+    }
+    writer.set_update_mode(update_mode);
+    for f in &files {
+        writer.add_file(f).map_err(|e| format!("add_file {}: {}", f, e))?;
+    }
+
+    Ok(std::thread::spawn(move || {
+        let ctx = WorkerCtx {
+            cancel,
+            pause,
+            event_tx: event_tx.clone(),
+            conflict_rx: crossbeam::channel::bounded(1).1, // dummy, never used
+        };
+
+        let result = unsafe {
+            writer.compress_to_cb(
+                &dest,
+                &ctx as *const WorkerCtx as *mut c_void,
+                Some(progress_trampoline as unsafe extern "C" fn(_, _, _) -> _),
+                Some(file_trampoline as unsafe extern "C" fn(_, _)),
+            )
+        };
+
+        match result {
+            Ok(()) => {
+                let _ = event_tx.send(WorkerEvent::Complete {
+                    total_files: files.len() as u64,
+                    total_bytes: 0,
+                });
+            }
+            Err(e) => {
+                let _ = event_tx.send(WorkerEvent::Error(e));
+            }
+        }
+    }))
 }
 
 #[cfg(test)]

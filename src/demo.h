@@ -5,6 +5,7 @@
 #include "bit7z/bitinputarchive.hpp"
 #include "bit7z/bitarchivereader.hpp"
 #include "bit7z/bitarchivewriter.hpp"
+#include "bit7z/bitarchiveeditor.hpp"
 #include "bit7z/bitarchiveiteminfo.hpp"
 #include "bit7z/biterror.hpp"
 #include "bit7z/bittypes.hpp"
@@ -152,6 +153,221 @@ inline void* bit7z_reader_extract_item_data(void* reader_ptr, uint32_t index) {
     } catch (...) { return nullptr; }
 }
 
+// ===== Writer wrappers =====
+
+enum WriterFormat : int {
+    BIT7Z_FORMAT_7Z = 0,
+    BIT7Z_FORMAT_ZIP = 1,
+    BIT7Z_FORMAT_TAR = 2,
+    BIT7Z_FORMAT_GZIP = 3,
+    BIT7Z_FORMAT_BZIP2 = 4,
+    BIT7Z_FORMAT_XZ = 5,
+    BIT7Z_FORMAT_WIM = 6,
+};
+
+enum WriterCompressionLevel : int {
+    BIT7Z_COMPRESS_NONE = 0,
+    BIT7Z_COMPRESS_FASTEST = 1,
+    BIT7Z_COMPRESS_FAST = 2,
+    BIT7Z_COMPRESS_NORMAL = 3,
+    BIT7Z_COMPRESS_MAX = 4,
+    BIT7Z_COMPRESS_ULTRA = 5,
+};
+
+extern "C" void* bit7z_writer_create(void* lib_ptr, int format) {
+    try {
+        auto& lib = *static_cast<bit7z::Bit7zLibrary*>(lib_ptr);
+        const auto& fmt = [format]() -> const bit7z::BitInOutFormat& {
+            switch (format) {
+                case 1: return bit7z::BitFormat::Zip;
+                case 2: return bit7z::BitFormat::Tar;
+                case 3: return bit7z::BitFormat::GZip;
+                case 4: return bit7z::BitFormat::BZip2;
+                case 5: return bit7z::BitFormat::Xz;
+                case 6: return bit7z::BitFormat::Wim;
+                default: return bit7z::BitFormat::SevenZip;
+            }
+        }();
+        auto* writer = new bit7z::BitArchiveWriter(lib, fmt);
+        return static_cast<void*>(writer);
+    } catch (...) { return nullptr; }
+}
+
+extern "C" void* bit7z_writer_open(void* lib_ptr, const char* path, int format, const char* password) {
+    try {
+        auto& lib = *static_cast<bit7z::Bit7zLibrary*>(lib_ptr);
+        const auto& fmt = [format]() -> const bit7z::BitInOutFormat& {
+            switch (format) {
+                case 1: return bit7z::BitFormat::Zip;
+                case 2: return bit7z::BitFormat::Tar;
+                case 3: return bit7z::BitFormat::GZip;
+                case 4: return bit7z::BitFormat::BZip2;
+                case 5: return bit7z::BitFormat::Xz;
+                case 6: return bit7z::BitFormat::Wim;
+                default: return bit7z::BitFormat::SevenZip;
+            }
+        }();
+        auto* writer = new bit7z::BitArchiveWriter(
+            lib, bit7z::tstring(path ? path : ""), fmt,
+            bit7z::tstring(password ? password : ""));
+        return static_cast<void*>(writer);
+    } catch (...) { return nullptr; }
+}
+
+extern "C" void bit7z_writer_close(void* writer_ptr) {
+    delete static_cast<bit7z::BitArchiveWriter*>(writer_ptr);
+}
+
+extern "C" void bit7z_writer_set_threads(void* writer_ptr, uint32_t n) {
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setThreadsCount(n);
+}
+
+extern "C" void bit7z_writer_set_compression_level(void* writer_ptr, int level) {
+    auto lvl = bit7z::BitCompressionLevel::Normal;
+    switch (level) {
+        case 0: lvl = bit7z::BitCompressionLevel::None; break;
+        case 1: lvl = bit7z::BitCompressionLevel::Fastest; break;
+        case 2: lvl = bit7z::BitCompressionLevel::Fast; break;
+        case 3: lvl = bit7z::BitCompressionLevel::Normal; break;
+        case 4: lvl = bit7z::BitCompressionLevel::Max; break;
+        case 5: lvl = bit7z::BitCompressionLevel::Ultra; break;
+    }
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setCompressionLevel(lvl);
+}
+
+extern "C" void bit7z_writer_set_password(void* writer_ptr, const char* password) {
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setPassword(
+        bit7z::tstring(password ? password : ""));
+}
+
+extern "C" void bit7z_writer_set_update_mode(void* writer_ptr, int mode) {
+    auto modeEnum = bit7z::UpdateMode::None;
+    if (mode == 1) modeEnum = bit7z::UpdateMode::Append;
+    else if (mode == 2) modeEnum = bit7z::UpdateMode::Update;
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setUpdateMode(modeEnum);
+}
+
+extern "C" int32_t bit7z_writer_add_file(void* writer_ptr, const char* path) {
+    try {
+        static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->addFile(
+            bit7z::tstring(path ? path : ""));
+        return 0;
+    } catch (...) { return -1; }
+}
+
+extern "C" int32_t bit7z_writer_add_files(void* writer_ptr, const char* const* paths, uint32_t count) {
+    try {
+        std::vector<bit7z::tstring> vec;
+        vec.reserve(count);
+        for (uint32_t i = 0; i < count; ++i) {
+            if (paths[i]) vec.emplace_back(paths[i]);
+        }
+        static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->addItems(vec);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+extern "C" int32_t bit7z_writer_add_dir(void* writer_ptr, const char* dir) {
+    try {
+        static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->addDirectory(
+            bit7z::tstring(dir ? dir : ""));
+        return 0;
+    } catch (...) { return -1; }
+}
+
+extern "C" int32_t bit7z_writer_compress_to(void* writer_ptr, const char* out_path) {
+    try {
+        static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->compressTo(
+            bit7z::tstring(out_path ? out_path : ""));
+        return 0;
+    } catch (...) { return -1; }
+}
+
+extern "C" int32_t bit7z_writer_compress_to_cb(
+    void* writer_ptr,
+    const char* out_path,
+    void* ctx,
+    int32_t (*on_progress)(uint64_t processed, uint64_t total, void* ctx),
+    void   (*on_file)(const char* path, void* ctx)
+) {
+    try {
+        auto& writer = *static_cast<bit7z::BitArchiveWriter*>(writer_ptr);
+        auto sharedTotal = std::make_shared<uint64_t>(0);
+
+        if (on_progress) {
+            writer.setTotalCallback([sharedTotal](uint64_t total) {
+                *sharedTotal = total;
+            });
+            writer.setProgressCallback([ctx, on_progress, sharedTotal](uint64_t processed) -> bool {
+                return on_progress(processed, *sharedTotal, ctx) != 0;
+            });
+        }
+
+        if (on_file) {
+            writer.setFileCallback([ctx, on_file](const bit7z::tstring& path) {
+                on_file(path.c_str(), ctx);
+            });
+        }
+
+        writer.compressTo(bit7z::tstring(out_path ? out_path : ""));
+
+        writer.setFileCallback(nullptr);
+        writer.setProgressCallback(nullptr);
+        writer.setTotalCallback(nullptr);
+
+        return 0;
+    } catch (...) { return -1; }
+}
+
+// ===== Editor wrappers =====
+
+extern "C" void* bit7z_editor_open(void* lib_ptr, const char* path, int format, const char* password) {
+    try {
+        auto& lib = *static_cast<bit7z::Bit7zLibrary*>(lib_ptr);
+        const auto& fmt = [format]() -> const bit7z::BitInOutFormat& {
+            switch (format) {
+                case 1: return bit7z::BitFormat::Zip;
+                case 2: return bit7z::BitFormat::Tar;
+                case 3: return bit7z::BitFormat::GZip;
+                case 4: return bit7z::BitFormat::BZip2;
+                case 5: return bit7z::BitFormat::Xz;
+                case 6: return bit7z::BitFormat::Wim;
+                default: return bit7z::BitFormat::SevenZip;
+            }
+        }();
+        auto* editor = new bit7z::BitArchiveEditor(
+            lib, bit7z::tstring(path ? path : ""), fmt,
+            bit7z::tstring(password ? password : ""));
+        return static_cast<void*>(editor);
+    } catch (...) { return nullptr; }
+}
+
+extern "C" void bit7z_editor_close(void* editor_ptr) {
+    delete static_cast<bit7z::BitArchiveEditor*>(editor_ptr);
+}
+
+extern "C" int32_t bit7z_editor_rename(void* editor_ptr, uint32_t index, const char* new_path) {
+    try {
+        static_cast<bit7z::BitArchiveEditor*>(editor_ptr)->renameItem(
+            index, bit7z::tstring(new_path ? new_path : ""));
+        return 0;
+    } catch (...) { return -1; }
+}
+
+extern "C" int32_t bit7z_editor_delete(void* editor_ptr, uint32_t index) {
+    try {
+        static_cast<bit7z::BitArchiveEditor*>(editor_ptr)->deleteItem(index);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+extern "C" int32_t bit7z_editor_apply(void* editor_ptr) {
+    try {
+        static_cast<bit7z::BitArchiveEditor*>(editor_ptr)->applyChanges();
+        return 0;
+    } catch (...) { return -1; }
+}
+
 // ===== Callback-based extract (supports per-file overwrite, progress, cancel) =====
 
 // C callback types — passed from Rust via function pointers.
@@ -234,4 +450,15 @@ extern "C" int32_t bit7z_reader_extract_to_cb_c(
     void   (*on_file)(const char* path, void* ctx)
 ) {
     return bit7z_reader_extract_to_cb(reader_ptr, indices, count, dest_path, ctx, on_overwrite, on_progress, on_file);
+}
+
+// C-linkage wrapper for compress callback.
+extern "C" int32_t bit7z_writer_compress_to_cb_c(
+    void* writer_ptr,
+    const char* out_path,
+    void* ctx,
+    int32_t (*on_progress)(uint64_t processed, uint64_t total, void* ctx),
+    void   (*on_file)(const char* path, void* ctx)
+) {
+    return bit7z_writer_compress_to_cb(writer_ptr, out_path, ctx, on_progress, on_file);
 }
