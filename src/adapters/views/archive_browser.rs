@@ -41,20 +41,21 @@ impl Render for ArchiveBrowser {
         let prefs = cx.global::<Preferences>();
         let recent_files = &prefs.archive.recent_files;
         let has_recent = !recent_files.is_empty();
+        let theme = cx.global::<Theme>();
 
         gpui_component::v_flex().w(px(240.)).p_2().gap_2()
             // Filter input (always visible)
             .child(Input::new(&self.input_state))
-            // Folder tree (only when archive is open)
+            // Folder tree using pre-computed cache
             .child(gpui_component::v_flex().text_sm().children(
-                vm.entries.iter().filter(|e| e.is_directory).map(|e|
-                    div().px_2().py_1().cursor_pointer().child(format!("📁 {}", e.name))
+                vm.cached_folders.iter().map(|name|
+                    div().px_2().py_1().cursor_pointer().child(format!("\u{1F4C1} {}", name))
                 ).collect::<Vec<_>>()
             ))
             // Recent files section
             .when(has_recent, |el| el.child(
                 gpui_component::v_flex().gap_1().pt_2()
-                    .child(div().px_2().py_1().text_sm().font_weight(FontWeight::BOLD).text_color(cx.global::<Theme>().muted).child("Recent Files"))
+                    .child(div().px_2().py_1().text_sm().font_weight(FontWeight::BOLD).text_color(theme.muted).child("Recent Files"))
                     .children(recent_files.iter().map(|path| {
                         let file_name = std::path::Path::new(path)
                             .file_name()
@@ -67,7 +68,7 @@ impl Render for ArchiveBrowser {
                                 let path_ref = std::path::Path::new(&path_clone);
                                 vm.update(cx, |vm, cx| vm.open_archive(path_ref, None, cx));
                             }))
-                            .child(format!("📂 {}", file_name))
+                            .child(format!("\u{1F4C2} {}", file_name))
                     }).collect::<Vec<_>>())
             ))
     }

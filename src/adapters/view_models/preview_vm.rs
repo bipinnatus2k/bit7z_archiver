@@ -29,13 +29,15 @@ impl PreviewViewModel {
         cx.notify();
         let max_bytes = self.max_bytes;
         let repo = self.repo.clone();
-        let handle_raw = archive.raw;
-        cx.spawn(async move |this, cx: &mut AsyncApp| {
-            let use_case = PreviewEntryUseCase::new(repo);
-            let result = use_case.execute(
-                &ArchiveHandle { raw: handle_raw, is_writer: false },
-                index, max_bytes,
-            );
+        let handle_for_bg = archive.clone();
+
+        let bg_task = cx.background_spawn(async move {
+            let uc = PreviewEntryUseCase::new(repo);
+            uc.execute(&handle_for_bg, index, max_bytes)
+        });
+
+        cx.spawn(async move |this, cx| {
+            let result = bg_task.await;
             let _ = this.update(cx, |this, cx| {
                 this.is_loading = false;
                 match result {
@@ -53,5 +55,3 @@ impl PreviewViewModel {
         cx.notify();
     }
 }
-
-

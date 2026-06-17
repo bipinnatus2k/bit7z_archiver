@@ -6,3 +6,4 @@ pub mod delete;
 pub mod rename;
 pub mod test;
 pub mod preview;
+pub mod events;

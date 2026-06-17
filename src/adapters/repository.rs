@@ -34,14 +34,14 @@ impl ArchiveRepository for Bit7zRepository {
         Err(ArchiveError::UnsupportedOperation)
     }
 
-    fn list_page(&self, archive: &ArchiveHandle, offset: usize, _limit: usize)
+    fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize)
                  -> Result<Page<ArchiveEntry>, ArchiveError> {
         let raw = archive.raw as usize;
         let count = unsafe { crate::ffi::bit7z_reader_item_count(raw as *mut _) };
 
         let mut entries = Vec::new();
         let start = (offset as u32).min(count);
-        let end = count; // read all items for now
+        let end = (start + limit as u32).min(count);
 
         for i in start..end {
             use std::ffi::CStr;

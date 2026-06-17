@@ -1,6 +1,7 @@
 use crate::adapters::view_models::archive_vm::{ArchiveViewModel, ViewStatus};
 use crate::theme::Theme;
 use gpui::*;
+use humansize::{format_size, BINARY};
 
 pub struct StatusBar {
     archive_vm: Entity<ArchiveViewModel>,
@@ -33,10 +34,10 @@ impl Render for StatusBar {
                         parts.push("Encrypted".to_string());
                     }
                     if props.total_size > 0 {
-                        parts.push(format!("Size: {}", format_size(props.total_size)));
+                        parts.push(format!("Size: {}", format_size(props.total_size, BINARY)));
                     }
                     if props.packed_size > 0 {
-                        parts.push(format!("Packed: {}", format_size(props.packed_size)));
+                        parts.push(format!("Packed: {}", format_size(props.packed_size, BINARY)));
                     }
                 }
                 if parts.is_empty() { String::new() } else { parts.join(" | ") }
@@ -50,9 +51,3 @@ impl Render for StatusBar {
     }
 }
 
-fn format_size(bytes: u64) -> String {
-    if bytes < 1024 { format!("{} B", bytes) }
-    else if bytes < 1_048_576 { format!("{:.1} KB", bytes as f64 / 1024.0) }
-    else if bytes < 1_073_741_824 { format!("{:.1} MB", bytes as f64 / 1_048_576.0) }
-    else { format!("{:.2} GB", bytes as f64 / 1_073_741_824.0) }
-}

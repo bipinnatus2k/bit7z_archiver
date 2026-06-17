@@ -1,17 +1,20 @@
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
 use crate::adapters::view_models::preview_vm::PreviewViewModel;
 use crate::adapters::views::archive_browser::ArchiveBrowser;
-use crate::adapters::views::entry_list::EntryList;
+use crate::adapters::views::archive_file_list::ArchiveFileList;
 use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::Toolbar;
 use crate::adapters::views::dialogs::extract::{ExtractDialog, ExtractDialogEvent};
 use crate::adapters::views::dialogs::create::{CreateArchiveDialog, CreateDialogEvent};
+use crate::application::events::ArchiveVmEvent;
+use crate::application::extract::ExtractEntriesUseCase;
 use crate::domain::archive::*;
 use crate::domain::repository::ArchiveRepository;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use std::sync::Arc;
+use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_component::Root;
 
 pub struct RootView {
@@ -19,7 +22,7 @@ pub struct RootView {
     archive_vm: Entity<ArchiveViewModel>,
     preview_vm: Entity<PreviewViewModel>,
     archive_browser: Entity<ArchiveBrowser>,
-    entry_list: Entity<EntryList>,
+    entry_list: Entity<ArchiveFileList>,
     preview_panel: Entity<PreviewPanel>,
     status_bar: Entity<StatusBar>,
     extract_dialog: Option<Entity<ExtractDialog>>,
@@ -35,7 +38,7 @@ impl RootView {
 
             let toolbar = cx.new(|_| Toolbar::new(archive_vm.clone()));
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(archive_vm.clone(), window, cx));
-            let entry_list = cx.new(|_| EntryList { archive_vm: archive_vm.clone() });
+            let entry_list = cx.new(|cx| ArchiveFileList::new(archive_vm.clone(), window, cx));
             let preview_panel = cx.new(|_| PreviewPanel::new(preview_vm.clone()));
             let status_bar = cx.new(|_| StatusBar::new(archive_vm.clone()));
 
@@ -49,6 +52,8 @@ impl RootView {
                         }
                         ArchiveVmEvent::SelectionChanged(None) => {
                             this.preview_vm.update(cx, |vm, cx| vm.clear(cx));
+                            this.entry_list.update(cx, |_, cx| cx.notify());
+                            cx.notify();
                         }
                         ArchiveVmEvent::RequestShowExtract => {
                             let vm = archive_vm.read(cx);
@@ -59,7 +64,6 @@ impl RootView {
                             let handle = vm.archive.clone();
                             drop(vm);
                             if !entries.is_empty() {
-                                let entries_clone = entries.clone();
                             let entries_count = entries.len();
                                 let dialog = cx.new(|_cx| ExtractDialog { entries, destination: String::new(), preserve_paths: true, entries_count });
                                 let repo = repo.clone();
@@ -70,10 +74,9 @@ impl RootView {
                                             cx.notify();
                                         }
                                         ExtractDialogEvent::ExtractRequested { destination, .. } => {
-                                            // Perform extraction
                                             if let Some(ref handle) = handle {
-                                                let indices: Vec<u32> = entries_clone.iter().enumerate().map(|(i, _)| i as u32).collect();
-                                                let _ = repo.extract(handle, &indices, destination);
+                                                let uc = ExtractEntriesUseCase::new(repo.clone());
+                                                let _ = uc.execute(handle, &indices, destination);
                                             }
                                             this.extract_dialog = None;
                                             cx.notify();
@@ -128,26 +131,34 @@ impl RootView {
     }
 }
 
-pub enum ArchiveVmEvent {
-    SelectionChanged(Option<(ArchiveHandle, u32)>),
-    RequestShowExtract,
-    RequestShowCreate,
-    RequestTest,
-}
-
-impl EventEmitter<ArchiveVmEvent> for RootView {}
-
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         gpui_component::v_flex().size_full().relative()
             .child(self.toolbar.clone())
-            .child(gpui_component::h_flex().flex_1()
-                .child(self.archive_browser.clone())
-                .child(gpui_component::v_flex().flex_1()
-                    .child(self.entry_list.clone())
-                    .child(self.preview_panel.clone())
-                )
-            )
+            .child(div().flex_1().child(
+                h_resizable("main-hz")
+                    .child(
+                        resizable_panel()
+                            .size(px(240.))
+                            .size_range(px(150.)..px(500.))
+                            .flex_none()
+                            .child(self.archive_browser.clone())
+                    )
+                    .child(
+                        v_resizable("main-vt")
+                            .child(
+                                resizable_panel()
+                                    .child(self.entry_list.clone())
+                            )
+                            .child(
+                                resizable_panel()
+                                    .size(px(200.))
+                                    .size_range(px(100.)..px(500.))
+                                    .flex_none()
+                                    .child(self.preview_panel.clone())
+                            )
+                    )
+            ))
             .child(self.status_bar.clone())
             .when_some(self.extract_dialog.clone(), |el, dialog| {
                 el.child(
