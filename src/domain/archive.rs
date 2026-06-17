@@ -16,6 +16,8 @@ pub struct ArchiveEntry {
     pub is_symlink: bool,
     pub modified: Option<DateTime<Utc>>,
     pub crc: Option<u32>,
+    /// Original index in the archive (for preview/extraction).
+    pub original_index: u32,
 }
 
 impl ArchiveEntry {
@@ -225,6 +227,7 @@ mod tests {
             is_symlink: false,
             modified: None,
             crc: None,
+            original_index: 0,
         };
         assert_eq!(entry.compression_ratio(), 0.0);
     }
@@ -241,6 +244,7 @@ mod tests {
             is_symlink: false,
             modified: None,
             crc: None,
+            original_index: 0,
         };
         assert_eq!(entry.compression_ratio(), 0.0);
     }
@@ -257,6 +261,7 @@ mod tests {
             is_symlink: false,
             modified: None,
             crc: None,
+            original_index: 0,
         };
         let ratio = entry.compression_ratio();
         assert!((ratio - 0.7).abs() < 0.001, "Expected ~0.7, got {}", ratio);

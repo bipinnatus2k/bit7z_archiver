@@ -46,12 +46,28 @@ inline void bit7z_destroy_library(void* lib) {
 }
 
 // ===== Reader wrappers =====
+
 inline void* bit7z_reader_open(void* lib_ptr, const char* path, const char* password) {
     try {
         auto& lib = *static_cast<bit7z::Bit7zLibrary*>(lib_ptr);
+        std::string p(path ? path : "");
+        auto dot = p.find_last_of('.');
+        std::string ext;
+        if (dot != std::string::npos) {
+            ext = p.substr(dot);
+            for (auto& c : ext) c = (char)tolower(c);
+        }
+        const bit7z::BitInFormat& fmt =
+            (ext == ".zip")  ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Zip) :
+            (ext == ".tar")  ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Tar) :
+            (ext == ".gz" || ext == ".tgz")  ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::GZip) :
+            (ext == ".bz2" || ext == ".tbz") ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::BZip2) :
+            (ext == ".xz"  || ext == ".txz") ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Xz) :
+            (ext == ".wim") ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Wim) :
+            (ext == ".rar") ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Rar) :
+            static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::SevenZip);
         auto* reader = new bit7z::BitArchiveReader(lib,
-            bit7z::tstring(path ? path : ""),
-            bit7z::BitInFormat(0),
+            bit7z::tstring(path ? path : ""), fmt,
             bit7z::tstring(password ? password : ""));
         return static_cast<void*>(reader);
     } catch (...) { return nullptr; }
@@ -151,6 +167,70 @@ inline void* bit7z_reader_extract_item_data(void* reader_ptr, uint32_t index) {
         std::copy(buf.begin(), buf.end(), data);
         return data;
     } catch (...) { return nullptr; }
+}
+
+// ===== Directory listing (opaque handle + accessors) =====
+
+struct ItemList {
+    std::vector<bit7z::BitArchiveItemInfo> items;
+    std::string prefix;
+};
+
+inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
+    try {
+        auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
+        std::string prefix = path ? path : "";
+        std::string pattern = prefix + "*";
+        auto all = reader.itemsMatching(pattern);
+
+        auto* list = new ItemList();
+        list->prefix = prefix;
+        size_t plen = prefix.size();
+
+        for (auto& item : all) {
+            std::string rel = item.path();
+            if (plen > 0) {
+                if (rel.size() <= plen || rel.compare(0, plen, prefix) != 0) continue;
+                rel = rel.substr(plen);
+            }
+            // Only direct children — no '/' after the prefix
+            if (rel.find('/') != std::string::npos) continue;
+            list->items.push_back(std::move(item));
+        }
+        return static_cast<void*>(list);
+    } catch (...) { return nullptr; }
+}
+
+inline uint32_t bit7z_item_list_count(void* list_ptr) {
+    return static_cast<uint32_t>(static_cast<ItemList*>(list_ptr)->items.size());
+}
+
+inline uint32_t bit7z_item_list_index(void* list_ptr, uint32_t index) {
+    return static_cast<ItemList*>(list_ptr)->items[index].index();
+}
+
+inline const char* bit7z_item_list_path(void* list_ptr, uint32_t index) {
+    return static_cast<ItemList*>(list_ptr)->items[index].path().c_str();
+}
+
+inline uint64_t bit7z_item_list_size(void* list_ptr, uint32_t index) {
+    return static_cast<ItemList*>(list_ptr)->items[index].size();
+}
+
+inline uint64_t bit7z_item_list_packed_size(void* list_ptr, uint32_t index) {
+    return static_cast<ItemList*>(list_ptr)->items[index].packSize();
+}
+
+inline int32_t bit7z_item_list_is_dir(void* list_ptr, uint32_t index) {
+    return static_cast<ItemList*>(list_ptr)->items[index].isDir() ? 1 : 0;
+}
+
+inline int32_t bit7z_item_list_is_encrypted(void* list_ptr, uint32_t index) {
+    return static_cast<ItemList*>(list_ptr)->items[index].isEncrypted() ? 1 : 0;
+}
+
+inline void bit7z_item_list_free(void* list_ptr) {
+    delete static_cast<ItemList*>(list_ptr);
 }
 
 // ===== Writer wrappers =====

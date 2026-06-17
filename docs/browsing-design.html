@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'><style>
+body { font-family: system-ui, sans-serif; margin: 30px; background: #1a1a2e; color: #e0e0e0; }
+svg { max-width: 1000px; }
+.box { fill: #16213e; stroke: #0f3460; stroke-width: 2; rx: 8; }
+.box-green { fill: #1a4332; stroke: #2d6a4f; }
+.box-blue { fill: #1a3a5c; stroke: #2980b9; }
+.box-red { fill: #4a1a1a; stroke: #c0392b; }
+.text { fill: #e0e0e0; font-size: 13px; text-anchor: middle; font-family: system-ui; }
+.text-small { fill: #a0a0a0; font-size: 11px; text-anchor: middle; font-family: monospace; }
+.arrow { stroke: #0f3460; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+</style></head>
+<body>
+<h2>Archive Browsing Architecture</h2>
+<svg viewBox='0 0 950 520'>
+  <defs>
+    <marker id='arrowhead' markerWidth='10' markerHeight='7' refX='10' refY='3.5' orient='auto'>
+      <polygon points='0 0, 10 3.5, 0 7' fill='#0f3460' />
+    </marker>
+  </defs>
+
+  <rect x='50' y='50' width='200' height='80' rx='8' class='box' />
+  <text x='150' y='80' class='text' font-weight='bold'>ArchiveFileList</text>
+  <text x='150' y='100' class='text-small'>DataTable (virtual scroll)</text>
+
+  <rect x='350' y='50' width='200' height='80' rx='8' class='box' />
+  <text x='450' y='80' class='text' font-weight='bold'>ArchiveBrowser</text>
+  <text x='450' y='100' class='text-small'>sidebar directory tree</text>
+
+  <rect x='200' y='200' width='450' height='110' rx='8' class='box box-blue' />
+  <text x='425' y='225' class='text' font-weight='bold'>ArchiveViewModel</text>
+  <text x='425' y='248' class='text-small'>current_path: String</text>
+  <text x='425' y='263' class='text-small'>directory_cache: HashMap&lt;String, Vec&lt;LevelEntry&gt;&gt;</text>
+  <text x='425' y='293' class='text-small' fill='#e67e22'>navigate_into(dir) -> list_directory</text>
+
+  <rect x='200' y='370' width='450' height='90' rx='8' class='box box-green' />
+  <text x='425' y='395' class='text' font-weight='bold'>ArchiveRepository (trait)</text>
+  <text x='425' y='415' class='text-small'>list_directory(handle, path) -> Vec&lt;ArchiveEntry&gt;</text>
+  <text x='425' y='435' class='text-small'>wraps itemsMatching(pattern)</text>
+
+  <rect x='200' y='510' width='450' height='80' rx='8' class='box box-red' />
+  <text x='425' y='535' class='text' font-weight='bold'>C++ Bridge (demo.h)</text>
+  <text x='425' y='555' class='text-small'>bit7z_reader_list_directory(reader, pattern)</text>
+  <text x='425' y='575' class='text-small' fill='#e67e22'>NEW: batch read, single FFI call</text>
+
+  <line x1='150' y1='130' x2='150' y2='160' class='arrow' />
+  <line x1='150' y1='160' x2='425' y2='160' class='arrow' />
+  <line x1='425' y1='160' x2='425' y2='200' class='arrow' />
+  <line x1='425' y1='310' x2='425' y2='370' class='arrow' />
+  <line x1='425' y1='460' x2='425' y2='510' class='arrow' />
+</svg>
+
+<h3>Navigation Flow</h3>
+<pre style="background:#16213e; padding:15px; border-radius:8px; font-family:monospace; color:#e0e0e0;">
+1. Open archive
+   -> repo.open(path) -> handle
+   -> repo.get_properties(handle) -> props
+   -> repo.list_directory(handle, "") -> root entries
+   -> VM caches under key ""
+
+2. Navigate into "dir/"
+   -> VM checks cache for key "dir/"
+      MISS -> repo.list_directory(handle, "dir/") -> entries
+      HIT  -> use cached entries
+   -> VM.current_path = "dir/"
+   -> VM.level_entries = sort(filter(entries))
+   -> DataTable renders only visible rows (virtual scroll)
+   -> Sidebar shows subdirectory list
+
+3. Navigate up
+   -> VM.current_path = parent path
+   -> VM.level_entries = cached parent entries
+   -> No additional repo call needed
+
+4. Navigate into another dir
+   -> Repeat step 2
+
+5. Archive closed
+   -> Clear directory_cache
+   -> Close handle
+</pre>
+</body>
+</html>

@@ -9,7 +9,6 @@ pub struct OpenArchiveUseCase {
 
 pub struct OpenArchiveOutput {
     pub handle: ArchiveHandle,
-    pub first_page: Page<ArchiveEntry>,
     pub properties: ArchiveProperties,
 }
 
@@ -25,8 +24,7 @@ impl OpenArchiveUseCase {
     ) -> Result<OpenArchiveOutput, ArchiveError> {
         let handle = self.repo.open(path, password)?;
         let properties = self.repo.get_properties(&handle)?;
-        let first_page = self.repo.list_page(&handle, 0usize, 200usize)?;
-        Ok(OpenArchiveOutput { handle, first_page, properties })
+        Ok(OpenArchiveOutput { handle, properties })
     }
 }
 
@@ -46,7 +44,6 @@ mod tests {
         let result = uc.execute(Path::new("test.7z"), None);
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert_eq!(output.first_page.items.len(), 3);
         assert_eq!(output.properties.items_count, 3);
     }
 
@@ -69,6 +66,7 @@ mod tests {
             fn delete(&self, _: &mut ArchiveHandle, _: &[u32]) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
             fn rename(&self, _: &mut ArchiveHandle, _: u32, _: &str) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
             fn test(&self, _: &ArchiveHandle) -> Result<TestResult, ArchiveError> { Ok(TestResult{total:0, passed:0, failures:vec![]}) }
+            fn list_directory(&self, _: &ArchiveHandle, _: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> { Ok(vec![]) }
             fn close(&self, _: ArchiveHandle) {}
         }
         let uc = crate::application::open::OpenArchiveUseCase::new(Arc::new(NotFoundRepo));

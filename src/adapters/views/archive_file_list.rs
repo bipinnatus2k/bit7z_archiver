@@ -42,7 +42,7 @@ impl TableDelegate for FileTableDelegate {
         let vm = self.archive_vm.read(cx);
         let entries = vm.displayed_entries();
         let selected = entries.get(row_ix)
-            .and_then(|e| e.original_idx)
+            .map(|e| e.original_index as usize)
             .map(|idx| vm.selection.contains(&(idx as u32)))
             .unwrap_or(false);
         let theme = cx.global::<Theme>();

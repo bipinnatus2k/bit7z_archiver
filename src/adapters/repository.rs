@@ -61,6 +61,7 @@ impl ArchiveRepository for Bit7zRepository {
                 size, compressed_size: csize,
                 is_directory: is_dir, is_encrypted: is_enc,
                 is_symlink: false, modified: None, crc: None,
+                original_index: i,
             });
         }
         Ok(Page::new(entries, offset, Some(count as usize)))
@@ -144,6 +145,40 @@ impl ArchiveRepository for Bit7zRepository {
         Err(ArchiveError::UnsupportedOperation)
     }
 
+    fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+        let c_path = std::ffi::CString::new(path)
+            .map_err(|_| ArchiveError::Internal("invalid path string".into()))?;
+        let list = unsafe { crate::ffi::bit7z_reader_list_directory(archive.raw as *mut _, c_path.as_ptr()) };
+        if list.is_null() {
+            return Err(ArchiveError::NotFound(path.into()));
+        }
+        let count = unsafe { crate::ffi::bit7z_item_list_count(list) };
+        let mut entries = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let path = unsafe {
+                let p = crate::ffi::bit7z_item_list_path(list, i);
+                if p.is_null() { String::new() }
+                else { std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned() }
+            };
+            let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+            let orig_idx = unsafe { crate::ffi::bit7z_item_list_index(list, i) };
+            entries.push(ArchiveEntry {
+                name,
+                path,
+                size: unsafe { crate::ffi::bit7z_item_list_size(list, i) },
+                compressed_size: unsafe { crate::ffi::bit7z_item_list_packed_size(list, i) },
+                is_directory: unsafe { crate::ffi::bit7z_item_list_is_dir(list, i) != 0 },
+                is_encrypted: unsafe { crate::ffi::bit7z_item_list_is_encrypted(list, i) != 0 },
+                is_symlink: false,
+                modified: None,
+                crc: None,
+                original_index: orig_idx,
+            });
+        }
+        unsafe { crate::ffi::bit7z_item_list_free(list); }
+        Ok(entries)
+    }
+
     fn close(&self, archive: ArchiveHandle) {
         let raw = archive.raw as usize;
         unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
@@ -198,6 +233,9 @@ mod tests {
         fn close(&self, archive: ArchiveHandle) {
             self.inner.close(archive)
         }
+        fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+            self.inner.list_directory(archive, path)
+        }
     }
 
     #[test]
@@ -234,5 +272,54 @@ mod tests {
         let handle = repo.open(Path::new("test.7z"), None).unwrap();
         let result = repo.extract_to_buffer(&handle, 0);
         assert!(matches!(result, Err(ArchiveError::UnsupportedOperation)));
+    }
+
+    #[test]
+    fn test_list_directory_root_returns_top_level_only() {
+        use crate::domain::repository::test_utils::MockArchiveRepository;
+        let mock = MockArchiveRepository::new(vec![
+            ArchiveEntry { name: "a.txt".into(), path: "a.txt".into(), original_index: 0, ..default_entry() },
+            ArchiveEntry { name: "dir".into(), path: "dir".into(), original_index: 1, is_directory: true, ..default_entry() },
+            ArchiveEntry { name: "inner.txt".into(), path: "dir/inner.txt".into(), original_index: 2, ..default_entry() },
+            ArchiveEntry { name: "b.txt".into(), path: "b.txt".into(), original_index: 3, ..default_entry() },
+        ]);
+        let handle = mock.open(Path::new("t.7z"), None).unwrap();
+        let result = mock.list_directory(&handle, "").unwrap();
+        assert_eq!(result.len(), 3); // a.txt, dir, b.txt — dir/inner.txt is nested
+        assert!(result.iter().any(|e| e.name == "dir" && e.is_directory));
+        assert!(result.iter().any(|e| e.name == "a.txt"));
+        assert!(result.iter().any(|e| e.name == "b.txt"));
+    }
+
+    #[test]
+    fn test_list_directory_subdir_returns_children() {
+        use crate::domain::repository::test_utils::MockArchiveRepository;
+        let mock = MockArchiveRepository::new(vec![
+            ArchiveEntry { name: "inner.txt".into(), path: "dir/inner.txt".into(), original_index: 0, ..default_entry() },
+            ArchiveEntry { name: "deep.txt".into(), path: "dir/sub/deep.txt".into(), original_index: 1, ..default_entry() },
+        ]);
+        let handle = mock.open(Path::new("t.7z"), None).unwrap();
+        let result = mock.list_directory(&handle, "dir/").unwrap();
+        assert_eq!(result.len(), 1); // only inner.txt — deep.txt has another level
+        assert_eq!(result[0].name, "inner.txt");
+    }
+
+    #[test]
+    fn test_list_directory_empty_dir_returns_empty() {
+        use crate::domain::repository::test_utils::MockArchiveRepository;
+        let mock = MockArchiveRepository::new(vec![
+            ArchiveEntry { name: "f.txt".into(), path: "f.txt".into(), original_index: 0, ..default_entry() },
+        ]);
+        let handle = mock.open(Path::new("t.7z"), None).unwrap();
+        let result = mock.list_directory(&handle, "other/").unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    fn default_entry() -> ArchiveEntry {
+        ArchiveEntry {
+            name: String::new(), path: String::new(), size: 0, compressed_size: 0,
+            is_directory: false, is_encrypted: false, is_symlink: false,
+            modified: None, crc: None, original_index: 0,
+        }
     }
 }

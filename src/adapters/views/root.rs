@@ -57,10 +57,8 @@ impl RootView {
                         }
                         ArchiveVmEvent::RequestShowExtract => {
                             let vm = archive_vm.read(cx);
-                            let indices: Vec<u32> = vm.selection.iter().copied().collect();
-                            let entries: Vec<ArchiveEntry> = indices.iter()
-                                .filter_map(|i| vm.entries.get(*i as usize).cloned())
-                                .collect();
+                            let entries: Vec<ArchiveEntry> = vm.selected_entries();
+                            let indices: Vec<u32> = entries.iter().map(|e| e.original_index).collect();
                             let handle = vm.archive.clone();
                             drop(vm);
                             if !entries.is_empty() {

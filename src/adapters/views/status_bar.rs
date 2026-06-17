@@ -16,10 +16,10 @@ impl Render for StatusBar {
         let vm = self.archive_vm.read(cx);
         let status = match &vm.status {
             ViewStatus::Empty => "No archive open".into(),
-            ViewStatus::Loading => format!("Loading page {}...", vm.current_offset / 200 + 1),
+            ViewStatus::Loading => "Loading...".into(),
             ViewStatus::Ready => {
                 let mut parts = vec![];
-                let count = vm.entries.len();
+                let count = vm.level_entries.len();
                 if count > 0 {
                     parts.push(format!("{} entries", count));
                 }

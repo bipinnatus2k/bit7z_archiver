@@ -22,6 +22,11 @@ pub trait ArchiveRepository: Send + Sync {
     fn rename(&self, archive: &mut ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError>;
     fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError>;
     fn close(&self, archive: ArchiveHandle);
+
+    /// List direct children of `path` in the archive.
+    /// `""` (empty string) lists root-level items.
+    /// Returns `NotFound` if the path doesn't exist.
+    fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError>;
 }
 
 /// Domain-level errors for archive operations.
@@ -90,6 +95,7 @@ pub mod test_utils {
                 is_symlink: false,
                 modified: None,
                 crc: None,
+                original_index: i as u32,
             }).collect();
             Self { entries }
         }
@@ -150,6 +156,19 @@ pub mod test_utils {
 
         fn test(&self, _archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
             Ok(TestResult { total: 0, passed: 0, failures: vec![] })
+        }
+
+        fn list_directory(&self, _archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+            let prefix = if path.is_empty() { String::new() } else { path.to_string() };
+            let plen = prefix.len();
+            let result: Vec<ArchiveEntry> = self.entries.iter()
+                .filter(|e| {
+                    if plen == 0 { return e.path.find('/').is_none(); }
+                    e.path.starts_with(&prefix) && e.path[plen..].find('/').is_none()
+                })
+                .cloned()
+                .collect();
+            Ok(result)
         }
 
         fn close(&self, _archive: ArchiveHandle) {}

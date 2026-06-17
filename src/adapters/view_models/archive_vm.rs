@@ -4,17 +4,17 @@ use crate::domain::archive::*;
 use crate::domain::preferences::{Preferences, PreferencesRepoGlobal};
 use crate::domain::repository::*;
 use gpui::{EventEmitter, *};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 
-/// A single item at the current navigation level (file or directory).
-/// Directories are aggregated from multiple underlying entries.
+/// A single item at the current navigation level.
 #[derive(Clone, Debug)]
 pub struct LevelEntry {
     pub display_name: String,
     pub is_directory: bool,
-    pub original_idx: Option<usize>,
+    /// Original archive index (for preview / extraction).
+    pub original_index: u32,
     pub size: u64,
     pub compressed_size: u64,
     pub modified: Option<chrono::DateTime<chrono::Utc>>,
@@ -23,23 +23,17 @@ pub struct LevelEntry {
 
 impl EventEmitter<ArchiveVmEvent> for ArchiveViewModel {}
 
-const PAGE_SIZE: usize = 200;
-const CACHE_PAGES: usize = 3;
-
 pub struct ArchiveViewModel {
     repo: Arc<dyn ArchiveRepository>,
     pub archive: Option<ArchiveHandle>,
     pub properties: Option<ArchiveProperties>,
-    pub entries: VecDeque<ArchiveEntry>,
+    /// Per-directory cache: path -> entries at that level.
+    directory_cache: HashMap<String, Vec<ArchiveEntry>>,
     pub selection: HashSet<u32>,
     pub filter_text: String,
     pub sort_column: u32,
     pub sort_ascending: bool,
     pub status: ViewStatus,
-    pub current_offset: usize,
-    pub total_entries: Option<usize>,
-    /// Pre-computed folder names for the sidebar tree (avoids iterating all entries on render).
-    pub cached_folders: Vec<String>,
     pub level_entries: Vec<LevelEntry>,
     pub current_path: String,
     pub path_history: Vec<String>,
@@ -60,15 +54,12 @@ impl ArchiveViewModel {
             repo,
             archive: None,
             properties: None,
-            entries: VecDeque::new(),
+            directory_cache: HashMap::new(),
             selection: HashSet::new(),
             filter_text: String::new(),
             sort_column: 0,
             sort_ascending: true,
             status: ViewStatus::Empty,
-            current_offset: 0,
-            total_entries: None,
-            cached_folders: Vec::new(),
             level_entries: Vec::new(),
             current_path: String::new(),
             path_history: Vec::new(),
@@ -84,14 +75,12 @@ impl ArchiveViewModel {
     ) {
         self.status = ViewStatus::Loading;
         cx.notify();
-        // Emit immediately to trigger root re-render.
         cx.emit(ArchiveVmEvent::SelectionChanged(None));
 
         let repo = self.repo.clone();
         let path_buf = path.to_path_buf();
         let path_string = path.to_string_lossy().to_string();
 
-        // Use OpenArchiveUseCase for combined open + properties + first page.
         let use_case = OpenArchiveUseCase::new(repo);
         let pw = password.map(Password::new);
         let bg_task = cx.background_spawn(async move {
@@ -105,71 +94,179 @@ impl ArchiveViewModel {
                     Ok(output) => {
                         this.archive = Some(output.handle);
                         this.properties = Some(output.properties);
-                        // OpenArchiveUseCase already loaded the first page.
-                        this.entries = VecDeque::from(output.first_page.items);
-                        this.current_offset = 0;
-                        this.total_entries = output.first_page.total;
-                        this.cached_folders = this.entries.iter()
-                            .filter(|e| e.is_directory)
-                            .map(|e| e.name.clone())
-                            .collect();
+                        this.current_path = String::new();
+                        this.path_history.clear();
+                        this.directory_cache.clear();
+                        // Save recent files
                         let mut prefs = cx.global::<Preferences>().clone();
                         prefs.archive.add_recent(path_string);
                         cx.set_global(prefs);
                         if let Err(e) = cx.global::<PreferencesRepoGlobal>().0.save(&cx.global::<Preferences>()) {
                             log::warn!("Failed to persist preferences: {}", e);
                         }
-                        this.current_path = String::new();
-                        this.path_history.clear();
-                        this.re_filter();
-                        this.status = ViewStatus::Ready;
-                        cx.emit(ArchiveVmEvent::SelectionChanged(None));
+                        // Load root directory
+                        this.load_current_directory(cx);
                     }
                     Err(e) => {
                         this.status = ViewStatus::Error(e.to_string());
+                        cx.notify();
                     }
                 }
+            });
+        }).detach();
+    }
+
+    /// Ensure entries for the current path are loaded, then filter/sort.
+    fn load_current_directory(&mut self, cx: &mut Context<Self>) {
+        let key = self.current_path.clone();
+        if let Some(entries) = self.directory_cache.get(&key) {
+            let snapshot: Vec<ArchiveEntry> = entries.clone();
+            self.status = ViewStatus::Ready;
+            self.apply_filter_and_sort(&snapshot);
+            cx.emit(ArchiveVmEvent::SelectionChanged(None));
+            cx.notify();
+            return;
+        }
+
+        // Cache miss — load from repository
+        self.status = ViewStatus::Loading;
+        cx.notify();
+
+        let repo = self.repo.clone();
+        let handle = self.archive.clone().expect("no open archive");
+        let path = self.current_path.clone();
+
+        let bg_task = cx.background_spawn(async move {
+            repo.list_directory(&handle, &path)
+        });
+
+        let key2 = key.clone();
+        cx.spawn(async move |this, cx| {
+            let result = bg_task.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(mut entries) => {
+                        // Sort directory entries: folders first, then alphabetical
+                        entries.sort_by(|a, b| {
+                            if a.is_directory != b.is_directory {
+                                return b.is_directory.cmp(&a.is_directory);
+                            }
+                            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+                        });
+                        this.directory_cache.insert(key2, entries);
+                        if let Some(cached) = this.directory_cache.get(&this.current_path) {
+                            let snapshot: Vec<ArchiveEntry> = cached.clone();
+                            this.status = ViewStatus::Ready;
+                            this.apply_filter_and_sort(&snapshot);
+                        }
+                    }
+                    Err(e) => {
+                        // Navigate back on failure
+                        this.navigate_up_internal();
+                        this.status = ViewStatus::Error(e.to_string());
+                    }
+                }
+                cx.emit(ArchiveVmEvent::SelectionChanged(None));
                 cx.notify();
             });
         }).detach();
     }
 
-    pub fn load_page(&mut self, offset: usize, cx: &mut Context<Self>) {
-        if let Some(ref archive) = self.archive {
-            let repo = self.repo.clone();
-            let handle = archive.clone();
+    /// Apply current filter and sort to a set of directory entries.
+    fn apply_filter_and_sort(&mut self, entries: &[ArchiveEntry]) {
+        let filter_lower = self.filter_text.to_lowercase();
+        let mut items: Vec<LevelEntry> = Vec::new();
 
-            // Run blocking FFI on a background thread.
-            let bg_task = cx.background_spawn(async move {
-                repo.list_page(&handle, offset, PAGE_SIZE)
+        for entry in entries {
+            if !self.filter_text.is_empty()
+                && !entry.path.to_lowercase().contains(&filter_lower)
+            {
+                continue;
+            }
+
+            items.push(LevelEntry {
+                display_name: entry.name.clone(),
+                is_directory: entry.is_directory,
+                original_index: entry.original_index,
+                size: entry.size,
+                compressed_size: entry.compressed_size,
+                modified: entry.modified,
             });
+        }
 
-            cx.spawn(async move |this, cx| {
-                let page = bg_task.await;
-                let _ = this.update(cx, |this, cx| {
-                    match page {
-                        Ok(p) => {
-                            this.entries.extend(p.items);
-                            this.current_offset = offset;
-                            this.total_entries = p.total;
-                            while this.entries.len() > PAGE_SIZE * CACHE_PAGES {
-                                this.entries.pop_front();
-                            }
-                            // Rebuild folder cache (avoids iterating all entries on render).
-                            this.cached_folders = this.entries.iter()
-                                .filter(|e| e.is_directory)
-                                .map(|e| e.name.clone())
-                                .collect();
-                            this.re_filter();
-                            this.status = ViewStatus::Ready;
-                        }
-                        Err(e) => {
-                            this.status = ViewStatus::Error(e.to_string());
-                        }
-                    }
-                    cx.notify();
-                });
-            }).detach();
+        items.sort_by(|a, b| {
+            if a.is_directory != b.is_directory {
+                return if self.sort_ascending { b.is_directory.cmp(&a.is_directory) } else { a.is_directory.cmp(&b.is_directory) };
+            }
+            let c = match self.sort_column {
+                1 => a.size.cmp(&b.size),
+                2 => a.compressed_size.cmp(&b.compressed_size),
+                3 => Self::ratio_key(a).cmp(&Self::ratio_key(b)),
+                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
+            };
+            if self.sort_ascending { c } else { c.reverse() }
+        });
+        self.level_entries = items;
+    }
+
+    fn ratio_key(e: &LevelEntry) -> u64 {
+        if e.size == 0 { 0 }
+        else { ((1.0 - e.compressed_size as f64 / e.size as f64) * 10000.0) as u64 }
+    }
+
+    // Helper: pop history without triggering load
+    fn navigate_up_internal(&mut self) {
+        if let Some(prev) = self.path_history.pop() {
+            self.current_path = prev;
+        } else {
+            self.current_path = String::new();
+        }
+    }
+
+    pub fn navigate_into(&mut self, dir_name: &str, cx: &mut Context<Self>) {
+        self.path_history.push(self.current_path.clone());
+        self.current_path = if self.current_path.is_empty() {
+            format!("{}/", dir_name)
+        } else {
+            format!("{}{}/", self.current_path, dir_name)
+        };
+        self.selection.clear();
+        self.selection_anchor = None;
+        self.load_current_directory(cx);
+    }
+
+    pub fn navigate_up(&mut self, cx: &mut Context<Self>) {
+        if !self.path_history.is_empty() {
+            self.current_path = self.path_history.pop().unwrap();
+            self.selection.clear();
+            self.selection_anchor = None;
+            self.load_current_directory(cx);
+        }
+    }
+
+    pub fn navigate_root(&mut self, cx: &mut Context<Self>) {
+        self.path_history.clear();
+        self.current_path = String::new();
+        self.selection.clear();
+        self.selection_anchor = None;
+        self.load_current_directory(cx);
+    }
+
+    pub fn handle_level_click(&mut self, level_idx: usize, modifiers: &Modifiers, cx: &mut Context<Self>) {
+        if let Some(entry) = self.level_entries.get(level_idx) {
+            if entry.is_directory {
+                let name = entry.display_name.clone();
+                self.navigate_into(&name, cx);
+            } else {
+                self.update_selection(entry.original_index, modifiers);
+                if let Some(archive) = &self.archive {
+                    let first = self.selection.iter().next().copied();
+                    cx.emit(ArchiveVmEvent::SelectionChanged(
+                        first.map(|idx| (archive.clone(), idx)),
+                    ));
+                }
+                cx.notify();
+            }
         }
     }
 
@@ -218,6 +315,12 @@ impl ArchiveViewModel {
         cx.notify();
     }
 
+    fn reapply_filter_and_sort(&mut self) {
+        let snapshot = self.directory_cache.get(&self.current_path)
+            .cloned().unwrap_or_default();
+        self.apply_filter_and_sort(&snapshot);
+    }
+
     pub fn sort_by(&mut self, column: u32, cx: &mut Context<Self>) {
         if self.sort_column == column {
             self.sort_ascending = !self.sort_ascending;
@@ -225,166 +328,38 @@ impl ArchiveViewModel {
             self.sort_column = column;
             self.sort_ascending = true;
         }
-        let asc = self.sort_ascending;
-        let slice = self.entries.make_contiguous();
-        slice.sort_by(|a, b| {
-            let cmp = match column {
-                1 => a.size.cmp(&b.size),
-                2 => a.compressed_size.cmp(&b.compressed_size),
-                3 => ((a.compression_ratio() * 100.0) as u64)
-                     .cmp(&((b.compression_ratio() * 100.0) as u64)),
-                _ => a.name.cmp(&b.name),
-            };
-            if asc { cmp } else { cmp.reverse() }
-        });
-        self.re_filter();
+        self.reapply_filter_and_sort();
         cx.notify();
+    }
+
+    pub fn apply_sort(&mut self, column: u32, ascending: bool) {
+        self.sort_column = column;
+        self.sort_ascending = ascending;
+        self.reapply_filter_and_sort();
     }
 
     pub fn set_filter(&mut self, text: &str, cx: &mut Context<Self>) {
         self.filter_text = text.to_string();
         self.selection.clear();
         self.selection_anchor = None;
-        self.re_filter();
+        self.reapply_filter_and_sort();
         cx.notify();
     }
 
-    /// Compute entries visible at the current navigation level.
-    fn compute_level_entries(&self) -> Vec<LevelEntry> {
-        let mut items: Vec<LevelEntry> = Vec::new();
-        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let filter_lower = self.filter_text.to_lowercase();
-
-        for (idx, entry) in self.entries.iter().enumerate() {
-            if !self.filter_text.is_empty()
-                && !entry.path.to_lowercase().contains(&filter_lower)
-            {
-                continue;
-            }
-
-            let rel = if self.current_path.is_empty() {
-                &entry.path
-            } else {
-                if !entry.path.starts_with(&self.current_path) {
-                    continue;
-                }
-                &entry.path[self.current_path.len()..]
-            };
-            if rel.is_empty() { continue; }
-
-            let slash = rel.find('/');
-            let (name, has_deeper) = match slash {
-                Some(p) => (&rel[..p], true),
-                None => (rel, false),
-            };
-            if name.is_empty() || !seen.insert(name.to_string()) { continue; }
-
-            if has_deeper || entry.is_directory {
-                items.push(LevelEntry {
-                    display_name: name.to_string(),
-                    is_directory: true,
-                    original_idx: None,
-                    size: 0,
-                    compressed_size: 0,
-                    modified: None,
-                });
-            } else {
-                items.push(LevelEntry {
-                    display_name: name.to_string(),
-                    is_directory: false,
-                    original_idx: Some(idx),
-                    size: entry.size,
-                    compressed_size: entry.compressed_size,
-                    modified: entry.modified,
-                });
-            }
-        }
-
-        items.sort_by(|a, b| {
-            if a.is_directory != b.is_directory {
-                return if self.sort_ascending { b.is_directory.cmp(&a.is_directory) } else { a.is_directory.cmp(&b.is_directory) };
-            }
-            let c = a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase());
-            if self.sort_ascending { c } else { c.reverse() }
-        });
-        items
+    /// Cached subdirectories for the current path (sidebar).
+    pub fn current_subdirs(&self) -> Vec<String> {
+        self.directory_cache.get(&self.current_path)
+            .map(|entries| {
+                let mut dirs: Vec<String> = entries.iter()
+                    .filter(|e| e.is_directory)
+                    .map(|e| e.name.clone())
+                    .collect();
+                dirs.sort();
+                dirs
+            })
+            .unwrap_or_default()
     }
 
-    fn re_filter(&mut self) {
-        self.level_entries = self.compute_level_entries();
-    }
-
-    /// Apply sort state from DataTable and re-sort entries.
-    pub fn apply_sort(&mut self, column: u32, ascending: bool) {
-        self.sort_column = column;
-        self.sort_ascending = ascending;
-        let asc = ascending;
-        let slice = self.entries.make_contiguous();
-        slice.sort_by(|a, b| {
-            let cmp = match column {
-                1 => a.size.cmp(&b.size),
-                2 => a.compressed_size.cmp(&b.compressed_size),
-                3 => ((a.compression_ratio() * 100.0) as u64)
-                     .cmp(&((b.compression_ratio() * 100.0) as u64)),
-                _ => a.name.cmp(&b.name),
-            };
-            if asc { cmp } else { cmp.reverse() }
-        });
-        self.re_filter();
-    }
-
-    pub fn navigate_into(&mut self, dir_name: &str, cx: &mut Context<Self>) {
-        self.path_history.push(self.current_path.clone());
-        self.current_path = if self.current_path.is_empty() {
-            format!("{}/", dir_name)
-        } else {
-            format!("{}{}/", self.current_path, dir_name)
-        };
-        self.selection.clear();
-        self.selection_anchor = None;
-        self.re_filter();
-        cx.emit(ArchiveVmEvent::SelectionChanged(None));
-    }
-
-    pub fn navigate_up(&mut self, cx: &mut Context<Self>) {
-        if let Some(prev) = self.path_history.pop() {
-            self.current_path = prev;
-            self.selection.clear();
-            self.selection_anchor = None;
-            self.re_filter();
-            cx.emit(ArchiveVmEvent::SelectionChanged(None));
-        }
-    }
-
-    pub fn navigate_root(&mut self, cx: &mut Context<Self>) {
-        self.path_history.clear();
-        self.current_path = String::new();
-        self.selection.clear();
-        self.selection_anchor = None;
-        self.re_filter();
-        cx.emit(ArchiveVmEvent::SelectionChanged(None));
-    }
-
-    pub fn handle_level_click(&mut self, level_idx: usize, modifiers: &Modifiers, cx: &mut Context<Self>) {
-        if let Some(entry) = self.level_entries.get(level_idx) {
-            if entry.is_directory {
-                let name = entry.display_name.clone();
-                self.navigate_into(&name, cx);
-                cx.notify();
-            } else if let Some(orig_idx) = entry.original_idx {
-                self.update_selection(orig_idx as u32, modifiers);
-                if let Some(archive) = &self.archive {
-                    let first = self.selection.iter().next().copied();
-                    cx.emit(ArchiveVmEvent::SelectionChanged(
-                        first.map(|idx| (archive.clone(), idx)),
-                    ));
-                }
-                cx.notify();
-            }
-        }
-    }
-
-    /// Return entries at the current navigation level.
     pub fn displayed_entries(&self) -> &[LevelEntry] {
         &self.level_entries
     }
@@ -405,16 +380,24 @@ impl ArchiveViewModel {
         }
     }
 
-    /// Build tree_entries by parsing entry.path into directory hierarchy.
+    /// Collect ArchiveEntry for all selected (original) indices.
+    pub fn selected_entries(&self) -> Vec<ArchiveEntry> {
+        if self.selection.is_empty() { return vec![]; }
+        self.directory_cache.values()
+            .flat_map(|entries| entries.iter())
+            .filter(|e| self.selection.contains(&e.original_index))
+            .cloned()
+            .collect()
+    }
+
     pub fn close(&mut self, cx: &mut Context<Self>) {
         if let Some(archive) = self.archive.take() {
             self.repo.close(archive);
         }
-        self.entries.clear();
+        self.directory_cache.clear();
         self.selection.clear();
         self.selection_anchor = None;
         self.filter_text.clear();
-        self.cached_folders.clear();
         self.level_entries.clear();
         self.current_path.clear();
         self.path_history.clear();

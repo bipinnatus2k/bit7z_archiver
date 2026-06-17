@@ -24,6 +24,17 @@ include_cpp! {
     generate!("bit7z_reader_extract_item_size")
     generate!("bit7z_reader_extract_item_data")
     generate!("bit7z_reader_free_buffer")
+
+    // Directory listing (opaque handle)
+    generate!("bit7z_reader_list_directory")
+    generate!("bit7z_item_list_count")
+    generate!("bit7z_item_list_index")
+    generate!("bit7z_item_list_path")
+    generate!("bit7z_item_list_size")
+    generate!("bit7z_item_list_packed_size")
+    generate!("bit7z_item_list_is_dir")
+    generate!("bit7z_item_list_is_encrypted")
+    generate!("bit7z_item_list_free")
 }
 
 pub use ffi::*;

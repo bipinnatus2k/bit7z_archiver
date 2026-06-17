@@ -46,9 +46,9 @@ impl Render for ArchiveBrowser {
         gpui_component::v_flex().w(px(240.)).p_2().gap_2()
             // Filter input (always visible)
             .child(Input::new(&self.input_state))
-            // Folder tree using pre-computed cache
+            // Folder tree — current path's subdirectories
             .child(gpui_component::v_flex().text_sm().children(
-                vm.cached_folders.iter().map(|name|
+                vm.current_subdirs().iter().map(|name|
                     div().px_2().py_1().cursor_pointer().child(format!("\u{1F4C1} {}", name))
                 ).collect::<Vec<_>>()
             ))
