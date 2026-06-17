@@ -173,6 +173,7 @@ inline void* bit7z_reader_extract_item_data(void* reader_ptr, uint32_t index) {
 
 struct ItemList {
     std::vector<bit7z::BitArchiveItemInfo> items;
+    std::vector<std::string> paths;  // cached path strings (path() returns by value)
     std::string prefix;
 };
 
@@ -180,22 +181,31 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
     try {
         auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
         std::string prefix = path ? path : "";
-        std::string pattern = prefix + "*";
-        auto all = reader.itemsMatching(pattern);
+        size_t plen = prefix.size();
 
         auto* list = new ItemList();
         list->prefix = prefix;
-        size_t plen = prefix.size();
+        uint32_t total = reader.itemsCount();
 
-        for (auto& item : all) {
-            std::string rel = item.path();
-            if (plen > 0) {
-                if (rel.size() <= plen || rel.compare(0, plen, prefix) != 0) continue;
-                rel = rel.substr(plen);
+        for (uint32_t i = 0; i < total; ++i) {
+            auto itemOffset = reader.itemAt(i);
+            std::string itemPath = itemOffset.path();
+            std::string rel;
+            if (plen == 0) {
+                rel = itemPath;
+            } else {
+                if (itemPath.size() <= plen || itemPath.compare(0, plen, prefix) != 0) continue;
+                rel = itemPath.substr(plen);
             }
-            // Only direct children — no '/' after the prefix
-            if (rel.find('/') != std::string::npos) continue;
-            list->items.push_back(std::move(item));
+            // Direct children only — no '/' after stripping prefix.
+            // Allow trailing '/' for directory entries.
+            auto slashPos = rel.find('/');
+            if (rel.empty()) continue;
+            if (slashPos != std::string::npos && slashPos != rel.size() - 1) continue;
+            // Build full BitArchiveItemInfo for accessors
+            bit7z::BitArchiveItemInfo info(itemOffset);
+            list->paths.push_back(itemPath);
+            list->items.push_back(std::move(info));
         }
         return static_cast<void*>(list);
     } catch (...) { return nullptr; }
@@ -210,7 +220,7 @@ inline uint32_t bit7z_item_list_index(void* list_ptr, uint32_t index) {
 }
 
 inline const char* bit7z_item_list_path(void* list_ptr, uint32_t index) {
-    return static_cast<ItemList*>(list_ptr)->items[index].path().c_str();
+    return static_cast<ItemList*>(list_ptr)->paths[index].c_str();
 }
 
 inline uint64_t bit7z_item_list_size(void* list_ptr, uint32_t index) {
