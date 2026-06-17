@@ -183,29 +183,24 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
         std::string prefix = path ? path : "";
         size_t plen = prefix.size();
 
+        // Build wildcard: prefix + "*"
+        // 7-Zip's * matches everything except the path separator '/',
+        // so itemsMatching("dir/*") returns only items directly under dir/,
+        // and itemsMatching("*") returns only root-level items.
+        std::string pattern = prefix + "*";
+        auto matched = reader.itemsMatching(pattern);
+
         auto* list = new ItemList();
         list->prefix = prefix;
-        uint32_t total = reader.itemsCount();
 
-        for (uint32_t i = 0; i < total; ++i) {
-            auto itemOffset = reader.itemAt(i);
-            std::string itemPath = itemOffset.path();
-            std::string rel;
-            if (plen == 0) {
-                rel = itemPath;
-            } else {
-                if (itemPath.size() <= plen || itemPath.compare(0, plen, prefix) != 0) continue;
-                rel = itemPath.substr(plen);
-            }
-            // Direct children only — no '/' after stripping prefix.
-            // Allow trailing '/' for directory entries.
-            auto slashPos = rel.find('/');
-            if (rel.empty()) continue;
-            if (slashPos != std::string::npos && slashPos != rel.size() - 1) continue;
-            // Build full BitArchiveItemInfo for accessors
-            bit7z::BitArchiveItemInfo info(itemOffset);
+        for (auto& item : matched) {
+            std::string itemPath = item.path();
+            // The pattern already filters by prefix — just verify no deeper '/' exists.
+            // But directory entries may have a trailing '/' (e.g. "subdir/") — allow that.
+            auto slashPos = itemPath.find('/', plen);
+            if (slashPos != std::string::npos && slashPos != itemPath.size() - 1) continue;
             list->paths.push_back(itemPath);
-            list->items.push_back(std::move(info));
+            list->items.push_back(std::move(item));
         }
         return static_cast<void*>(list);
     } catch (...) { return nullptr; }
