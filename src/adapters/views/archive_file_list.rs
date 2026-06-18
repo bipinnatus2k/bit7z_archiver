@@ -3,28 +3,12 @@ use crate::adapters::views::components::state_view::{empty_view, error_view, loa
 use crate::theme::Theme;
 use gpui::*;
 use gpui::prelude::FluentBuilder as _;
+use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_component::table::{Column as TableColumn, ColumnSort, DataTable, TableDelegate, TableState};
 use humansize::{format_size, BINARY};
-use std::rc::Rc;
-
-#[derive(Clone)]
-struct ContextMenuEntry {
-    label: &'static str,
-    action: ContextMenuAction,
-}
-
-#[derive(Clone, Copy)]
-enum ContextMenuAction {
-    Extract,
-    Preview,
-    Refresh,
-    SelectAll,
-    ClearSelection,
-}
 
 struct FileTableDelegate {
     archive_vm: Entity<ArchiveViewModel>,
-    parent_list: Option<Entity<ArchiveFileList>>,
 }
 
 impl TableDelegate for FileTableDelegate {
@@ -65,8 +49,7 @@ impl TableDelegate for FileTableDelegate {
         drop(vm);
 
         let avm = self.archive_vm.clone();
-        let avm2 = self.archive_vm.clone();
-        let parent = self.parent_list.clone();
+        let avm_r = self.archive_vm.clone();
         div().id(("row", row_ix))
             .cursor_pointer()
             .when(selected, |d| d.bg(theme.selection))
@@ -75,16 +58,13 @@ impl TableDelegate for FileTableDelegate {
                 avm.update(cx, |vm, cx| vm.handle_level_click(row_ix, &event.modifiers, cx));
             })
             .on_mouse_down(MouseButton::Right, move |_: &MouseDownEvent, _window: &mut Window, cx: &mut App| {
-                avm2.update(cx, |vm, cx| {
+                avm_r.update(cx, |vm, cx| {
                     if let Some(entry) = vm.level_entries.get(row_ix) {
                         if !vm.selection.contains(&entry.original_index) {
                             vm.select(row_ix as u32, &Modifiers::none(), cx);
                         }
                     }
                 });
-                if let Some(ref parent) = parent {
-                    parent.update(cx, |list, cx| list.show_context_menu(0.0, 0.0, cx));
-                }
             })
     }
 
@@ -126,80 +106,17 @@ impl TableDelegate for FileTableDelegate {
 pub struct ArchiveFileList {
     pub archive_vm: Entity<ArchiveViewModel>,
     table_state: Entity<TableState<FileTableDelegate>>,
-    context_menu: Option<ContextMenu>,
-}
-
-struct ContextMenu {
-    x: f32,
-    y: f32,
-    entries: Vec<ContextMenuEntry>,
 }
 
 impl ArchiveFileList {
     pub fn new(archive_vm: Entity<ArchiveViewModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let delegate = FileTableDelegate { archive_vm: archive_vm.clone(), parent_list: None };
+        let delegate = FileTableDelegate { archive_vm: archive_vm.clone() };
         let table_state = cx.new(|cx| {
             TableState::new(delegate, window, cx)
                 .row_selectable(false)
                 .cell_selectable(false)
         });
-        let self_entity = cx.entity();
-        table_state.update(cx, |state, _cx| {
-            state.delegate_mut().parent_list = Some(self_entity);
-        });
-        Self { archive_vm, table_state, context_menu: None }
-    }
-
-    fn show_context_menu(&mut self, x: f32, y: f32, cx: &mut Context<Self>) {
-        let vm = self.archive_vm.read(cx);
-        let has_selection = !vm.selection.is_empty();
-        let is_ready = matches!(vm.status, ViewStatus::Ready);
-        let has_any_selected = !vm.selection.is_empty();
-        drop(vm);
-
-        let mut entries = Vec::new();
-        if has_selection {
-            entries.push(ContextMenuEntry { label: "Extract...", action: ContextMenuAction::Extract });
-            entries.push(ContextMenuEntry { label: "Preview", action: ContextMenuAction::Preview });
-        }
-        if is_ready {
-            entries.push(ContextMenuEntry { label: "Refresh", action: ContextMenuAction::Refresh });
-        }
-        entries.push(ContextMenuEntry { label: "Select All", action: ContextMenuAction::SelectAll });
-        if has_any_selected {
-            entries.push(ContextMenuEntry { label: "Clear Selection", action: ContextMenuAction::ClearSelection });
-        }
-
-        if !entries.is_empty() {
-            self.context_menu = Some(ContextMenu { x, y, entries });
-            cx.notify();
-        }
-    }
-
-    fn hide_context_menu(&mut self, cx: &mut Context<Self>) {
-        self.context_menu = None;
-        cx.notify();
-    }
-
-    fn handle_context_action(&mut self, action: ContextMenuAction, cx: &mut Context<Self>) {
-        match action {
-            ContextMenuAction::Extract => {
-                self.archive_vm.update(cx, |vm, cx| vm.request_extract(cx));
-            }
-            ContextMenuAction::Preview => {
-                // Preview is auto-loaded via SelectionChanged event, just ensure something is selected
-            }
-            ContextMenuAction::Refresh => {
-                self.archive_vm.update(cx, |vm, cx| vm.refresh(cx));
-            }
-            ContextMenuAction::SelectAll => {
-                self.archive_vm.update(cx, |vm, cx| vm.select_all(cx));
-            }
-            ContextMenuAction::ClearSelection => {
-                self.archive_vm.update(cx, |vm, cx| vm.clear_selection(cx));
-            }
-        }
-        self.hide_context_menu(cx);
+        Self { archive_vm, table_state }
     }
 }
 
@@ -213,7 +130,7 @@ impl Render for ArchiveFileList {
             .border_b_1()
             .border_color(theme.border);
 
-        let content = match &vm.status {
+        match &vm.status {
             ViewStatus::Empty => {
                 base.child(empty_view(cx, "Open an archive to browse its contents"))
             }
@@ -224,7 +141,6 @@ impl Render for ArchiveFileList {
                 base.child(error_view(cx, msg))
             }
             ViewStatus::Ready => {
-                let entries = vm.displayed_entries();
                 let is_root = vm.current_path.is_empty();
                 let path_str = vm.current_path.trim_end_matches('/').to_string();
                 let archive_vm = self.archive_vm.clone();
@@ -248,51 +164,56 @@ impl Render for ArchiveFileList {
                         );
                 }
 
-                // Refresh TableState to sync with current VM state
                 let table_entity = self.table_state.clone();
+                let avm = archive_vm.clone();
                 container.child(
                     div().flex_1().child(DataTable::new(&table_entity).stripe(false).bordered(false))
+                        .id("entry-table-area")
+                        .context_menu(move |menu, _window, cx| {
+                            let current_vm = avm.read(cx);
+                            let has_selection = !current_vm.selection.is_empty();
+                            let is_ready = matches!(current_vm.status, ViewStatus::Ready);
+                            drop(current_vm);
+
+                            let mut m = menu;
+                            let vm_extract = avm.clone();
+                            if has_selection {
+                                m = m.item(
+                                    PopupMenuItem::new("Extract...")
+                                        .on_click(move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                            vm_extract.update(cx, |vm, cx| vm.request_extract(cx));
+                                        })
+                                );
+                            }
+                            let vm_refresh = avm.clone();
+                            if is_ready {
+                                m = m.item(
+                                    PopupMenuItem::new("Refresh")
+                                        .on_click(move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                            vm_refresh.update(cx, |vm, cx| vm.refresh(cx));
+                                        })
+                                );
+                            }
+                            let vm_all = avm.clone();
+                            m = m.item(
+                                PopupMenuItem::new("Select All")
+                                    .on_click(move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                        vm_all.update(cx, |vm, cx| vm.select_all(cx));
+                                    })
+                            );
+                            let vm_clear = avm.clone();
+                            if has_selection {
+                                m = m.item(
+                                    PopupMenuItem::new("Clear Selection")
+                                        .on_click(move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                            vm_clear.update(cx, |vm, cx| vm.clear_selection(cx));
+                                        })
+                                );
+                            }
+                            m
+                        })
                 )
             }
-        };
-
-        // Context menu overlay
-        if let Some(ref ctx_menu) = self.context_menu {
-            let theme = cx.global::<Theme>();
-            let entries = ctx_menu.entries.clone();
-            let this = cx.entity();
-            let this_bg = this.clone();
-            div().relative().size_full().child(content)
-                .child(
-                    div().absolute().size_full().top(px(0.)).left(px(0.))
-                        .bg(hsla(0., 0., 0., 0.05))
-                        .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-                            this_bg.update(cx, |list, cx| list.hide_context_menu(cx));
-                        })
-                        .child(
-                            div().absolute().top(px(ctx_menu.y)).left(px(ctx_menu.x))
-                                .bg(theme.surface)
-                                .border_1()
-                                .border_color(theme.border)
-                                .rounded_md()
-                                .min_w(px(160.))
-                                .py_1()
-                                .child(
-                                    div().flex().flex_col()
-                                        .children(entries.into_iter().map(move |entry| {
-                                            let this = this.clone();
-                                            div().px_3().py_1().text_sm().cursor_pointer()
-                                                .hover(|s| s.bg(theme.hover))
-                                                .child(entry.label)
-                                                .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-                                                    this.clone().update(cx, |list, cx| list.handle_context_action(entry.action, cx));
-                                                })
-                                        }))
-                                )
-                        )
-                )
-        } else {
-            content
         }
     }
 }
