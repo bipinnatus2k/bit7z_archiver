@@ -96,6 +96,8 @@ impl ArchiveFormat {
 pub struct ArchiveHandle {
     pub(crate) raw: *mut std::ffi::c_void,
     pub(crate) is_writer: bool,
+    pub(crate) path: Option<PathBuf>,
+    pub(crate) format: Option<ArchiveFormat>,
 }
 
 // SAFETY: ArchiveHandle is only accessed from the main GPUI thread.
@@ -104,11 +106,26 @@ unsafe impl Sync for ArchiveHandle {}
 
 impl ArchiveHandle {
     pub fn new_reader(raw: *mut std::ffi::c_void) -> Self {
-        Self { raw, is_writer: false }
+        Self { raw, is_writer: false, path: None, format: None }
     }
 
     pub fn new_writer(raw: *mut std::ffi::c_void) -> Self {
-        Self { raw, is_writer: true }
+        Self { raw, is_writer: true, path: None, format: None }
+    }
+
+    pub fn with_path(mut self, path: PathBuf) -> Self {
+        self.path = Some(path);
+        self
+    }
+
+    pub fn with_format(mut self, format: ArchiveFormat) -> Self {
+        self.format = Some(format);
+        self
+    }
+
+    pub fn with_format_opt(mut self, format: Option<ArchiveFormat>) -> Self {
+        self.format = format;
+        self
     }
 }
 
@@ -163,6 +180,10 @@ impl Password {
 
     pub fn as_str(&self) -> &str {
         self.0.expose_secret()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.expose_secret().is_empty()
     }
 }
 

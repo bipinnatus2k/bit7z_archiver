@@ -169,6 +169,61 @@ inline void* bit7z_reader_extract_item_data(void* reader_ptr, uint32_t index) {
     } catch (...) { return nullptr; }
 }
 
+// ===== Test archive integrity =====
+
+struct TestResult {
+    bool all_ok;
+    uint32_t total;
+    uint32_t failed_count;
+    std::vector<std::string> failed_paths;
+    std::vector<std::string> failed_errors;
+};
+
+inline void* bit7z_reader_test(void* reader_ptr) {
+    try {
+        auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
+        reader.test();  // throws BitException if any item fails
+        // If no exception, all items passed
+        auto* result = new TestResult();
+        result->all_ok = true;
+        result->total = reader.itemsCount();
+        result->failed_count = 0;
+        return static_cast<void*>(result);
+    } catch (const bit7z::BitException& e) {
+        auto* result = new TestResult();
+        result->all_ok = false;
+        result->total = 0;
+        result->failed_count = 1;
+        result->failed_paths.push_back("");
+        result->failed_errors.push_back(e.what());
+        return static_cast<void*>(result);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+inline uint32_t bit7z_test_result_total(void* result_ptr) {
+    return static_cast<TestResult*>(result_ptr)->total;
+}
+
+inline uint32_t bit7z_test_result_failed_count(void* result_ptr) {
+    return static_cast<TestResult*>(result_ptr)->failed_count;
+}
+
+inline int32_t bit7z_test_result_all_ok(void* result_ptr) {
+    return static_cast<TestResult*>(result_ptr)->all_ok ? 1 : 0;
+}
+
+inline const char* bit7z_test_result_error(void* result_ptr) {
+    auto* r = static_cast<TestResult*>(result_ptr);
+    if (r->failed_errors.empty()) return "";
+    return r->failed_errors[0].c_str();
+}
+
+inline void bit7z_test_result_free(void* result_ptr) {
+    delete static_cast<TestResult*>(result_ptr);
+}
+
 // ===== Directory listing (opaque handle + accessors) =====
 
 struct ItemList {
@@ -185,11 +240,10 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
 
         auto* list = new ItemList();
         list->prefix = prefix;
-        uint32_t total = reader.itemsCount();
 
-        for (uint32_t i = 0; i < total; ++i) {
-            auto offset = reader.itemAt(i);
-            std::string itemPath = offset.path();
+        // Sequential scan via ConstIterator (faster than random-access itemAt)
+        for (auto it = reader.begin(); it != reader.end(); ++it) {
+            std::string itemPath = (*it).path();
             // Normalise \ to / (bit7z may return Windows backslashes)
             for (auto& c : itemPath) if (c == '\\') c = '/';
 
@@ -206,7 +260,7 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
             if (slashPos != std::string::npos && slashPos != tail.size() - 1) continue;
 
             // Passes filter — build full info for accessors
-            bit7z::BitArchiveItemInfo info(offset);
+            bit7z::BitArchiveItemInfo info(*it);
             list->paths.push_back(itemPath);
             list->items.push_back(std::move(info));
         }

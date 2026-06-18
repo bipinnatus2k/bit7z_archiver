@@ -35,6 +35,14 @@ include_cpp! {
     generate!("bit7z_item_list_is_dir")
     generate!("bit7z_item_list_is_encrypted")
     generate!("bit7z_item_list_free")
+
+    // Test archive integrity
+    generate!("bit7z_reader_test")
+    generate!("bit7z_test_result_total")
+    generate!("bit7z_test_result_failed_count")
+    generate!("bit7z_test_result_all_ok")
+    generate!("bit7z_test_result_error")
+    generate!("bit7z_test_result_free")
 }
 
 pub use ffi::*;

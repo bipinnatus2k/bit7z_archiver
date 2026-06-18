@@ -19,19 +19,63 @@ impl Bit7zRepository {
 }
 
 impl ArchiveRepository for Bit7zRepository {
-        fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
+    fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
         let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal("Non-UTF-8 path".into()))?;
         let reader = bit7z::ArchiveReader::open(&lib, path_str, password)
             .map_err(|e| ArchiveError::Internal(e))?;
         let raw_handle = reader.into_raw();
-        Ok(ArchiveHandle::new_reader(raw_handle as *mut std::ffi::c_void))
+
+        // Detect format from extension
+        let format = path.extension().and_then(|ext| {
+            let ext = ext.to_string_lossy().to_lowercase();
+            match ext.as_str() {
+                "7z" => Some(ArchiveFormat::SevenZip),
+                "zip" => Some(ArchiveFormat::Zip),
+                "tar" => Some(ArchiveFormat::Tar),
+                "gz" | "tgz" => Some(ArchiveFormat::TarGz),
+                "bz2" | "tbz" | "tbz2" => Some(ArchiveFormat::TarBz2),
+                "xz" | "txz" => Some(ArchiveFormat::TarXz),
+                "rar" => Some(ArchiveFormat::Rar),
+                _ => None,
+            }
+        });
+
+        Ok(ArchiveHandle::new_reader(raw_handle as *mut std::ffi::c_void)
+            .with_path(path.to_path_buf())
+            .with_format_opt(format))
     }
 
-    fn create(&self, _path: &Path, _format: ArchiveFormat,
-              _encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
-        Err(ArchiveError::UnsupportedOperation)
+    fn create(&self, path: &Path, format: ArchiveFormat,
+              encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
+        let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let path_str = path.to_str()
+            .ok_or_else(|| ArchiveError::Internal("Non-UTF-8 path".into()))?;
+
+        let writer_format = match format {
+            ArchiveFormat::SevenZip => bit7z::WriterFormat::SevenZip,
+            ArchiveFormat::Zip => bit7z::WriterFormat::Zip,
+            ArchiveFormat::Tar => bit7z::WriterFormat::Tar,
+            ArchiveFormat::TarGz => bit7z::WriterFormat::GZip,
+            ArchiveFormat::TarBz2 => bit7z::WriterFormat::BZip2,
+            ArchiveFormat::TarXz => bit7z::WriterFormat::Xz,
+            ArchiveFormat::Rar => return Err(ArchiveError::UnsupportedOperation),
+        };
+
+        let password = encryption.map(|e| e.password.as_str());
+        let writer = bit7z::Writer::create(&lib, writer_format)
+            .map_err(|e| ArchiveError::Internal(e))?;
+
+        // Set encryption if provided
+        if let Some(enc) = encryption {
+            if !enc.password.is_empty() {
+                writer.set_password(&enc.password);
+            }
+        }
+
+        let raw_handle = writer.into_raw();
+        Ok(ArchiveHandle::new_writer(raw_handle as *mut std::ffi::c_void))
     }
 
     fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize)

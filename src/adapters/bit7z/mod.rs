@@ -132,6 +132,24 @@ impl ArchiveReader {
     pub unsafe fn from_raw(raw: Handle) -> Self {
         Self { raw }
     }
+
+    /// Test archive integrity. Returns (all_ok, total, failed_count, error_message).
+    pub fn test(&self) -> Result<(bool, u32, u32, String), String> {
+        let result = unsafe { bit7z_reader_test(self.raw as *mut _) };
+        if result.is_null() {
+            return Err("Test failed".into());
+        }
+        let all_ok = unsafe { bit7z_test_result_all_ok(result) } != 0;
+        let total = unsafe { bit7z_test_result_total(result) };
+        let failed_count = unsafe { bit7z_test_result_failed_count(result) };
+        let error = unsafe {
+            let ptr = bit7z_test_result_error(result);
+            if ptr.is_null() { String::new() }
+            else { CStr::from_ptr(ptr).to_string_lossy().into_owned() }
+        };
+        unsafe { bit7z_test_result_free(result); }
+        Ok((all_ok, total, failed_count, error))
+    }
 }
 
 impl Drop for ArchiveReader {
@@ -210,6 +228,14 @@ extern "C" {
     fn bit7z_editor_rename(e: *mut std::ffi::c_void, index: u32, new_path: *const std::ffi::c_char) -> i32;
     fn bit7z_editor_delete(e: *mut std::ffi::c_void, index: u32) -> i32;
     fn bit7z_editor_apply(e: *mut std::ffi::c_void) -> i32;
+
+    // Test archive integrity
+    fn bit7z_reader_test(reader: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    fn bit7z_test_result_total(result: *mut std::ffi::c_void) -> u32;
+    fn bit7z_test_result_failed_count(result: *mut std::ffi::c_void) -> u32;
+    fn bit7z_test_result_all_ok(result: *mut std::ffi::c_void) -> i32;
+    fn bit7z_test_result_error(result: *mut std::ffi::c_void) -> *const std::ffi::c_char;
+    fn bit7z_test_result_free(result: *mut std::ffi::c_void);
 }
 
 // ============================================================================
@@ -339,6 +365,13 @@ impl Writer {
             on_file,
         );
         if ret == 0 { Ok(()) } else { Err("compress_to failed or cancelled".into()) }
+    }
+
+    /// Take ownership of the raw handle (prevents Drop from closing).
+    pub fn into_raw(self) -> Handle {
+        let h = self.raw;
+        std::mem::forget(self);
+        h
     }
 }
 
