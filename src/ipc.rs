@@ -38,7 +38,7 @@ pub enum WorkerMessage {
 pub enum ParentMessage {
     #[serde(rename = "conflict_resolution")]
     ConflictResolution {
-        action: String,  // "overwrite" | "skip" | "rename"
+        action: String,
         #[serde(default)]
         new_name: Option<String>,
         #[serde(default)]
@@ -46,4 +46,14 @@ pub enum ParentMessage {
     },
     #[serde(rename = "cancel")]
     Cancel,
+}
+
+/// Commands sent from CLI to an existing GUI instance.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum GuiCommand {
+    #[serde(rename = "open")]
+    Open { path: String, password: Option<String> },
+    #[serde(rename = "activate")]
+    Activate,
 }

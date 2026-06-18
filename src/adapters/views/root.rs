@@ -16,6 +16,7 @@ use crate::domain::repository::ArchiveRepository;
 use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use std::path::Path;
 use std::sync::Arc;
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_component::Root;
@@ -34,7 +35,7 @@ pub struct RootView {
 }
 
 impl RootView {
-    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(window: &mut Window, cx: &mut App, open_path: Option<String>, open_password: Option<String>) -> Entity<Self> {
         cx.new(|cx| {
             let repo = cx.global::<crate::domain::repository::RepoGlobal>().0.clone();
             let archive_vm = cx.new(|cx| ArchiveViewModel::new(cx));
@@ -45,6 +46,15 @@ impl RootView {
             let entry_list = cx.new(|cx| ArchiveFileList::new(archive_vm.clone(), window, cx));
             let preview_panel = cx.new(|_| PreviewPanel::new(preview_vm.clone()));
             let status_bar = cx.new(|_| StatusBar::new(archive_vm.clone()));
+
+            // Auto-open archive if provided (CLI handoff)
+            if let Some(path) = open_path {
+                let vm = archive_vm.clone();
+                let pw = open_password.clone();
+                vm.update(cx, |vm, cx| {
+                    vm.open_archive(Path::new(&path), pw, cx);
+                });
+            }
 
             cx.subscribe::<ArchiveViewModel, ArchiveVmEvent>(&archive_vm, {
                 let archive_vm = archive_vm.clone();

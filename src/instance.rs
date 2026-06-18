@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 #[derive(Debug)]
 pub enum InstanceError { AlreadyOpen, Internal(String) }
 
-fn path_key(path: &Path) -> String {
+pub fn path_key(path: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     path.hash(&mut hasher);
     format!("bit7z_{:016x}", hasher.finish())

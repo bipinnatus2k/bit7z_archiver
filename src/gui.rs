@@ -8,10 +8,15 @@ use crate::adapters::platform;
 use crate::adapters::tray::{TrayManager, TrayGlobal};
 use crate::domain::preferences::{PreferencesRepoGlobal, PreferencesRepository, ThemeMode};
 use crate::adapters::views::root::RootView;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub fn run_gui() {
-    gpui_platform::application().run(|cx: &mut App| {
+    run_gui_with_path(None, None);
+}
+
+pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<String>) {
+    gpui_platform::application().run(move |cx: &mut App| {
         gpui_component::init(cx);
         let prefs_repo = crate::adapters::preferences_json::JsonPreferencesRepository::new();
         let prefs = prefs_repo.load().unwrap_or_default();
@@ -28,9 +33,33 @@ pub fn run_gui() {
         let tray = Arc::new(TrayManager::new());
 
         cx.set_global(prefs);
-        cx.set_global(RepoGlobal(repo));
+        cx.set_global(RepoGlobal(repo.clone()));
         cx.set_global(PreferencesRepoGlobal(Arc::new(prefs_repo)));
         cx.set_global(TrayGlobal(tray));
+
+        // Start IPC listener for CLI→GUI handoff
+        if let Some(ref open_path) = open_path {
+            crate::ipc_connect::start_listener(open_path.as_ref(), {
+                let repo = repo.clone();
+                move |cmd| {
+                    use crate::ipc::GuiCommand;
+                    match cmd {
+                        GuiCommand::Open { path, password } => {
+                            let repo = repo.clone();
+                            // Dispatch to the opened window via global
+                            // The actual open happens through the ViewModel in RootView
+                            log::info!("IPC open: {} (password: {:?})", path, password.is_some());
+                        }
+                        GuiCommand::Activate => {
+                            log::info!("IPC activate");
+                        }
+                    }
+                }
+            });
+        }
+
+        let open_path = open_path.clone();
+        let open_password = open_password.clone();
 
         cx.spawn(async move |cx| {
             cx.open_window(
@@ -47,7 +76,7 @@ pub fn run_gui() {
                     let theme = Theme::from_mode(prefs.ui.theme, window);
                     cx.set_global(theme);
 
-                    let view = RootView::new(window, cx);
+                    let view = RootView::new(window, cx, open_path.map(|p| p.to_string_lossy().to_string()), open_password);
                     cx.new(|cx| Root::new(view, window, cx))
                 })
                 .expect("Failed to open window")
