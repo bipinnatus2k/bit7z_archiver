@@ -35,6 +35,27 @@ All required C++ bridge methods already exist (`bit7z_editor_*`, `bit7z_reader_t
 | `rename(&Handle, index, name)` | Open `Editor`, call `editor.rename(idx, name)` preserving directory portion, `editor.apply()` |
 | `add(&Handle, paths)` | Open archive in update mode via `Writer`, call `bit7z_writer_add_files(paths)`, compress |
 
+#### New C wrapper functions needed (for properties, detailed in 4.9/4.10)
+
+bit7z exposes 96 properties via `BitProperty` enum. Our `demo.h` currently wraps only 7. For properties windows we need:
+
+| C wrapper | bit7z source | Purpose |
+|---|---|---|
+| `bit7z_item_mtime()` | `BitArchiveItem::lastWriteTime()` | Modified timestamp — all formats |
+| `bit7z_item_ctime()` | `BitArchiveItem::creationTime()` | Creation time — NTFS, 7z, some tar |
+| `bit7z_item_atime()` | `BitArchiveItem::lastAccessTime()` | Access time — NTFS, 7z |
+| `bit7z_item_attributes()` | `BitArchiveItem::attributes()` | Windows file attributes |
+| `bit7z_item_host_os()` | `itemProperty(HostOS)` | Host OS code |
+| `bit7z_item_compression_method()` | `itemProperty(Method)` | Compression algorithm name |
+| `bit7z_item_comment()` | `itemProperty(Comment)` | Per-item comment text |
+| `bit7z_item_user()` | `itemProperty(User)` | Owner user (tar, 7z Unix) |
+| `bit7z_item_group()` | `itemProperty(Group)` | Owner group (tar, 7z Unix) |
+| `bit7z_item_is_symlink()` | `BitArchiveItem::isSymLink()` | Symlink flag |
+| `bit7z_item_posix_attrib()` | `itemProperty(PosixAttrib)` | POSIX file mode (tar, 7z) |
+| `bit7z_item_extension()` | `BitArchiveItem::extension()` | File extension |
+
+Existing `bit7z_item_crc()` is already in `demo.h` but repository code hardcodes `crc: None` — just needs to be called.
+
 ### 1.2 Compress CLI
 
 Replaces the placeholder that prints "pending". Flow:
@@ -55,7 +76,39 @@ Format defaults to `.7z` when not specified.
 
 **File dialogs:** Replace `#[cfg(not(windows))]` stubs in `platform.rs` that return `None`. Use the cross-platform `rfd` crate for `pick_archive_file()` and `pick_folder()`.
 
-### 1.4 Interface Changes
+#### Domain struct changes
+
+Existing `ArchiveEntry` has dead fields (`is_symlink`, `modified`, `crc` hardcoded). New fields added:
+
+```rust
+struct ArchiveEntry {
+    name: String,
+    path: String,
+    size: u64,
+    compressed_size: u64,
+    is_directory: bool,
+    original_index: u32,
+    // Now populated (were dead)
+    is_symlink: bool,
+    modified: Option<DateTime<Utc>>,
+    crc: Option<u32>,
+    // New fields
+    created: Option<DateTime<Utc>>,
+    accessed: Option<DateTime<Utc>>,
+    attributes: Option<u32>,
+    posix_attrib: Option<u32>,
+    host_os: Option<u8>,
+    compression_method: Option<String>,
+    comment: Option<String>,
+    user: Option<String>,
+    group: Option<String>,
+    is_encrypted: bool,
+}
+```
+
+All new fields are `Option` — different formats provide different subsets. 7z provides nearly everything. Zip provides crc, modified, encryption, attributes (but creation/access times depend on Zip version; PKZip 2.04g only stores modified). Tar provides uid/gid (via user/group), posix_attrib, symlink. RAR provides crc, modified, host_os, encryption.
+
+### 1.4 Trait Interface Changes
 
 `ArchiveRepository` trait adds one method:
 
@@ -105,11 +158,16 @@ All long-running operations share a common progress channel.
 
 ```rust
 struct ProgressUpdate {
-    current: u64,          // items processed
-    total: u64,            // total items
-    bytes_processed: u64,
+    // Per-file (top bar)
+    file_current: u64,
+    file_total: u64,
     current_file: Option<String>,
-    error: Option<String>, // non-None on fatal error
+    // Overall (bottom bar)
+    items_done: u64,
+    items_total: u64,
+    bytes_done: u64,
+    bytes_total: u64,
+    error: Option<String>,
 }
 ```
 
@@ -169,10 +227,15 @@ struct ProgressState {
     is_active: bool,
     is_complete: bool,
     error_message: Option<String>,
-    current: u64,
-    total: u64,
-    bytes_processed: u64,
+    // Per-file
+    file_current: u64,
+    file_total: u64,
     current_file: Option<String>,
+    // Overall
+    items_done: u64,
+    items_total: u64,
+    bytes_done: u64,
+    bytes_total: u64,
 }
 
 impl Global for ProgressState {}
@@ -252,22 +315,45 @@ Refresh
 
 ### 4.5 Progress Window
 
-Opened automatically when any long operation starts. Closed on completion, error, or cancel.
+Opened automatically when any long operation starts. Closed on completion, error, or cancel. **Two progress bars** — per-file and overall:
 
 ```
-┌─────────────────────────────────────┐
-│ Extracting — archive.7z             │
-├─────────────────────────────────────┤
-│ ████████████░░░░░░░░░░░░  42%       │
-│ Current: documents/report.pdf       │
-│ 67/156 files · 5.8/14.2 MB          │
-│                          [Cancel]   │
-└─────────────────────────────────────┘
+┌────────────────────────────────────────┐
+│ Extracting — archive.7z                │
+├────────────────────────────────────────┤
+│ File:  ████████████████████  100%      │
+│        documents/report.pdf            │
+│                                        │
+│ Total: ████████░░░░░░░░░░░░   42%      │
+│        67 / 156 files                  │
+│        5.8 MB / 14.2 MB                │
+│                             [Cancel]   │
+└────────────────────────────────────────┘
+```
+
+**Top bar (per-file):** Resets to 0% for each new file. Shows current file name. Useful for large individual files where per-file progress matters.
+
+**Bottom bar (overall):** Monotonic — counts files processed / total. Shows aggregate byte progress.
+
+ProgressUpdate struct adjusted:
+```rust
+struct ProgressUpdate {
+    // Per-file (top bar)
+    file_current: u64,          // bytes processed in current file
+    file_total: u64,            // total bytes of current file
+    current_file: Option<String>,
+    // Overall (bottom bar)
+    items_done: u64,
+    items_total: u64,
+    bytes_done: u64,
+    bytes_total: u64,
+    error: Option<String>,
+}
 ```
 
 Progress flow:
 1. Button click → create channel `(tx, rx)` → `ProgressState::start(rx)` → `cx.open_window(ProgressDialog)` → spawn repo thread with `tx`
-2. Thread sends `ProgressUpdate` messages periodically → ProgressState updates → dialog re-renders
+2. Thread sends `ProgressUpdate` messages periodically → ProgressState updates → dialog re-renders both bars
 3. Thread ends → `tx` dropped → rx closes → `ProgressState::complete()` → dialog shows "Done" → Close button appears
 4. Cancel → sends cancel signal to worker thread (reuse existing cancel mechanism)
 
@@ -348,39 +434,73 @@ New repository method: `get_archive_properties(handle) -> ArchiveProperties`. Mo
 
 Triggered via **File → Properties** (with entries selected) or right-click → Properties or Alt+Enter.
 
-**Multiple entries selected** — aggregate totals + collapsible list:
+Properties are grouped into **categories**. Only categories that have at least one non-empty value are shown. This naturally handles format-specific differences (e.g., tar shows uid/gid, zip may not have creation time).
+
+#### Single entry — full detail:
+
 ```
-┌─────────────────────────────────────────┐
-│ Properties — Selected (3 items)         │
-├─────────────────────────────────────────┤
-│ Size:    2.4 MB                         │
-│ Packed:  1.8 MB                         │
-│ Files:   3                              │
-│ ▶ Entries                               │
-│                              [Close]     │
-└─────────────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│ Properties — report.pdf                   │
+├───────────────────────────────────────────┤
+│ General                                   │
+│   Name:      report.pdf                   │
+│   Type:      PDF Document                 │
+│   Path:      Documents\report.pdf         │
+│   Size:      1.2 MB (1,257,472 bytes)     │
+│   Packed:    850 KB (870,400 bytes)       │
+│   Ratio:     70%                          │
+│   CRC32:     A3F7C21B                     │
+│                                           │
+│ Time                                      │
+│   Modified:  2026-06-15 09:30             │
+│   Created:   2026-06-15 09:28            │ ← hidden on old Zip
+│   Accessed:  2026-06-19 14:00            │ ← hidden on old Zip
+│                                           │
+│ Platform                                  │
+│   Host OS:   Windows (0)                 │
+│   Attributes:0x00000020 (Archive)         │ ← Windows only
+│   POSIX:     0o644 (-rw-r--r--)          │ ← tar / 7z Unix only
+│   Owner:     alice                        │ ← tar / 7z Unix only
+│   Group:     users                        │ ← tar / 7z Unix only
+│                                           │
+│ Security                                  │
+│   Encrypted: No                           │
+│                                           │
+│ Technical                                 │
+│   Method:    LZMA2                        │
+│   Symlink:   —                            │ ← shown if symlink
+│   Comment:   —                            │ ← shown if has comment
+│                                [Close]     │
+└───────────────────────────────────────────┘
 ```
 
-**Single entry** — full detail:
+#### Category visibility rules:
+
+| Category | Shown when... |
+|---|---|
+| **General** | Always |
+| **Time** | Any of modified/created/accessed is non-None. Zip v2.0 only stores modified — created/accessed rows are hidden |
+| **Platform** | At least one of host_os, attributes, posix_attrib, user, group is non-None. Tar and 7z-on-Unix show POSIX/user/group. Zip/7z-on-Windows show attributes. RAR shows host_os |
+| **Security** | Always (shows encryption status) |
+| **Technical** | At least one of method, symlink, comment is non-None |
+
+#### Multiple entries selected:
+
+Aggregate totals (sum of sizes) + collapsed entry list. The collapsed list shows each entry with its own per-format properties in a DataTable — entries that have a given property show it; entries that don't leave the cell blank. Columns: Name, Size, Packed, Ratio, CRC, Modified, Encryption. The table auto-hides columns where no selected entry has that property.
+
 ```
-┌─────────────────────────────────────────┐
-│ Properties — report.pdf                 │
-├─────────────────────────────────────────┤
-│ Name:      report.pdf                   │
-│ Type:      PDF Document                 │
-│ Path:      Documents\report.pdf         │
-│ Size:      1.2 MB (1,257,472)           │
-│ Packed:    850 KB (870,400)             │
-│ Ratio:     70%                          │
-│ CRC32:     A3F7C21B                     │
-│ Modified:  2026-06-15 09:30             │
-│ Host OS:   Windows                      │
-│ Encrypted: No                           │
-│                              [Close]     │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ Properties — Selected (3 items)           │
+├──────────────────────────────────────────┤
+│ Size:    2.4 MB                           │
+│ Packed:  1.8 MB                           │
+│ Files:   3                                │
+│ ▶ Entries                                 │
+│                              [Close]      │
+└──────────────────────────────────────────┘
 ```
 
-Per-entry data already available on `ArchiveEntry` — no new FFI needed. Multi-select aggregates from existing entry data.
+Per-entry data already available on `ArchiveEntry` — uses the new fields from L1.1. Multi-select aggregates from existing entry data.
 
 ---
 
@@ -443,14 +563,16 @@ Checked into `tests/fixtures/`:
 | In Scope (This Spec) | Out of Scope (Future Specs) |
 |---|---|
 | Settings window wired | Themes / skins |
-| Progress for all operations | Taskbar progress bar, CLI progress output |
+| Progress for all operations (dual bar) | Taskbar progress bar, CLI progress output |
 | Menu bar with all menus | Menu bar customization |
-| Properties (archive + entries) | Comment editing |
+| Properties (archive + entries) with format-specific categories | Comment editing |
 | Add Files dialog with update mode | Include/exclude file masks |
 | Create dialog with format + compression level | Multi-volume, solid/thread/dictionary config beyond basic toggle |
-| Test entries (all + selected) | Recover / repair archive |
+| Test entries (all + selected, single entry + directory) | Recover / repair archive |
 | Context menu expanded | Send To / 7-zip submenu |
 | Compress CLI | CLI progress, list archives to stdout |
 | Linux tray (basic D-Bus) + file dialogs (rfd) | Two-panel mode, macOS support |
 | Add/Delete/Rename/Test in repository | Archive conversion, batch ops, SFX, benchmarking |
+| 12 new C wrapper functions for entry properties (mtime, ctime, atime, attributes, host_os, method, comment, user, group, symlink, posix_attrib, extension) | All 96 BitProperty values |
+| CRC, modified, created, accessed, symlink populated on ArchiveEntry | — |
 | — | Flat view, thumbnails, file type icons, drag & drop, address bar, favorites panel, wizard mode |
