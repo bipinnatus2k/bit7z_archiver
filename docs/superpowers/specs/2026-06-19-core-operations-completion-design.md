@@ -72,7 +72,11 @@ Format defaults to `.7z` when not specified.
 
 ### 1.3 Linux Platform
 
-**Tray icon:** Replace sleep-loop stub with real D-Bus `StatusNotifierItem` using the `zbus` crate. Register icon, show context menu (Open/Exit), respond to Activate signal (restore window).
+**Tray icon:** Replace sleep-loop stub with real D-Bus `StatusNotifierItem` using the `zbus` crate. Register icon, show context menu (Open/Exit), respond to Activate signal (restore window). Additionally:
+- During active operations (extract, compress, test, add), the tray icon **tooltip** updates to show progress: `"bit7z — Extracting 42%"` or `"bit7z — Compressing 58%"`
+- On operation completion while minimized to tray: show a brief notification (OS toast or balloon tooltip) with result: `"Extraction complete — 156 files extracted"`
+- On error: notification shows error summary
+- Left-click always restores the main window. If a progress operation is running, left-click restores the progress window instead.
 
 **File dialogs:** Replace `#[cfg(not(windows))]` stubs in `platform.rs` that return `None`. Use the cross-platform `rfd` crate for `pick_archive_file()` and `pick_folder()`.
 
@@ -379,9 +383,11 @@ Opened automatically when any long operation starts. Closed on completion, error
 │ Total: ████████░░░░░░░░░░░░   42%      │
 │        67 / 156 files                  │
 │        5.8 MB / 14.2 MB                │
-│                     [Pause]  [Cancel]  │
+│          [Hide]  [Pause]  [Cancel]     │
 └────────────────────────────────────────┘
 ```
+
+**Hide to Tray:** The `[Hide]` button minimizes the progress window to the system tray. The window closes visually but the operation continues in background. The tray icon updates to show overall percentage as its icon tooltip: "bit7z — Extracting 42%". On operation completion, the tray icon shows a completion notification. Left-clicking the tray icon restores the progress window.
 
 **Pause/Resume:** The progress window has a Pause button. On click:
 1. Sends a pause signal to the worker thread (reuse existing `pause` mechanism from `worker.rs` → `AtomicBool`)
