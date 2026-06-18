@@ -433,29 +433,87 @@ Replace static text placeholders:
 ### 4.8 Add Files Dialog (New Window)
 
 ```
-┌──────────────────────────────────────┐
-│ Add Files — archive.7z               │
-├──────────────────────────────────────┤
-│ Files:  [+ Add files] [+ Add folder]│
-│ ┌──────────────────────────────────┐ │
-│ │ Documents\report.pdf             │ │
-│ │ Images\photo.jpg                 │ │
-│ └──────────────────────────────────┘ │
-│                                       │
-│ Update mode: [Add & replace ▾]       │
-│ Compression: [Normal ▾]              │
-│ Password: [···············]          │
-│                                       │
-│ ── Advanced (collapsed) ──           │
-│                                       │
-│                 [Cancel]  [OK]       │
-└──────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ Add Files — archive.7z                   │
+├──────────────────────────────────────────┤
+│ Source                                   │
+│  [+ Add files] [+ Add folder]           │
+│ ┌──────────────────────────────────────┐ │
+│ │ C:\Users\...\documents\              │ │ ← directory added
+│ │   filter: [*.pdf;*.txt      ]        │ │ ← wildcard filter
+│ │   [✓] Recurse subdirectories         │ │
+│ │   policy: [Include ▾]                │ │ ← Include / Exclude
+│ └──────────────────────────────────────┘ │
+│                                          │
+│ Archive path prefix: [docs/      ]      │ ← optional custom path prefix
+│                                          │
+│ Update mode                              │
+│  [Add & replace files ▾]                │ ← Append / Update
+│                                          │
+│ Compression                              │
+│  Level:  [──●────────────] Normal       │ ← slider 0-5
+│  Method: [LZMA2 ▾]                      │ ← format-dependent options
+│                                          │
+│ ── Advanced (collapsed) ──              │
+│   Dictionary: [64 MB ▾]                 │ ← 7z: 64KB-1536MB
+│   Word size: [273 ▾]                    │ ← LZMA/LZMA2
+│   [ ] Solid archive                     │ ← 7z only: shown for 7z
+│   Split to volumes: [         ] MB      │ ← 0 = no split
+│   Threads:  [4              ]           │
+│   [✓] Store modified timestamps         │
+│   [ ] Store creation timestamps         │
+│   [ ] Store access timestamps           │
+│                                          │
+│ Encryption                               │
+│  Password:    [················]        │
+│  Confirm:     [················]        │
+│  [ ] Encrypt file names (7z only)       │ ← EncryptionScope: DataAndHeaders
+│                                          │
+│                    [Cancel]  [OK]       │
+└──────────────────────────────────────────┘
 ```
 
-- [+ Add files] opens `pick_archive_file()` (multi-select)
-- [+ Add folder] opens `pick_folder()`
-- Update mode: Add & replace, Add & update (newer only), Freshen (existing only)
-- Compression/password override the archive defaults
+**Controls behavior (format-dependent):**
+
+| Control | 7z | Zip | Tar | GZip/BZip2/Xz |
+|---|---|---|---|---|
+| Compression Level | All 6 levels | All 6 | N/A (hidden) | All 6 |
+| Method dropdown | LZMA2, LZMA, PPMd, BZip2, Copy | Deflate, Deflate64, BZip2, LZMA, PPMd, Copy | Copy only (hidden) | Depends on format |
+| Dictionary size | 64KB–1536MB (shown for LZMA/LZMA2) | Hidden | Hidden | Hidden |
+| Word size | Shown for LZMA/LZMA2 | Hidden | Hidden | Hidden |
+| Solid archive | Shown ✓ | Hidden | Hidden | Hidden |
+| Split to volumes | Shown ✓ | Shown ✓ | Hidden | Hidden |
+| Encrypt file names | Shown ✓ (DataAndHeaders) | Hidden (Zip cannot encrypt names) | Hidden | Hidden |
+
+**Update mode:**
+| Mode | Behavior |
+|---|---|
+| Add & replace (Append) | Add new files, leave existing files unchanged (no overwrite) |
+| Add & update (Update) | Overwrite files with matching paths, append new ones |
+
+**Source types:**
+- `[+ Add files]`: multi-select file picker → adds individual file paths
+- `[+ Add folder]`: folder picker → adds directory with wildcard filter (e.g., `*.pdf;*.txt`)
+  - Default filter: `*` (all files)
+  - Default policy: Include. Switching to Exclude inverts (add all EXCEPT matching)
+  - Recurse checkbox: default on
+- Archive path prefix: prepends a virtual directory to all added files (e.g., `docs/` → files appear under `docs/` inside archive)
+
+**New C wrapper functions needed** (to expose bit7z settings not yet in demo.h):
+
+| C wrapper | bit7z source |
+|---|---|
+| `bit7z_writer_set_compression_method(writer, method: int)` | `setCompressionMethod()` |
+| `bit7z_writer_set_dictionary_size(writer, bytes: uint32_t)` | `setDictionarySize()` |
+| `bit7z_writer_set_word_size(writer, bytes: uint32_t)` | `setWordSize()` |
+| `bit7z_writer_set_solid_mode(writer, solid: bool)` | `setSolidMode()` |
+| `bit7z_writer_set_volume_size(writer, bytes: uint64_t)` | `setVolumeSize()` |
+| `bit7z_writer_set_encryption_scope(writer, scope: int)` | `setPassword(pwd, EncryptionScope)` — overload |
+| `bit7z_writer_add_dir_filtered(writer, dir, filter, policy: int, recursive: bool)` | `addFiles(dir, filter, policy, recursive)` |
+| `bit7z_writer_add_items(writer, paths, archive_paths, count)` | `addItems(vector<pair<fsPath, archivePath>>)` |
+| `bit7z_writer_set_store_timestamps(writer, modified, created, accessed: bool)` | Three setters |
+
+**Safe Rust wrapper changes:** New `Writer` methods matching the above. `WriterCompressionMethod` enum: `Copy=0, Deflate=1, Deflate64=2, BZip2=3, Lzma=4, Lzma2=5, Ppmd=6`. `EncryptionScope` enum: `DataOnly=0, DataAndHeaders=1`.
 
 ### 4.9 Properties Window — Archive (New Window)
 
@@ -633,6 +691,7 @@ Checked into `tests/fixtures/`:
 | Compress CLI | CLI progress, list archives to stdout |
 | Linux tray (basic D-Bus) + file dialogs (rfd) | Two-panel mode, macOS support |
 | Add/Delete/Rename/Test in repository | Archive conversion, batch ops, SFX, benchmarking |
-| 12 new C wrapper functions for entry properties (mtime, ctime, atime, attributes, host_os, method, comment, user, group, symlink, posix_attrib, extension) | All 96 BitProperty values |
+| 12 entry property C wrappers (mtime, ctime, atime, attributes, host_os, method, comment, user, group, symlink, posix_attrib, extension) | All 96 BitProperty values |
+| 9 writer-setting C wrappers (method, dictionary, word, solid, volume, encryption_scope, dir_filtered, add_items, store_timestamps) | RetainDirectories, retry, format-specific advanced |
 | CRC, modified, created, accessed, symlink populated on ArchiveEntry | — |
 | — | Flat view, thumbnails, file type icons, drag & drop, address bar, favorites panel, wizard mode |
