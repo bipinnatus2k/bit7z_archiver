@@ -9,3 +9,4 @@ openspec/
 cargo.log
 AGENTS.md
 bit7z-bridge/
+.superpowers/
