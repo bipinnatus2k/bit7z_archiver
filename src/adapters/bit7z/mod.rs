@@ -215,6 +215,39 @@ impl ArchiveReader {
         );
         if ret == 0 { Ok(()) } else { Err("extraction failed or cancelled".into()) }
     }
+
+    /// Extract all items with per-file rename/skip/overwrite via RenameCallback.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn extract_with_rename(
+        &self,
+        dest: &str,
+        ctx: *mut std::ffi::c_void,
+        on_rename: Option<unsafe extern "C" fn(*const std::ffi::c_char, u64, i32, *mut std::ffi::c_char, u32, *mut std::ffi::c_void) -> i32>,
+        on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
+        on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
+    ) -> Result<(), String> {
+        let c_dest = std::ffi::CString::new(dest).map_err(|e| format!("{}", e))?;
+        let ret = bit7z_reader_extract_with_rename_c(
+            self.raw as *mut std::ffi::c_void,
+            c_dest.as_ptr(),
+            ctx,
+            on_rename,
+            on_progress,
+            on_file,
+        );
+        if ret == 0 { Ok(()) } else { Err("extraction failed or cancelled".into()) }
+    }
+}
+
+extern "C" {
+    fn bit7z_reader_extract_with_rename_c(
+        reader: *mut std::ffi::c_void,
+        dest: *const std::ffi::c_char,
+        ctx: *mut std::ffi::c_void,
+        on_rename: Option<unsafe extern "C" fn(*const std::ffi::c_char, u64, i32, *mut std::ffi::c_char, u32, *mut std::ffi::c_void) -> i32>,
+        on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
+        on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
+    ) -> i32;
 }
 
 // ============================================================================

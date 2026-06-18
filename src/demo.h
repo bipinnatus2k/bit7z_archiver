@@ -635,7 +635,59 @@ inline int32_t bit7z_reader_extract_to_cb(
         return 0;
     } catch (...) { return -1; }
 }
-// C-linkage wrapper so Rust can call it via extern "C".
+
+// ===== RenameCallback-based extract (per-file overwrite/skip/rename + progress) =====
+
+// on_rename: fill out_buf with desired path (empty = skip).
+// Return 0 = continue, -1 = abort.
+
+inline int32_t bit7z_reader_extract_with_rename(
+    void* reader_ptr,
+    const char* dest_path,
+    void* ctx,
+    int32_t (*on_rename)(const char* src, uint64_t size, int32_t is_dir, char* out, uint32_t out_size, void* ctx),
+    int32_t (*on_progress)(uint64_t processed, uint64_t total, void* ctx),
+    void   (*on_file)(const char* path, void* ctx)
+) {
+    try {
+        auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
+        auto sharedTotal = std::make_shared<uint64_t>(0);
+
+        if (on_progress) {
+            reader.setTotalCallback([sharedTotal](uint64_t total) { *sharedTotal = total; });
+            reader.setProgressCallback([ctx, on_progress, sharedTotal](uint64_t processed) -> bool {
+                return on_progress(processed, *sharedTotal, ctx) != 0;
+            });
+        }
+        if (on_file) {
+            reader.setFileCallback([ctx, on_file](const bit7z::tstring& path) {
+                on_file(path.c_str(), ctx);
+            });
+        }
+
+        reader.extractTo(
+            bit7z::tstring(dest_path ? dest_path : ""),
+            [ctx, on_rename](const bit7z::BitArchiveItem& item) -> bit7z::tstring {
+                if (!on_rename) return item.path();
+                char buf[4096];
+                buf[0] = '\0';
+                auto p = item.path();
+                if (on_rename(p.c_str(), item.size(), item.isDir() ? 1 : 0, buf, (uint32_t)sizeof(buf), ctx) != 0) {
+                    return {};   // abort operation
+                }
+                if (buf[0] == '\0') return {};  // skip this item
+                return bit7z::tstring(buf);
+            }
+        );
+
+        reader.setFileCallback(nullptr);
+        reader.setProgressCallback(nullptr);
+        reader.setTotalCallback(nullptr);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+// C-linkage wrapper for extract_to_cb
 extern "C" int32_t bit7z_reader_extract_to_cb_c(
     void* reader_ptr,
     const uint32_t* indices,
@@ -658,4 +710,16 @@ extern "C" int32_t bit7z_writer_compress_to_cb_c(
     void   (*on_file)(const char* path, void* ctx)
 ) {
     return bit7z_writer_compress_to_cb(writer_ptr, out_path, ctx, on_progress, on_file);
+}
+
+// C-linkage wrapper for extract_with_rename.
+extern "C" int32_t bit7z_reader_extract_with_rename_c(
+    void* reader_ptr,
+    const char* dest_path,
+    void* ctx,
+    int32_t (*on_rename)(const char* src, uint64_t size, int32_t is_dir, char* out, uint32_t out_size, void* ctx),
+    int32_t (*on_progress)(uint64_t processed, uint64_t total, void* ctx),
+    void   (*on_file)(const char* path, void* ctx)
+) {
+    return bit7z_reader_extract_with_rename(reader_ptr, dest_path, ctx, on_rename, on_progress, on_file);
 }
