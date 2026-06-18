@@ -207,6 +207,15 @@ enum TestFailureReason {
 
 `TestEntriesUseCase` succeeds even when some entries fail — failures are aggregated, not errors. Only a total inability to read the archive produces an `Err`.
 
+### 2.4 New Use Cases
+
+| Use Case | Purpose |
+|---|---|
+| `CalculateChecksumUseCase` | Temp-extract selected entries, compute CRC32/MD5/SHA1/SHA256. Accepts `algorithm: ChecksumAlgorithm`. Returns `Vec<(String, ChecksumResult)>` mapping path to hash hex string |
+| `OpenEntryUseCase` | Temp-extract a single non-directory entry to system temp, then shell-execute it with the OS-associated program. Watches for file changes after the program closes; prompts user to update in archive |
+| `NewFolderUseCase` | Creates an empty directory entry in the archive via the Editor. Returns the new entry's path |
+| `NewFileUseCase` | Creates a new empty file in system temp, opens editor, on save adds to archive |
+
 ---
 
 ## Layer 3 — ViewModels
@@ -226,6 +235,7 @@ enum TestFailureReason {
 struct ProgressState {
     is_active: bool,
     is_complete: bool,
+    is_paused: bool,
     error_message: Option<String>,
     // Per-file
     file_current: u64,
@@ -271,12 +281,23 @@ Placed above the toolbar in `RootView`. Every menu action dispatches the same ev
 
 | Menu | Items |
 |---|---|
-| **File** | Open Archive (Ctrl+O), Create Archive (Ctrl+N), Add Files, ─, Close Archive, ─, Properties (Alt+Enter), ─, Exit |
+| **File** | Open Archive (Ctrl+O), Create Archive (Ctrl+N), Add Files, ─, Test Archive (Ctrl+T), ─, Open (Enter), View (Ctrl+V), Edit (F4), ─, New Folder (Ctrl+Shift+N), New File, ─, Close Archive, ─, Properties (Alt+Enter), ─, Exit |
 | **Edit** | Select All (Ctrl+A), Invert Selection, ─, Copy, Cut, Paste, ─, Delete (Del), Rename (F2) |
 | **View** | Large Icons, Small Icons, List, Details, ─, Flat View, ─, Show: Toolbar, Status Bar, Preview Panel, Directory Tree |
-| **Tools** | Test Archive, ─, Settings |
+| **Tools** | Checksum: CRC32, MD5, SHA1, SHA256 (submenu, on selected entries), ─, Settings |
 | **Favorites** | Add to Favorites, Organize Favorites, ─, (recent archives list) |
 | **Help** | About |
+
+File menu behavior:
+- **Test Archive** (Ctrl+T): with no selection → tests entire archive. With entries selected → shows submenu: "Test Selected Files" / "Test Entire Archive". Both open Test Results window.
+- **Open** (Enter): opens the selected file with the OS-associated program (temp extract to system temp + shell execute). Works only on non-directory entries.
+- **View** (Ctrl+V): same as existing Preview — shows file contents in preview panel.
+- **Edit** (F4): temp-extracts the file, opens with associated editor, watches for changes, prompts to update in archive on close.
+- **New Folder**: prompts for name, creates empty directory entry in the open archive.
+- **New File**: opens a blank temp file in editor, on save adds it to the archive.
+
+Tools menu behavior:
+- **Checksum** submenu: visible only when 1+ entries selected. Calculates and displays CRC32 / MD5 / SHA1 / SHA256 of selected entries (temp extract + hash). Shows result in a small popup window.
 
 ### 4.2 Toolbar
 
@@ -291,20 +312,51 @@ Buttons dispatch same events as corresponding menu items.
 Right-click on entries:
 
 ```
+Open (Enter)
+View
+Edit
+──────────────
 Extract...
 Add to archive...
-Test
 ──────────────
-Rename
-Delete
+Test Selected
+Test Entire Archive
 ──────────────
-Select All
+Checksum ▶         CRC32
+                    MD5
+                    SHA1
+                    SHA256
+──────────────
+Rename (F2)
+Delete (Del)
+──────────────
+New Folder
+New File
+──────────────
+Select All (Ctrl+A)
 Clear Selection
 ──────────────
-Properties
+Properties (Alt+Enter)
+──────────────
+Refresh (F5)
+```
+
+Right-click on **empty space** (no selection) in the file list:
+
+```
+New Folder
+New File
+──────────────
+Select All
 ──────────────
 Refresh
 ```
+
+Checksum behavior:
+- Requires 1+ non-directory entries selected
+- Temp-extracts each selected file and computes the hash
+- Shows result in a small popup: "CRC32: A3F7C21B | MD5: d41d8cd9... | SHA1: da39a3ee... | SHA256: e3b0c442..."
+- For multiple files, aggregates are shown per-file in a list
 
 ### 4.4 Settings Window
 
@@ -327,9 +379,17 @@ Opened automatically when any long operation starts. Closed on completion, error
 │ Total: ████████░░░░░░░░░░░░   42%      │
 │        67 / 156 files                  │
 │        5.8 MB / 14.2 MB                │
-│                             [Cancel]   │
+│                     [Pause]  [Cancel]  │
 └────────────────────────────────────────┘
 ```
+
+**Pause/Resume:** The progress window has a Pause button. On click:
+1. Sends a pause signal to the worker thread (reuse existing `pause` mechanism from `worker.rs` → `AtomicBool`)
+2. Pause button changes to "Resume"
+3. Progress bars freeze at current position
+4. On Resume → worker continues, bars resume
+
+`ProgressState` adds a `is_paused: bool` field. The dialog shows either `[Pause]` or `[Resume]` based on this flag. Pause is supported for extract, compress (create), add files, and test operations. Rename (instant) and delete have no pause button.
 
 **Top bar (per-file):** Resets to 0% for each new file. Shows current file name. Useful for large individual files where per-file progress matters.
 
