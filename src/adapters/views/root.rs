@@ -7,10 +7,13 @@ use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::Toolbar;
 use crate::adapters::views::dialogs::extract::{ExtractDialog, ExtractDialogEvent};
 use crate::adapters::views::dialogs::create::{CreateArchiveDialog, CreateDialogEvent};
+use crate::adapters::views::dialogs::settings::{SettingsDialog, SettingsDialogEvent};
 use crate::application::events::ArchiveVmEvent;
 use crate::application::extract::ExtractEntriesUseCase;
 use crate::domain::archive::*;
+use crate::domain::preferences::ThemeMode;
 use crate::domain::repository::ArchiveRepository;
+use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use std::sync::Arc;
@@ -26,6 +29,7 @@ pub struct RootView {
     preview_panel: Entity<PreviewPanel>,
     status_bar: Entity<StatusBar>,
     extract_dialog: Option<Entity<ExtractDialog>>,
+    settings_dialog: Option<Entity<SettingsDialog>>,
     repo: Arc<dyn ArchiveRepository>,
 }
 
@@ -119,10 +123,29 @@ impl RootView {
                 }
             }).detach();
 
+            cx.subscribe::<SettingsDialog, SettingsDialogEvent>(&cx.new(|cx| SettingsDialog::new(cx)), {
+                move |this: &mut RootView, _src, event: &SettingsDialogEvent, cx| {
+                    match event {
+                        SettingsDialogEvent::Saved(prefs) => {
+                            let window = cx.window().clone();
+                            let theme = Theme::from_mode(prefs.ui.theme, &window, cx);
+                            cx.set_global(theme);
+                            if let Some(repo) = cx.try_global::<crate::adapters::repository::PreferencesRepoGlobal>() {
+                                let _ = repo.0.save(prefs);
+                            }
+                        }
+                        SettingsDialogEvent::Canceled => {}
+                    }
+                    this.settings_dialog = None;
+                    cx.notify();
+                }
+            }).detach();
+
             Self {
                 toolbar, archive_vm, preview_vm,
                 archive_browser, entry_list, preview_panel, status_bar,
                 extract_dialog: None,
+                settings_dialog: None,
                 repo,
             }
         })

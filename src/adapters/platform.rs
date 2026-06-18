@@ -131,3 +131,82 @@ pub fn pick_archive_file() -> Option<std::path::PathBuf> {
 pub fn pick_archive_file() -> Option<std::path::PathBuf> {
     None
 }
+
+/// Pick a folder using the native OS folder dialog.
+/// Returns `None` if the dialog is cancelled.
+#[cfg(target_os = "windows")]
+pub fn pick_folder() -> Option<std::path::PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+
+    #[allow(non_snake_case)]
+    #[repr(C)]
+    struct BROWSEINFOW {
+        hwndOwner: isize,
+        pidlRoot: isize,
+        pszDisplayName: *mut u16,
+        lpszTitle: *const u16,
+        ulFlags: u32,
+        lpfn: isize,
+        lParam: isize,
+        iImage: i32,
+    }
+
+    const BIF_RETURNONLYFSDIRS: u32 = 0x0001;
+    const BIF_DONTGOBELOWDOMAIN: u32 = 0x0002;
+    const BIF_STATUSTEXT: u32 = 0x0004;
+    const BIF_RETURNFSANCESTORS: u32 = 0x0008;
+    const BIF_EDITBOX: u32 = 0x0010;
+    const BIF_VALIDATE: u32 = 0x0020;
+    const BIF_NEWDIALOGSTYLE: u32 = 0x0040;
+    const BIF_USENEWUI: u32 = BIF_EDITBOX | BIF_NEWDIALOGSTYLE;
+    const BIF_BROWSEINCLUDEURLS: u32 = 0x0080;
+    const BIF_BROWSEFORCOMPUTER: u32 = 0x1000;
+    const BIF_BROWSEFORPRINTER: u32 = 0x2000;
+    const BIF_BROWSEINCLUDEFILES: u32 = 0x4000;
+    const BIF_SHAREABLE: u32 = 0x8000;
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHBrowseForFolderW(lpbi: *const BROWSEINFOW) -> isize;
+        fn SHGetPathFromIDListW(pidl: isize, pszPath: *mut u16) -> i32;
+        fn CoTaskMemFree(pv: isize);
+    }
+
+    unsafe {
+        let mut display_name: Vec<u16> = vec![0u16; 260];
+        let title = "Select destination folder";
+        let title_wide: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
+
+        let bi = BROWSEINFOW {
+            hwndOwner: 0,
+            pidlRoot: 0,
+            pszDisplayName: display_name.as_mut_ptr(),
+            lpszTitle: title_wide.as_ptr(),
+            ulFlags: BIF_RETURNONLYFSDIRS | BIF_USENEWUI,
+            lpfn: 0,
+            lParam: 0,
+            iImage: 0,
+        };
+
+        let pidl = SHBrowseForFolderW(&bi);
+        if pidl != 0 {
+            let mut path_buf: Vec<u16> = vec![0u16; 4096];
+            if SHGetPathFromIDListW(pidl, path_buf.as_mut_ptr()) != 0 {
+                let len = (0..path_buf.len()).find(|&i| path_buf[i] == 0).unwrap_or(0);
+                if len > 0 {
+                    let os_str = OsString::from_wide(&path_buf[..len]);
+                    CoTaskMemFree(pidl);
+                    return Some(std::path::PathBuf::from(os_str));
+                }
+            }
+            CoTaskMemFree(pidl);
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn pick_folder() -> Option<std::path::PathBuf> {
+    None
+}

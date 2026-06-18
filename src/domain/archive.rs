@@ -98,6 +98,8 @@ pub struct ArchiveHandle {
     pub(crate) is_writer: bool,
     pub(crate) path: Option<PathBuf>,
     pub(crate) format: Option<ArchiveFormat>,
+    pub(crate) is_header_encrypted: bool,
+    pub(crate) has_encrypted_items: bool,
 }
 
 // SAFETY: ArchiveHandle is only accessed from the main GPUI thread.

@@ -46,6 +46,18 @@ impl Library {
     pub fn raw_handle(&self) -> Handle {
         self.raw
     }
+
+    /// Check if archive at path has encrypted headers (static check without opening).
+    pub fn is_header_encrypted(&self, path: &str) -> bool {
+        let c_path = match std::ffi::CString::new(path) { Ok(p) => p, Err(_) => return false };
+        unsafe { crate::ffi::bit7z_is_header_encrypted(self.raw as *mut _, c_path.as_ptr()) != 0 }
+    }
+
+    /// Check if archive at path is encrypted (static check without opening).
+    pub fn is_encrypted(&self, path: &str) -> bool {
+        let c_path = match std::ffi::CString::new(path) { Ok(p) => p, Err(_) => return false };
+        unsafe { crate::ffi::bit7z_is_encrypted(self.raw as *mut _, c_path.as_ptr()) != 0 }
+    }
 }
 
 impl Drop for Library {
@@ -150,6 +162,11 @@ impl ArchiveReader {
         unsafe { bit7z_test_result_free(result); }
         Ok((all_ok, total, failed_count, error))
     }
+
+    /// Check if archive has encrypted headers (cannot read contents without password).
+    pub fn is_header_encrypted(&self) -> bool {
+        unsafe { bit7z_reader_has_encrypted_items(self.raw as *mut _) != 0 }
+    }
 }
 
 impl Drop for ArchiveReader {
@@ -236,6 +253,11 @@ extern "C" {
     fn bit7z_test_result_all_ok(result: *mut std::ffi::c_void) -> i32;
     fn bit7z_test_result_error(result: *mut std::ffi::c_void) -> *const std::ffi::c_char;
     fn bit7z_test_result_free(result: *mut std::ffi::c_void);
+
+    // Encryption detection
+    fn bit7z_is_header_encrypted(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
+    fn bit7z_is_encrypted(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
+    fn bit7z_reader_has_encrypted_items(reader: *mut std::ffi::c_void) -> i32;
 }
 
 // ============================================================================

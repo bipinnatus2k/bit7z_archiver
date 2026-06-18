@@ -224,6 +224,29 @@ inline void bit7z_test_result_free(void* result_ptr) {
     delete static_cast<TestResult*>(result_ptr);
 }
 
+// ===== Encryption detection =====
+
+inline int32_t bit7z_is_header_encrypted(void* lib_ptr, const char* path) {
+    try {
+        auto& lib = *static_cast<bit7z::Bit7zLibrary*>(lib_ptr);
+        return bit7z::BitArchiveReader::isHeaderEncrypted(lib, path ? path : "") ? 1 : 0;
+    } catch (...) { return 0; }
+}
+
+inline int32_t bit7z_is_encrypted(void* lib_ptr, const char* path) {
+    try {
+        auto& lib = *static_cast<bit7z::Bit7zLibrary*>(lib_ptr);
+        return bit7z::BitArchiveReader::isEncrypted(lib, path ? path : "") ? 1 : 0;
+    } catch (...) { return 0; }
+}
+
+inline int32_t bit7z_reader_has_encrypted_items(void* reader_ptr) {
+    try {
+        auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
+        return reader.hasEncryptedItems() ? 1 : 0;
+    } catch (...) { return 0; }
+}
+
 // ===== Directory listing (opaque handle + accessors) =====
 
 struct ItemList {
@@ -238,31 +261,31 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
         std::string prefix = path ? path : "";
         size_t plen = prefix.size();
 
+        // Build wildcard pattern. On Windows, 7-Zip uses \ as separator
+        // in returned paths, so the pattern must use \ too.
+        std::string pattern = prefix + "*";
+#ifdef _WIN32
+        for (auto& c : pattern) if (c == '/') c = '\\';
+#endif
+        auto matched = reader.itemsMatching(pattern);
+
         auto* list = new ItemList();
         list->prefix = prefix;
 
-        // Sequential scan via ConstIterator (faster than random-access itemAt)
-        for (auto it = reader.begin(); it != reader.end(); ++it) {
-            std::string itemPath = (*it).path();
-            // Normalise \ to / (bit7z may return Windows backslashes)
+        for (auto& item : matched) {
+            std::string itemPath = item.path();
+            // Normalise to / for consistent filtering
             for (auto& c : itemPath) if (c == '\\') c = '/';
 
-            // Check prefix
-            if (plen > 0) {
-                if (itemPath.size() <= plen || itemPath.compare(0, plen, prefix) != 0) continue;
-            }
-
-            // Direct children only: no '/' in the part after the prefix
-            // Allow trailing '/' for directory entries.
+            // Skip items whose relative tail still contains '/'
+            // (shouldn't happen with itemsMatching but be safe)
             auto tail = itemPath.substr(plen);
             if (tail.empty()) continue;
             auto slashPos = tail.find('/');
             if (slashPos != std::string::npos && slashPos != tail.size() - 1) continue;
 
-            // Passes filter — build full info for accessors
-            bit7z::BitArchiveItemInfo info(*it);
             list->paths.push_back(itemPath);
-            list->items.push_back(std::move(info));
+            list->items.push_back(std::move(item));
         }
         return static_cast<void*>(list);
     } catch (...) { return nullptr; }
