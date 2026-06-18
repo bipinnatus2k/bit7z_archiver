@@ -226,17 +226,44 @@ inline void bit7z_test_result_free(void* result_ptr) {
 
 // ===== Encryption detection =====
 
+static inline const bit7z::BitInFormat& detect_format_from_path(const char* path) {
+    std::string p(path ? path : "");
+    auto dot = p.find_last_of('.');
+    std::string ext;
+    if (dot != std::string::npos) {
+        ext = p.substr(dot);
+        for (auto& c : ext) c = (char)tolower(c);
+    }
+    static const bit7z::BitInFormat& fmt7z = bit7z::BitFormat::SevenZip;
+    static const bit7z::BitInFormat& fmtZip = bit7z::BitFormat::Zip;
+    static const bit7z::BitInFormat& fmtTar = bit7z::BitFormat::Tar;
+    static const bit7z::BitInFormat& fmtGZip = bit7z::BitFormat::GZip;
+    static const bit7z::BitInFormat& fmtBZip2 = bit7z::BitFormat::BZip2;
+    static const bit7z::BitInFormat& fmtXz = bit7z::BitFormat::Xz;
+    static const bit7z::BitInFormat& fmtWim = bit7z::BitFormat::Wim;
+    static const bit7z::BitInFormat& fmtRar = bit7z::BitFormat::Rar;
+    return (ext == ".zip")  ? fmtZip :
+           (ext == ".tar")  ? fmtTar :
+           (ext == ".gz" || ext == ".tgz") ? fmtGZip :
+           (ext == ".bz2" || ext == ".tbz") ? fmtBZip2 :
+           (ext == ".xz" || ext == ".txz") ? fmtXz :
+           (ext == ".wim") ? fmtWim :
+           (ext == ".rar") ? fmtRar : fmt7z;
+}
+
 inline int32_t bit7z_is_header_encrypted(void* lib_ptr, const char* path) {
     try {
         auto& lib = *static_cast<bit7z::Bit7zLibrary*>(lib_ptr);
-        return bit7z::BitArchiveReader::isHeaderEncrypted(lib, path ? path : "") ? 1 : 0;
+        const auto& fmt = detect_format_from_path(path);
+        return bit7z::BitArchiveReader::isHeaderEncrypted(lib, path ? path : "", fmt) ? 1 : 0;
     } catch (...) { return 0; }
 }
 
 inline int32_t bit7z_is_encrypted(void* lib_ptr, const char* path) {
     try {
         auto& lib = *static_cast<bit7z::Bit7zLibrary*>(lib_ptr);
-        return bit7z::BitArchiveReader::isEncrypted(lib, path ? path : "") ? 1 : 0;
+        const auto& fmt = detect_format_from_path(path);
+        return bit7z::BitArchiveReader::isEncrypted(lib, path ? path : "", fmt) ? 1 : 0;
     } catch (...) { return 0; }
 }
 

@@ -23,8 +23,20 @@ impl ArchiveRepository for Bit7zRepository {
         let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal("Non-UTF-8 path".into()))?;
+
+        // Detect if archive has encrypted headers (static check without opening)
+        let is_header_encrypted = lib.is_header_encrypted(path_str);
+
         let reader = bit7z::ArchiveReader::open(&lib, path_str, password)
             .map_err(|e| ArchiveError::Internal(e))?;
+
+        // Check if opened archive has any encrypted items
+        let has_encrypted_items = if is_header_encrypted {
+            true // Header encrypted implies items are encrypted
+        } else {
+            reader.has_encrypted_items() // Check via instance method
+        };
+
         let raw_handle = reader.into_raw();
 
         // Detect format from extension
@@ -42,9 +54,11 @@ impl ArchiveRepository for Bit7zRepository {
             }
         });
 
-        Ok(ArchiveHandle::new_reader(raw_handle as *mut std::ffi::c_void)
+        let mut handle = ArchiveHandle::new_reader(raw_handle as *mut std::ffi::c_void)
             .with_path(path.to_path_buf())
-            .with_format_opt(format))
+            .with_format_opt(format);
+        handle.set_encryption_info(is_header_encrypted, has_encrypted_items);
+        Ok(handle)
     }
 
     fn create(&self, path: &Path, format: ArchiveFormat,
@@ -70,7 +84,7 @@ impl ArchiveRepository for Bit7zRepository {
         // Set encryption if provided
         if let Some(enc) = encryption {
             if !enc.password.is_empty() {
-                writer.set_password(&enc.password);
+                writer.set_password(enc.password.as_str());
             }
         }
 
@@ -129,8 +143,8 @@ impl ArchiveRepository for Bit7zRepository {
             folders_count: folders,
             files_count: files,
             total_size, packed_size,
-            is_encrypted: false,
-            has_encrypted_items: false,
+            is_encrypted: archive.is_header_encrypted(),
+            has_encrypted_items: archive.has_encrypted_items(),
             is_multi_volume: false,
             is_solid: false,
         })

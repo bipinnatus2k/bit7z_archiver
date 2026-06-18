@@ -163,8 +163,8 @@ impl ArchiveReader {
         Ok((all_ok, total, failed_count, error))
     }
 
-    /// Check if archive has encrypted headers (cannot read contents without password).
-    pub fn is_header_encrypted(&self) -> bool {
+    /// Check if opened archive has any encrypted items.
+    pub fn has_encrypted_items(&self) -> bool {
         unsafe { bit7z_reader_has_encrypted_items(self.raw as *mut _) != 0 }
     }
 }

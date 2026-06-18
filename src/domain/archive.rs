@@ -108,11 +108,11 @@ unsafe impl Sync for ArchiveHandle {}
 
 impl ArchiveHandle {
     pub fn new_reader(raw: *mut std::ffi::c_void) -> Self {
-        Self { raw, is_writer: false, path: None, format: None }
+        Self { raw, is_writer: false, path: None, format: None, is_header_encrypted: false, has_encrypted_items: false }
     }
 
     pub fn new_writer(raw: *mut std::ffi::c_void) -> Self {
-        Self { raw, is_writer: true, path: None, format: None }
+        Self { raw, is_writer: true, path: None, format: None, is_header_encrypted: false, has_encrypted_items: false }
     }
 
     pub fn with_path(mut self, path: PathBuf) -> Self {
@@ -128,6 +128,19 @@ impl ArchiveHandle {
     pub fn with_format_opt(mut self, format: Option<ArchiveFormat>) -> Self {
         self.format = format;
         self
+    }
+
+    pub fn is_header_encrypted(&self) -> bool {
+        self.is_header_encrypted
+    }
+
+    pub fn has_encrypted_items(&self) -> bool {
+        self.has_encrypted_items
+    }
+
+    pub fn set_encryption_info(&mut self, is_header_encrypted: bool, has_encrypted_items: bool) {
+        self.is_header_encrypted = is_header_encrypted;
+        self.has_encrypted_items = has_encrypted_items;
     }
 }
 
