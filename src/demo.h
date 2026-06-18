@@ -267,7 +267,7 @@ inline int32_t bit7z_is_encrypted(void* lib_ptr, const char* path) {
     } catch (...) { return 0; }
 }
 
-inline int32_t bit7z_reader_has_encrypted_items(void* reader_ptr) {
+extern "C" inline int32_t bit7z_reader_has_encrypted_items(void* reader_ptr) {
     try {
         auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
         return reader.hasEncryptedItems() ? 1 : 0;

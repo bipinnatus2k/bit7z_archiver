@@ -270,6 +270,28 @@ impl ArchiveViewModel {
         }
     }
 
+    pub fn select_all(&mut self, cx: &mut Context<Self>) {
+        self.selection.clear();
+        for entry in &self.level_entries {
+            self.selection.insert(entry.original_index);
+        }
+        self.selection_anchor = None;
+        if let Some(archive) = &self.archive {
+            let first = self.selection.iter().next().copied();
+            cx.emit(ArchiveVmEvent::SelectionChanged(
+                first.map(|idx| (archive.clone(), idx)),
+            ));
+        }
+        cx.notify();
+    }
+
+    pub fn clear_selection(&mut self, cx: &mut Context<Self>) {
+        self.selection.clear();
+        self.selection_anchor = None;
+        cx.emit(ArchiveVmEvent::SelectionChanged(None));
+        cx.notify();
+    }
+
     pub fn update_selection(&mut self, index: u32, modifiers: &Modifiers) {
         if modifiers.shift {
             let anchor = self.selection_anchor.unwrap_or(index);
@@ -403,5 +425,16 @@ impl ArchiveViewModel {
         self.path_history.clear();
         self.status = ViewStatus::Empty;
         cx.notify();
+    }
+
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        if self.archive.is_some() {
+            self.directory_cache.remove(&self.current_path);
+            self.load_current_directory(cx);
+        }
+    }
+
+    pub fn delete_selected(&mut self, _cx: &mut Context<Self>) {
+        // Placeholder for delete functionality - will be implemented with FFI support
     }
 }

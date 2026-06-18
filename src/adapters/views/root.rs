@@ -102,7 +102,7 @@ impl RootView {
                                         ..Default::default()
                                     },
                                     |window, cx| {
-                                        let dialog = cx.new(|cx| CreateArchiveDialog::new(cx, vec![]));
+                                        let dialog = cx.new(|cx| CreateArchiveDialog::new(window, cx, vec![]));
                                         cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
                                     }
                                 );
@@ -123,23 +123,7 @@ impl RootView {
                 }
             }).detach();
 
-            cx.subscribe::<SettingsDialog, SettingsDialogEvent>(&cx.new(|cx| SettingsDialog::new(cx)), {
-                move |this: &mut RootView, _src, event: &SettingsDialogEvent, cx| {
-                    match event {
-                        SettingsDialogEvent::Saved(prefs) => {
-                            let window = cx.window().clone();
-                            let theme = Theme::from_mode(prefs.ui.theme, &window, cx);
-                            cx.set_global(theme);
-                            if let Some(repo) = cx.try_global::<crate::adapters::repository::PreferencesRepoGlobal>() {
-                                let _ = repo.0.save(prefs);
-                            }
-                        }
-                        SettingsDialogEvent::Canceled => {}
-                    }
-                    this.settings_dialog = None;
-                    cx.notify();
-                }
-            }).detach();
+            // Settings dialog subscription is handled in the dialog creation code
 
             Self {
                 toolbar, archive_vm, preview_vm,
@@ -155,6 +139,39 @@ impl RootView {
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         gpui_component::v_flex().size_full().relative()
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                let modifiers = event.keystroke.modifiers;
+                let key = event.keystroke.key.clone();
+                let cmd = modifiers.platform || modifiers.control;
+                match key.as_str() {
+                    "a" if cmd => {
+                        this.archive_vm.update(cx, |vm, cx| vm.select_all(cx));
+                    }
+                    "o" if cmd => {
+                        if let Some(path) = crate::adapters::platform::pick_archive_file() {
+                            this.archive_vm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
+                        }
+                    }
+                    "n" if cmd => {
+                        this.archive_vm.update(cx, |vm, cx| vm.request_create(cx));
+                    }
+                    "e" if cmd => {
+                        this.archive_vm.update(cx, |vm, cx| vm.request_extract(cx));
+                    }
+                    "f5" => {
+                        this.archive_vm.update(cx, |vm, cx| vm.refresh(cx));
+                    }
+                    "Backspace" | "Delete" => {
+                        this.archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
+                    }
+                    "Escape" => {
+                        this.extract_dialog = None;
+                        this.settings_dialog = None;
+                        cx.notify();
+                    }
+                    _ => {}
+                }
+            }))
             .child(self.toolbar.clone())
             .child(div().flex_1().child(
                 h_resizable("main-hz")

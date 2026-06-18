@@ -67,9 +67,9 @@ impl Render for SettingsDialog {
                     )
                     .child(
                         div().flex().flex_row().gap_2()
-                            .child(theme_option(ThemeMode::Light, "Light", "Always use light theme", &self.prefs.ui.theme, cx))
-                            .child(theme_option(ThemeMode::Dark, "Dark", "Always use dark theme", &self.prefs.ui.theme, cx))
-                            .child(theme_option(ThemeMode::System, "System", "Match system setting", &self.prefs.ui.theme, cx))
+                            .child(theme_option(ThemeMode::Light, "Light".to_string(), "Always use light theme".to_string(), &self.prefs.ui.theme, cx))
+                            .child(theme_option(ThemeMode::Dark, "Dark".to_string(), "Always use dark theme".to_string(), &self.prefs.ui.theme, cx))
+                            .child(theme_option(ThemeMode::System, "System".to_string(), "Match system setting".to_string(), &self.prefs.ui.theme, cx))
                     )
                     .into_any(),
             })
@@ -93,7 +93,7 @@ fn tab_button(label: String, tab: SettingsTab, active: &SettingsTab, cx: &mut Co
         .child(label)
 }
 
-fn theme_option(mode: ThemeMode, label: &str, description: &str, current: &ThemeMode, cx: &mut Context<SettingsDialog>) -> impl IntoElement {
+fn theme_option(mode: ThemeMode, label: String, description: String, current: &ThemeMode, cx: &mut Context<SettingsDialog>) -> impl IntoElement {
     let is_selected = current == &mode;
     let theme = cx.global::<Theme>();
     div()

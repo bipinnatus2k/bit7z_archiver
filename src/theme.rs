@@ -58,12 +58,12 @@ impl Theme {
         }
     }
 
-    pub fn from_mode(mode: ThemeMode, window: &Window, cx: &App) -> Self {
+    pub fn from_mode(mode: ThemeMode, window: &Window) -> Self {
         match mode {
             ThemeMode::Light => Self::light(),
             ThemeMode::Dark => Self::dark(),
             ThemeMode::System => {
-                if window.window_appearance(cx) == gpui::WindowAppearance::Dark {
+                if window.appearance() == gpui::WindowAppearance::Dark {
                     Self::dark()
                 } else {
                     Self::light()

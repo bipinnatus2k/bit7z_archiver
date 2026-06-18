@@ -44,7 +44,7 @@ pub fn run_gui() {
                     ..Default::default()
                 }, |window, cx| {
                     let prefs = cx.global::<crate::domain::preferences::Preferences>();
-                    let theme = Theme::from_mode(prefs.ui.theme, window, cx);
+                    let theme = Theme::from_mode(prefs.ui.theme, window);
                     cx.set_global(theme);
 
                     let view = RootView::new(window, cx);

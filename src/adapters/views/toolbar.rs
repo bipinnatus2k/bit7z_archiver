@@ -1,6 +1,7 @@
-use crate::adapters::view_models::archive_vm::ArchiveViewModel;
+use crate::adapters::view_models::archive_vm::{ArchiveViewModel, ViewStatus};
 use gpui::*;
 use gpui_component::button::Button;
+use gpui_component::Disableable;
 
 pub struct Toolbar {
     archive_vm: Entity<ArchiveViewModel>,
@@ -14,6 +15,11 @@ impl Toolbar {
 
 impl Render for Toolbar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let vm = self.archive_vm.read(cx);
+        let is_open = vm.archive.is_some();
+        let is_ready = matches!(vm.status, ViewStatus::Ready);
+        let has_selection = !vm.selection.is_empty();
+        drop(vm);
 
         gpui_component::h_flex().gap_2().p_2()
             .child(
@@ -43,6 +49,7 @@ impl Render for Toolbar {
             .child(
                 Button::new("extract")
                     .label("Extract")
+                    .disabled(!is_ready || !has_selection)
                     .on_click({
                         let vm = self.archive_vm.clone();
                         move |_, _, cx| {
@@ -53,6 +60,7 @@ impl Render for Toolbar {
             .child(
                 Button::new("test")
                     .label("Test")
+                    .disabled(!is_open)
                     .on_click({
                         let vm = self.archive_vm.clone();
                         move |_, _, cx| {
@@ -63,6 +71,7 @@ impl Render for Toolbar {
             .child(
                 Button::new("close")
                     .label("Close")
+                    .disabled(!is_open)
                     .on_click({
                         let vm = self.archive_vm.clone();
                         move |_, _, cx| {
