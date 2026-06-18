@@ -436,13 +436,15 @@ Replace static text placeholders:
 ┌──────────────────────────────────────────┐
 │ Add Files — archive.7z                   │
 ├──────────────────────────────────────────┤
+│ Format:  [7z ▾]                          │ ← pre-filled to current archive
+│                                          │
 │ Source                                   │
 │  [+ Add files] [+ Add folder]           │
 │ ┌──────────────────────────────────────┐ │
-│ │ C:\Users\...\documents\              │ │ ← directory added
-│ │   filter: [*.pdf;*.txt      ]        │ │ ← wildcard filter
+│ │ C:\Users\...\documents\              │ │
+│ │   filter: [*.pdf;*.txt      ]        │ │
 │ │   [✓] Recurse subdirectories         │ │
-│ │   policy: [Include ▾]                │ │ ← Include / Exclude
+│ │   policy: [Include ▾]                │ │
 │ └──────────────────────────────────────┘ │
 │                                          │
 │ Archive path prefix: [docs/      ]      │ ← optional custom path prefix
@@ -473,7 +475,7 @@ Replace static text placeholders:
 └──────────────────────────────────────────┘
 ```
 
-**Controls behavior (format-dependent):**
+**Format dropdown:** Pre-filled to the currently open archive's format. Options: 7z, Zip, Tar, Tar.gz, Tar.bz2, Tar.xz (writable formats only). When format changes, the compression/encryption controls below adapt (see format-dependent table). This allows re-compressing files into a different format than the source archive.
 
 | Control | 7z | Zip | Tar | GZip/BZip2/Xz |
 |---|---|---|---|---|
