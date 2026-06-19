@@ -3,19 +3,21 @@ use crate::domain::preferences::Preferences;
 use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::form::{field, v_form};
 use gpui_component::input::{Input, InputState};
+use gpui_component::select::{Select, SelectItem, SelectState, SearchableVec};
+use gpui_component::Disableable;
+use gpui_component::IndexPath;
 
 pub struct AddFilesDialog {
     pub format: ArchiveFormat,
-    pub show_format_dropdown: bool,
     pub file_list: Vec<std::path::PathBuf>,
     pub wildcard_filter: String,
     pub filter_policy: FilterPolicy,
-    pub show_policy_dropdown: bool,
     pub recursive: bool,
     pub archive_path_prefix: String,
     pub compression_level: u8,
-    pub show_level_dropdown: bool,
     pub compression_method: String,
     pub dictionary_size: String,
     pub word_size: String,
@@ -31,6 +33,11 @@ pub struct AddFilesDialog {
     prefix_input: Option<Entity<InputState>>,
     password_input: Option<Entity<InputState>>,
     password_confirm_input: Option<Entity<InputState>>,
+    format_select: Option<Entity<SelectState<SearchableVec<FormatItem>>>>,
+    level_select: Option<Entity<SelectState<SearchableVec<LevelItem>>>>,
+    archive: Option<ArchiveHandle>,
+    repo: Option<std::sync::Arc<dyn crate::domain::repository::ArchiveRepository>>,
+    is_solid: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,49 +68,71 @@ pub enum AddFilesDialogEvent {
 
 impl EventEmitter<AddFilesDialogEvent> for AddFilesDialog {}
 
-fn writable_formats() -> Vec<ArchiveFormat> {
+#[derive(Debug, Clone)]
+struct FormatItem {
+    format: ArchiveFormat,
+    label: SharedString,
+}
+
+impl SelectItem for FormatItem {
+    type Value = ArchiveFormat;
+    fn title(&self) -> SharedString { self.label.clone() }
+    fn value(&self) -> &Self::Value { &self.format }
+}
+
+#[derive(Debug, Clone)]
+struct LevelItem {
+    level: u8,
+    label: SharedString,
+}
+
+impl SelectItem for LevelItem {
+    type Value = u8;
+    fn title(&self) -> SharedString { self.label.clone() }
+    fn value(&self) -> &Self::Value { &self.level }
+}
+
+fn writable_formats() -> Vec<FormatItem> {
     vec![
-        ArchiveFormat::SevenZip,
-        ArchiveFormat::Zip,
-        ArchiveFormat::Tar,
-        ArchiveFormat::TarGz,
-        ArchiveFormat::TarBz2,
-        ArchiveFormat::TarXz,
+        FormatItem { format: ArchiveFormat::SevenZip, label: "7Z".into() },
+        FormatItem { format: ArchiveFormat::Zip, label: "ZIP".into() },
+        FormatItem { format: ArchiveFormat::Tar, label: "TAR".into() },
+        FormatItem { format: ArchiveFormat::TarGz, label: "TAR.GZ".into() },
+        FormatItem { format: ArchiveFormat::TarBz2, label: "TAR.BZ2".into() },
+        FormatItem { format: ArchiveFormat::TarXz, label: "TAR.XZ".into() },
     ]
 }
 
-fn format_label(fmt: ArchiveFormat) -> String {
-    fmt.display_name().to_string()
-}
-
-fn compression_level_names(level: u8) -> &'static str {
-    match level {
-        0 => "None",
-        1 => "Fastest",
-        2 => "Fast",
-        3 => "Normal",
-        4 => "Maximum",
-        5 => "Ultra",
-        _ => "Normal",
-    }
+fn compression_levels() -> Vec<LevelItem> {
+    vec![
+        LevelItem { level: 0, label: "None".into() },
+        LevelItem { level: 1, label: "Fastest".into() },
+        LevelItem { level: 2, label: "Fast".into() },
+        LevelItem { level: 3, label: "Normal".into() },
+        LevelItem { level: 4, label: "Maximum".into() },
+        LevelItem { level: 5, label: "Ultra".into() },
+    ]
 }
 
 impl AddFilesDialog {
-    pub fn new(cx: &mut Context<Self>, format: ArchiveFormat) -> Self {
+    pub fn new(
+        cx: &mut Context<Self>,
+        format: ArchiveFormat,
+        archive: Option<ArchiveHandle>,
+        repo: Option<std::sync::Arc<dyn crate::domain::repository::ArchiveRepository>>,
+        is_solid: bool,
+    ) -> Self {
         let prefs = cx.global::<Preferences>();
         let compression_level = prefs.archive.default_compression_level;
         let encrypt_filenames = prefs.archive.default_encrypt_filenames;
         Self {
             format,
-            show_format_dropdown: false,
             file_list: Vec::new(),
             wildcard_filter: String::new(),
             filter_policy: FilterPolicy::Exclude,
-            show_policy_dropdown: false,
             recursive: true,
             archive_path_prefix: String::new(),
             compression_level,
-            show_level_dropdown: false,
             compression_method: String::new(),
             dictionary_size: String::new(),
             word_size: String::new(),
@@ -119,7 +148,16 @@ impl AddFilesDialog {
             prefix_input: None,
             password_input: None,
             password_confirm_input: None,
+            format_select: None,
+            level_select: None,
+            archive,
+            repo,
+            is_solid,
         }
+    }
+
+    fn is_existing_archive(&self) -> bool {
+        self.archive.is_some()
     }
 
     fn ensure_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -130,16 +168,33 @@ impl AddFilesDialog {
             self.prefix_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("e.g. subdir/")));
         }
         if self.password_input.is_none() {
-            self.password_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Optional")));
+            self.password_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Optional").masked(true)));
         }
         if self.password_confirm_input.is_none() {
-            self.password_confirm_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Confirm")));
+            self.password_confirm_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Confirm").masked(true)));
+        }
+        if self.format_select.is_none() {
+            let formats = writable_formats();
+            let selected = formats.iter().position(|f| f.format == self.format);
+            self.format_select = Some(cx.new(|cx| {
+                let items: SearchableVec<FormatItem> = formats.into();
+                SelectState::new(items, selected.map(|i| IndexPath::default().row(i)), window, cx)
+            }));
+        }
+        if self.level_select.is_none() {
+            let levels = compression_levels();
+            let selected = levels.iter().position(|l| l.level == self.compression_level);
+            self.level_select = Some(cx.new(|cx| {
+                let items: SearchableVec<LevelItem> = levels.into();
+                SelectState::new(items, selected.map(|i| IndexPath::default().row(i)), window, cx)
+            }));
         }
     }
 
     fn is_valid(&self) -> bool {
         if self.file_list.is_empty() { return false; }
         if !self.password.is_empty() && self.password != self.password_confirm { return false; }
+        if self.is_existing_archive() && self.is_solid { return false; }
         true
     }
 
@@ -151,311 +206,250 @@ impl AddFilesDialog {
             encrypt_filenames: self.encrypt_filenames && self.format.supports_encrypted_filenames(),
         })
     }
-
-    fn format_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.global::<Theme>().clone();
-        let current = self.format;
-        div().flex().flex_col().gap_1()
-            .child(
-                div().px_2().py_1().border_1().border_color(theme.border).rounded_md().cursor_pointer()
-                    .flex().flex_row().justify_between()
-                    .child(format_label(current))
-                    .child(if self.show_format_dropdown { "\u{25B2}" } else { "\u{25BC}" })
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                        this.show_format_dropdown = !this.show_format_dropdown;
-                        cx.notify();
-                    }))
-            )
-            .when(self.show_format_dropdown, |el| {
-                el.child(
-                    div().border_1().border_color(theme.border).rounded_md().flex().flex_col()
-                        .children(writable_formats().into_iter().map(|fmt| {
-                            let is_current = fmt == current;
-                            div().px_2().py_1().cursor_pointer()
-                                .bg(if is_current { theme.selection } else { hsla(0., 0., 0., 0.) })
-                                .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-                                .child(format_label(fmt))
-                                .on_mouse_down(MouseButton::Left, cx.listener(move |this, _e, _window, cx| {
-                                    this.format = fmt;
-                                    this.show_format_dropdown = false;
-                                    cx.notify();
-                                }))
-                                .into_any_element()
-                        }).collect::<Vec<_>>())
-                )
-            })
-    }
 }
 
 impl Render for AddFilesDialog {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_inputs(window, cx);
-        let theme = cx.global::<Theme>().clone();
-        let filter_input = self.filter_input.clone().expect("filter_input initialized");
-        let prefix_input = self.prefix_input.clone().expect("prefix_input initialized");
-        let password_input = self.password_input.clone().expect("password_input initialized");
-        let password_confirm_input = self.password_confirm_input.clone().expect("password_confirm_input initialized");
+        let filter_input = self.filter_input.clone().expect("init");
+        let prefix_input = self.prefix_input.clone().expect("init");
+        let password_input = self.password_input.clone().expect("init");
+        let password_confirm_input = self.password_confirm_input.clone().expect("init");
+        let format_select = self.format_select.clone().expect("init");
+        let level_select = self.level_select.clone().expect("init");
 
-        div()
-            .flex().flex_col().gap_3().p_4().w(px(520.))
-            .child(div().font_weight(FontWeight::BOLD).text_lg().child("Add Files"))
-            // Format (read-only display — pre-filled from current archive)
-            .child(div().text_sm().font_weight(FontWeight::BOLD).child("Format"))
-            .child(self.format_dropdown(cx))
-            // Source section
-            .child(div().font_weight(FontWeight::MEDIUM).child("Source"))
+        let is_valid = self.is_valid();
+        let file_count = self.file_list.len();
+        let has_password = !self.password.is_empty();
+        let show_level = self.format.supports_compression_level();
+        let show_7z = self.format == ArchiveFormat::SevenZip;
+        let show_encrypted_names = self.format.supports_encrypted_filenames();
+        let is_existing = self.is_existing_archive();
+        let is_solid = self.is_solid;
+        let compression_method_display = if self.compression_method.is_empty() { "LZMA2".to_string() } else { self.compression_method.clone() };
+        let dictionary_size_display = if self.dictionary_size.is_empty() { "64 MB".to_string() } else { self.dictionary_size.clone() };
+        let word_size_display = if self.word_size.is_empty() { "64".to_string() } else { self.word_size.clone() };
+        let volume_size_display = if self.volume_size.is_empty() { "—".to_string() } else { self.volume_size.clone() };
+        let thread_count_display = if self.thread_count.is_empty() { "auto".to_string() } else { self.thread_count.clone() };
+
+        v_form()
+            .p_4()
+            .w(px(520.))
+            .when(is_existing && is_solid, |el| {
+                el.child(
+                    field()
+                        .label_indent(false)
+                        .child(
+                            div()
+                                .p_3()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(cx.global::<Theme>().error)
+                                .bg(cx.global::<Theme>().error.alpha(0.1))
+                                .child(div().text_sm().text_color(cx.global::<Theme>().error).child(
+                                    "This archive uses solid compression. Files cannot be added to solid archives."
+                                ))
+                        )
+                )
+            })
             .child(
-                div().flex().flex_row().gap_2()
+                field()
+                    .label("Format")
+                    .child(Select::new(&format_select).appearance(false).disabled(is_existing))
+            )
+            .child(
+                field()
+                    .label("Source")
                     .child(
-                        div().px_2().py_1().rounded_md().cursor_pointer()
-                            .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-                            .child("+ Add Files")
-                            .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                if let Some(paths) = crate::adapters::platform::pick_files() {
-                                    this.file_list.extend(paths);
-                                    cx.notify();
-                                }
-                            }))
-                    )
-                    .child(
-                        div().px_2().py_1().rounded_md().cursor_pointer()
-                            .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-                            .child("+ Add Folder")
-                            .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                if let Some(path) = crate::adapters::platform::pick_folder() {
-                                    this.file_list.push(path);
-                                    cx.notify();
-                                }
-                            }))
+                        gpui_component::h_flex()
+                            .gap_2()
+                            .child(
+                                Button::new("add-files")
+                                    .label("+ Add Files")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        if let Some(paths) = crate::adapters::platform::pick_files() {
+                                            this.file_list.extend(paths);
+                                            cx.notify();
+                                        }
+                                    }))
+                            )
+                            .child(
+                                Button::new("add-folder")
+                                    .label("+ Add Folder")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        if let Some(path) = crate::adapters::platform::pick_folder() {
+                                            this.file_list.push(path);
+                                            cx.notify();
+                                        }
+                                    }))
+                            )
                     )
             )
-            // File list
             .child(
-                div().border_1().border_color(theme.border).rounded_md().h(px(100.)).p_2()
-                    .children(if self.file_list.is_empty() {
-                        vec![div().text_color(theme.muted).text_sm().child("No files added").into_any()]
-                    } else {
-                        self.file_list.iter().map(|p| {
-                            div().text_sm().px_1().child(p.to_string_lossy().to_string()).into_any()
-                        }).collect()
-                    })
-            )
-            // Wildcard filter
-            .child(
-                div().flex().flex_row().gap_2().items_center()
-                    .child(div().text_sm().child("Filter:"))
-                    .child(div().w(px(120.)).child(Input::new(&filter_input)))
+                field()
+                    .label("Files")
+                    .description(format!("{} file{} selected", file_count, if file_count == 1 { "" } else { "s" }))
                     .child(
-                        div().px_2().py_1().border_1().border_color(theme.border).rounded_md().cursor_pointer()
-                            .w(px(90.)).flex().flex_row().justify_between()
-                            .child(self.filter_policy.label())
-                            .child(if self.show_policy_dropdown { "\u{25B2}" } else { "\u{25BC}" })
-                            .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                this.show_policy_dropdown = !this.show_policy_dropdown;
+                        div()
+                            .border_1()
+                            .border_color(cx.global::<Theme>().border)
+                            .rounded_md()
+                            .h(px(80.))
+                            .p_2()
+                            .overflow_hidden()
+                            .child(
+                                div().child(
+                                    if self.file_list.is_empty() {
+                                        div().text_color(cx.global::<Theme>().muted).text_sm().child("No files added").into_any()
+                                    } else {
+                                        div().flex().flex_col().gap_px().children(
+                                            self.file_list.iter().map(|p| {
+                                                div().text_sm().truncate().child(p.to_string_lossy().to_string()).into_any()
+                                            }).collect::<Vec<_>>()
+                                        ).into_any()
+                                    }
+                                )
+                            )
+                    )
+            )
+            .child(
+                field()
+                    .label("Filter")
+                    .child(
+                        gpui_component::h_flex()
+                            .gap_2()
+                            .child(div().flex_1().child(Input::new(&filter_input)))
+                            .child(
+                                Button::new("filter-policy")
+                                    .label(self.filter_policy.label())
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.filter_policy = match this.filter_policy {
+                                            FilterPolicy::Include => FilterPolicy::Exclude,
+                                            FilterPolicy::Exclude => FilterPolicy::Include,
+                                        };
+                                        cx.notify();
+                                    }))
+                            )
+                    )
+            )
+            .child(
+                field()
+                    .label("Recursive")
+                    .child(
+                        Button::new("toggle-recursive")
+                            .label(if self.recursive { "Yes" } else { "No" })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.recursive = !this.recursive;
                                 cx.notify();
                             }))
                     )
             )
-            .when(self.show_policy_dropdown, |el| {
-                el.child(
-                    div().border_1().border_color(theme.border).rounded_md().flex().flex_col().w(px(90.))
-                        .child(
-                            div().px_2().py_1().cursor_pointer()
-                                .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-                                .child("Include")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                    this.filter_policy = FilterPolicy::Include;
-                                    this.show_policy_dropdown = false;
-                                    cx.notify();
-                                }))
-                        )
-                        .child(
-                            div().px_2().py_1().cursor_pointer()
-                                .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-                                .child("Exclude")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                    this.filter_policy = FilterPolicy::Exclude;
-                                    this.show_policy_dropdown = false;
-                                    cx.notify();
-                                }))
-                        )
-                )
-            })
-            // Recursive checkbox
             .child(
-                div().flex().flex_row().gap_1().items_center()
-                    .child(if self.recursive { "\u{2611}" } else { "\u{2610}" })
-                    .child("Recursive")
-                    .cursor_pointer()
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                        this.recursive = !this.recursive;
-                        cx.notify();
-                    }))
+                field()
+                    .label("Archive path")
+                    .child(Input::new(&prefix_input))
             )
-            // Archive path prefix
-            .child(
-                div().flex().flex_row().gap_2().items_center()
-                    .child(div().text_sm().child("Archive path:"))
-                    .child(div().w(px(150.)).child(Input::new(&prefix_input)))
-            )
-            // Compression section
-            .child(div().font_weight(FontWeight::MEDIUM).child("Compression"))
-            .when(self.format.supports_compression_level(), |el| {
+            .when(show_level, |el| {
                 el.child(
-                    div().flex().flex_row().gap_2().items_center()
-                        .child(div().text_sm().child("Level:"))
+                    field()
+                        .label("Compression level")
+                        .child(Select::new(&level_select).appearance(false).disabled(is_existing))
+                )
+            })
+            .when(show_7z, |el| {
+                el.child(
+                    field()
+                        .label("Method")
                         .child(
-                            div().px_2().py_1().border_1().border_color(theme.border).rounded_md().cursor_pointer()
-                                .w(px(120.)).flex().flex_row().justify_between()
-                                .child(compression_level_names(self.compression_level))
-                                .child(if self.show_level_dropdown { "\u{25B2}" } else { "\u{25BC}" })
-                                .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                    this.show_level_dropdown = !this.show_level_dropdown;
-                                    cx.notify();
-                                }))
+                            div()
+                                .px_2().py_1()
+                                .border_1().border_color(cx.global::<Theme>().border)
+                                .rounded_md()
+                                .opacity(if is_existing { 0.5 } else { 1.0 })
+                                .child(compression_method_display)
                         )
                 )
             })
-            .when(self.show_level_dropdown && self.format.supports_compression_level(), |el| {
-                el.child(
-                    div().border_1().border_color(theme.border).rounded_md().flex().flex_col().w(px(120.))
-                        .children((0u8..=5).map(|lvl| {
-                            div().px_2().py_1().cursor_pointer()
-                                .bg(if lvl == self.compression_level { theme.selection } else { hsla(0., 0., 0., 0.) })
-                                .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-                                .child(compression_level_names(lvl))
-                                .on_mouse_down(MouseButton::Left, cx.listener(move |this, _e, _window, cx| {
-                                    this.compression_level = lvl;
-                                    this.show_level_dropdown = false;
-                                    cx.notify();
-                                }))
-                                .into_any_element()
-                        }).collect::<Vec<_>>())
-                )
-            })
-            .when(self.format == ArchiveFormat::SevenZip || self.format == ArchiveFormat::Zip, |el| {
-                el.child(
-                    div().flex().flex_row().gap_2().items_center()
-                        .child(div().text_sm().child("Method:"))
-                          .child(div().px_2().py_1().border_1().border_color(theme.border).rounded_md().w(px(100.)).child(
-                            if self.compression_method.is_empty() { "LZMA2".to_string() } else { self.compression_method.clone() }
-                        ))
-                )
-            })
-            // Advanced
             .child(
-                div().flex().flex_col().gap_1()
+                field()
+                    .label_indent(false)
                     .child(
-                        div().px_2().py_1().cursor_pointer().flex().flex_row().gap_1()
-                            .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-                            .child(if self.show_advanced { "\u{25BC}" } else { "\u{25B6}" })
-                            .child("Advanced")
-                            .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
+                        Button::new("toggle-advanced")
+                            .label(if self.show_advanced { "▼ Advanced" } else { "▶ Advanced" })
+                            .ghost()
+                            .on_click(cx.listener(|this, _, _, cx| {
                                 this.show_advanced = !this.show_advanced;
                                 cx.notify();
                             }))
                     )
-                    .when(self.show_advanced, |el| {
-                        el.child(div().flex().flex_col().gap_2().pl_4().pt_1()
-                            .when(self.format == ArchiveFormat::SevenZip, |el| {
-                                el.child(div().flex().flex_row().gap_2().items_center()
-                                    .child(div().text_sm().child("Dictionary:"))
-                                    .child(div().px_2().py_1().border_1().border_color(theme.border).rounded_md().w(px(100.)).child(
-                                        if self.dictionary_size.is_empty() { "64 MB".to_string() } else { self.dictionary_size.clone() }
-                                    ))
-                                ).child(div().flex().flex_row().gap_2().items_center()
-                                    .child(div().text_sm().child("Word size:"))
-                                    .child(div().px_2().py_1().border_1().border_color(theme.border).rounded_md().w(px(80.)).child(
-                                        if self.word_size.is_empty() { "64".to_string() } else { self.word_size.clone() }
-                                    ))
-                                )
-                            })
-                            .when(self.format == ArchiveFormat::SevenZip, |el| {
-                                el.child(
-                                    div().flex().flex_row().gap_1().items_center()
-                                        .child(if self.solid { "\u{2611}" } else { "\u{2610}" })
-                                        .child("Solid archive")
-                                        .cursor_pointer()
-                                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                            this.solid = !this.solid;
-                                            cx.notify();
-                                        }))
-                                )
-                            })
-                            .child(div().flex().flex_row().gap_2().items_center()
-                                .child(div().text_sm().child("Volume size:"))
-                                .child(div().px_2().py_1().border_1().border_color(theme.border).rounded_md().w(px(100.)).child(
-                                    if self.volume_size.is_empty() { "\u{2014}".to_string() } else { self.volume_size.clone() }
-                                ))
-                            )
-                            .child(div().flex().flex_row().gap_2().items_center()
-                                .child(div().text_sm().child("Threads:"))
-                                .child(div().px_2().py_1().border_1().border_color(theme.border).rounded_md().w(px(80.)).child(
-                                    if self.thread_count.is_empty() { "auto".to_string() } else { self.thread_count.clone() }
-                                ))
-                            )
-                            .child(
-                                div().flex().flex_row().gap_1().items_center()
-                                    .child(if self.store_timestamps { "\u{2611}" } else { "\u{2610}" })
-                                    .child("Store timestamps")
-                                    .cursor_pointer()
-                                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                        this.store_timestamps = !this.store_timestamps;
-                                        cx.notify();
-                                    }))
-                            )
-                        )
-                    })
             )
-            // Encryption
-            .child(div().font_weight(FontWeight::MEDIUM).child("Encryption"))
-            .child(Input::new(&password_input))
-            .child(Input::new(&password_confirm_input))
-            .when(self.format.supports_encrypted_filenames(), |el| {
+            .when(self.show_advanced && show_7z, |el| {
                 el.child(
-                    div().flex().flex_row().gap_1().items_center()
-                        .child(if self.encrypt_filenames { "\u{2611}" } else { "\u{2610}" })
-                        .child("Encrypt filenames")
-                        .cursor_pointer()
-                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                            this.encrypt_filenames = !this.encrypt_filenames;
-                            cx.notify();
-                        }))
+                    field().label("Dictionary size").child(
+                        div().px_2().py_1().border_1().border_color(cx.global::<Theme>().border).rounded_md().w(px(100.)).child(dictionary_size_display)
+                    )
+                )
+                .child(
+                    field().label("Word size").child(
+                        div().px_2().py_1().border_1().border_color(cx.global::<Theme>().border).rounded_md().w(px(80.)).child(word_size_display)
+                    )
+                )
+                .child(
+                    field().label("Solid").child(
+                        Button::new("toggle-solid").label(if self.solid { "Yes" } else { "No" }).on_click(cx.listener(|this, _, _, cx| { this.solid = !this.solid; cx.notify(); }))
+                    )
                 )
             })
-            // Buttons
+            .when(self.show_advanced, |el| {
+                el.child(field().label("Volume size").child(
+                    div().px_2().py_1().border_1().border_color(cx.global::<Theme>().border).rounded_md().w(px(100.)).child(volume_size_display)
+                ))
+                .child(field().label("Threads").child(
+                    div().px_2().py_1().border_1().border_color(cx.global::<Theme>().border).rounded_md().w(px(80.)).child(thread_count_display)
+                ))
+                .child(field().label("Store timestamps").child(
+                    Button::new("toggle-timestamps").label(if self.store_timestamps { "Yes" } else { "No" }).on_click(cx.listener(|this, _, _, cx| { this.store_timestamps = !this.store_timestamps; cx.notify(); }))
+                ))
+            })
+            .child(field().label("Password").description("Leave empty for no encryption").child(Input::new(&password_input)))
+            .child(field().label("Confirm password").visible(has_password).child(Input::new(&password_confirm_input)))
+            .when(show_encrypted_names, |el| {
+                el.child(field().label("Encrypt filenames").child(
+                    Button::new("toggle-encrypt-filenames").label(if self.encrypt_filenames { "Yes" } else { "No" }).on_click(cx.listener(|this, _, _, cx| { this.encrypt_filenames = !this.encrypt_filenames; cx.notify(); }))
+                ))
+            })
             .child(
-                div().flex().flex_row().justify_end().gap_2().pt_2()
-                    .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| cx.emit(AddFilesDialogEvent::Canceled))))
-                    .child(
-                        div().px_3().py_1().rounded_md().cursor_pointer()
-                            .bg(if self.is_valid() { theme.primary } else { theme.muted })
-                            .child("OK")
-                            .when(self.is_valid(), |el| {
-                                el.on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                    use crate::domain::repository::RepoGlobal;
-                                    let repo = cx.global::<RepoGlobal>().0.clone();
-                                    let files = this.file_list.clone();
-                                    let format = this.format;
-                                    let level = this.compression_level;
-                                    let encryption = this.build_encryption();
-                                    let archive = cx.global::<RepoGlobal>().0.clone();
-                                    cx.spawn(async move |_, _cx| {
-                                        let _ = files;
-                                        let _ = format;
-                                        let _ = level;
+                field().label_indent(false).child(
+                    gpui_component::h_flex().justify_end().gap_2()
+                        .child(Button::new("cancel").label("Cancel").on_click(cx.listener(|_, _, _, cx| { cx.emit(AddFilesDialogEvent::Canceled); })))
+                        .child(
+                            Button::new("ok").primary().label("OK").disabled(!is_valid)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    if let (Some(handle), Some(repo)) = (&this.archive, &this.repo) {
+                                        let files = this.file_list.clone();
+                                        let encryption = this.build_encryption();
+                                        let uc = crate::application::add_to::AddToArchiveUseCase::new(repo.clone());
+                                        let (tx, rx) = crate::application::progress::progress_channel();
+                                        cx.update_global::<crate::adapters::view_models::progress_vm::ProgressState, _>(|state, _cx| {
+                                            state.is_active = true;
+                                            state.is_complete = false;
+                                            state.is_paused = false;
+                                            state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
+                                            state.message = format!("Adding {} files...", files.len());
+                                            state.current = 0;
+                                            state.total = files.len() as u64;
+                                            state.error = None;
+                                        });
+                                        let mut handle = handle.clone();
                                         let _ = encryption;
-                                    }).detach();
-                                    cx.emit(AddFilesDialogEvent::AddRequested {
-                                        files,
-                                        format,
-                                        compression_level: level,
-                                        encryption,
-                                    });
+                                        cx.background_spawn(async move {
+                                            let _ = uc.execute(&mut handle, &files, Some(tx));
+                                        }).detach();
+                                    }
+                                    cx.emit(AddFilesDialogEvent::Canceled);
                                 }))
-                            })
-                    )
+                        )
+                )
             )
     }
 }

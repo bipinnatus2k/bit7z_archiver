@@ -1,13 +1,19 @@
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
 use crate::domain::preferences::Preferences;
-use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::sidebar::{
+    Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem,
+    SidebarToggleButton,
+};
+use gpui_component::{Icon, IconName};
+use std::path::Path;
 
 pub struct ArchiveBrowser {
     archive_vm: Entity<ArchiveViewModel>,
     input_state: Entity<InputState>,
+    collapsed: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -30,8 +36,18 @@ impl ArchiveBrowser {
         Self {
             archive_vm,
             input_state,
+            collapsed: false,
             _subscriptions,
         }
+    }
+
+    pub fn toggle_collapsed(&mut self, cx: &mut Context<Self>) {
+        self.collapsed = !self.collapsed;
+        cx.notify();
+    }
+
+    pub fn is_collapsed(&self) -> bool {
+        self.collapsed
     }
 }
 
@@ -41,35 +57,77 @@ impl Render for ArchiveBrowser {
         let prefs = cx.global::<Preferences>();
         let recent_files = &prefs.archive.recent_files;
         let has_recent = !recent_files.is_empty();
-        let theme = cx.global::<Theme>();
+        let collapsed = self.collapsed;
+        let subdirs = vm.filtered_subdirs();
+        drop(vm);
 
-        gpui_component::v_flex().w(px(240.)).p_2().gap_2()
-            // Filter input (always visible)
-            .child(Input::new(&self.input_state))
-            // Folder tree — current path's subdirectories
-            .child(gpui_component::v_flex().text_sm().children(
-                vm.current_subdirs().iter().map(|name|
-                    div().px_2().py_1().cursor_pointer().child(format!("\u{1F4C1} {}", name))
-                ).collect::<Vec<_>>()
-            ))
-            // Recent files section
-            .when(has_recent, |el| el.child(
-                gpui_component::v_flex().gap_1().pt_2()
-                    .child(div().px_2().py_1().text_sm().font_weight(FontWeight::BOLD).text_color(theme.muted).child("Recent Files"))
-                    .children(recent_files.iter().map(|path| {
-                        let file_name = std::path::Path::new(path)
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| path.clone());
-                        let path_clone = path.clone();
-                        let vm = self.archive_vm.clone();
-                        div().px_2().py_1().cursor_pointer().text_sm()
-                            .on_mouse_down(MouseButton::Left, cx.listener(move |_this: &mut ArchiveBrowser, _event: &MouseDownEvent, _window: &mut Window, cx| {
-                                let path_ref = std::path::Path::new(&path_clone);
-                                vm.update(cx, |vm, cx| vm.open_archive(path_ref, None, cx));
+        let this = cx.entity();
+
+        let sidebar = Sidebar::new("archive-browser")
+            .collapsible(true)
+            .collapsed(collapsed)
+            .header(
+                SidebarHeader::new()
+                    .child(
+                        div().flex().flex_row().gap_2()
+                            .child(Icon::new(IconName::FolderOpen))
+                            .when(!collapsed, |this| this.child("File Explorer"))
+                    )
+            )
+            .child(
+                SidebarGroup::new("Folders")
+                    .child(
+                        SidebarMenu::new()
+                            .children(subdirs.into_iter().map(|name| {
+                                let avm = self.archive_vm.clone();
+                                SidebarMenuItem::new(name.clone())
+                                    .icon(IconName::Folder)
+                                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                        avm.update(cx, |vm, cx| {
+                                            vm.navigate_into(&name, cx);
+                                        });
+                                    })
                             }))
-                            .child(format!("\u{1F4C2} {}", file_name))
-                    }).collect::<Vec<_>>())
+                    )
+            )
+            .when(has_recent, |sidebar| sidebar.child(
+                SidebarGroup::new("Recent Files")
+                    .child(
+                        SidebarMenu::new()
+                            .children(recent_files.iter().map(|path| {
+                                let path = path.clone();
+                                let avm = self.archive_vm.clone();
+                                let file_name = Path::new(&path)
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| path.clone());
+                                SidebarMenuItem::new(file_name)
+                                    .icon(IconName::File)
+                                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                        let path_ref = std::path::Path::new(&path);
+                                        avm.update(cx, |vm, cx| {
+                                            vm.open_archive(path_ref, None, cx);
+                                        });
+                                    })
+                            }))
+                    )
             ))
+            .footer(
+                SidebarFooter::new()
+                    .child(
+                        SidebarToggleButton::new()
+                            .collapsed(collapsed)
+                            .on_click({
+                                let this = this.clone();
+                                move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                    this.update(cx, |this, cx| this.toggle_collapsed(cx));
+                                }
+                            })
+                    )
+            );
+
+        div().flex().flex_col().size_full()
+            .child(Input::new(&self.input_state).px_1().py_1())
+            .child(sidebar.flex_1())
     }
 }

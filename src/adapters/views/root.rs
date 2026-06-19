@@ -126,39 +126,36 @@ impl RootView {
                             archive_vm.update(cx, |vm, cx| vm.test_all(cx));
                         }
                         ArchiveVmEvent::RequestShowAdd => {
+                            let vm = archive_vm.read(cx);
                             let format = ArchiveFormat::SevenZip;
-                            let dialog = cx.new(move |cx| {
-                                crate::adapters::views::dialogs::add_files::AddFilesDialog::new(cx, format)
-                            });
-                            let repo = repo.clone();
-                            cx.subscribe(&dialog, move |this: &mut RootView, _, event: &crate::adapters::views::dialogs::add_files::AddFilesDialogEvent, cx| {
-                                match event {
-                                    crate::adapters::views::dialogs::add_files::AddFilesDialogEvent::AddRequested { files, format: _, compression_level: _, encryption: _ } => {
-                                        if let Some(ref handle) = this.archive_vm.read(cx).archive {
-                                            let uc = crate::application::add_to::AddToArchiveUseCase::new(repo.clone());
-                                            let mut handle = handle.clone();
-                                            let files = files.clone();
-                                            let (tx, rx) = crate::application::progress::progress_channel();
-                                            cx.update_global::<crate::adapters::view_models::progress_vm::ProgressState, _>(|state, _cx| {
-                                                state.is_active = true;
-                                                state.is_complete = false;
-                                                state.is_paused = false;
-                                                state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
-                                                state.message = format!("Adding {} files...", files.len());
-                                                state.current = 0;
-                                                state.total = files.len() as u64;
-                                                state.error = None;
-                                            });
-                                            cx.background_spawn(async move {
-                                                let _ = uc.execute(&mut handle, &files, Some(tx));
-                                            }).detach();
-                                        }
-                                        cx.notify();
+                            let is_solid = vm.properties.as_ref().map(|p| p.is_solid).unwrap_or(false);
+                            let archive_handle = vm.archive.clone();
+                            drop(vm);
+                            let repo_clone = repo.clone();
+                            cx.spawn(async move |_, cx: &mut AsyncApp| {
+                                let _ = cx.open_window(
+                                    WindowOptions {
+                                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                                            point(px(100.), px(100.)),
+                                            size(px(560.), px(600.)),
+                                        ))),
+                                        window_background: WindowBackgroundAppearance::Opaque,
+                                        window_decorations: Some(WindowDecorations::Client),
+                                        ..Default::default()
+                                    },
+                                    move |window, cx| {
+                                        let dialog = cx.new(|cx| {
+                                            crate::adapters::views::dialogs::add_files::AddFilesDialog::new(
+                                                cx,
+                                                format,
+                                                archive_handle.clone(),
+                                                Some(repo_clone.clone()),
+                                                is_solid,
+                                            )
+                                        });
+                                        cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
                                     }
-                                    crate::adapters::views::dialogs::add_files::AddFilesDialogEvent::Canceled => {
-                                        cx.notify();
-                                    }
-                                }
+                                );
                             }).detach();
                         }
                         ArchiveVmEvent::RequestShowSettings => {

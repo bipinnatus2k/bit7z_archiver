@@ -389,6 +389,17 @@ impl ArchiveViewModel {
             .unwrap_or_default()
     }
 
+    /// Subdirectories filtered by current filter_text (for sidebar).
+    pub fn filtered_subdirs(&self) -> Vec<String> {
+        if self.filter_text.is_empty() {
+            return self.current_subdirs();
+        }
+        let filter_lower = self.filter_text.to_lowercase();
+        self.current_subdirs().into_iter()
+            .filter(|name| name.to_lowercase().contains(&filter_lower))
+            .collect()
+    }
+
     pub fn displayed_entries(&self) -> &[LevelEntry] {
         &self.level_entries
     }
