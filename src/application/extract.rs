@@ -1,3 +1,4 @@
+use crate::application::progress::ProgressSender;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::path::Path;
@@ -17,7 +18,11 @@ impl ExtractEntriesUseCase {
         archive: &ArchiveHandle,
         indices: &[u32],
         dest: &Path,
+        progress: Option<ProgressSender>,
     ) -> Result<(), ArchiveError> {
+        if let Some(tx) = progress {
+            self.repo.set_progress_sender(tx);
+        }
         self.repo.extract(archive, indices, dest)
     }
 }

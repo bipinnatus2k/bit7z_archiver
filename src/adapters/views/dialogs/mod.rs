@@ -1,5 +1,10 @@
+pub mod add_files;
+pub mod checksum_result;
 pub mod create;
+pub mod extract;
 pub mod password;
 pub mod progress;
-pub mod extract;
+pub mod properties_archive;
+pub mod properties_entries;
 pub mod settings;
+pub mod test_results;

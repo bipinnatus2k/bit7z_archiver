@@ -1,9 +1,13 @@
+use crate::application::create::{CreateArchiveInput, CreateArchiveUseCase};
+use crate::application::add_to::AddToArchiveUseCase;
 use crate::application::preview::PreviewEntryUseCase;
-use crate::domain::archive::Password;
+use crate::application::checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
+use crate::domain::archive::{ArchiveFormat, EncryptionConfig, EncryptionMethod, Password};
 use crate::domain::repository::ArchiveRepository;
 use crate::adapters::shell::ShellIntegration;
 use clap::{Parser, Subcommand};
-use std::path::Path;
+use humansize::{format_size, BINARY};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Parser)]
@@ -75,6 +79,28 @@ pub enum Commands {
         #[arg(long)]
         password: Option<String>,
     },
+    /// List contents of an archive
+    List {
+        path: PathBuf,
+        #[arg(long)]
+        password: Option<String>,
+    },
+    /// Compute checksum of an entry
+    Checksum {
+        path: PathBuf,
+        index: usize,
+        #[arg(long)]
+        algorithm: Option<String>,
+        #[arg(long)]
+        password: Option<String>,
+    },
+    /// Create a new folder in an archive
+    NewFolder {
+        path: PathBuf,
+        folder_path: String,
+        #[arg(long)]
+        password: Option<String>,
+    },
     /// Register shell context menu entries
     ShellInstall,
     /// Unregister shell context menu entries
@@ -93,11 +119,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Ok(handle) => {
                     let props = repo.get_properties(&handle).unwrap_or_else(|e| {
                         eprintln!("Warning: could not read properties: {}", e);
-                        crate::domain::repository::ArchiveProperties {
-                            items_count: 0, folders_count: 0, files_count: 0,
-                            total_size: 0, packed_size: 0, is_encrypted: false,
-                            has_encrypted_items: false, is_multi_volume: false, is_solid: false,
-                        }
+                        crate::domain::repository::ArchiveProperties::default()
                     });
                     println!("Opened: {} ({} items, {} files, {} folders)",
                         path, props.items_count, props.files_count, props.folders_count);
@@ -136,10 +158,68 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Err(e) => eprintln!("Error: {}", e),
             }
         }
-        Commands::Compress { files, to, format: _, password: _ } => {
+        Commands::Compress { files, to, format, password } => {
             let dest = to.as_deref().unwrap_or("archive.7z");
-            eprintln!("Compress: {} files -> {} (format control pending)", files.len(), dest);
-            eprintln!("Note: compression is a placeholder — files must be added after creation.");
+            let archive_format = parse_format(format);
+            let archive_path = PathBuf::from(dest);
+
+            // Enumerate all input files (walk directories recursively)
+            let file_paths = collect_files(files);
+
+            // Create archive
+            let create_uc = CreateArchiveUseCase::new(repo.clone());
+            let encryption = password.as_ref().map(|pw| {
+                let method = match archive_format {
+                    ArchiveFormat::Zip => EncryptionMethod::ZipCrypto,
+                    _ => EncryptionMethod::Aes256,
+                };
+                EncryptionConfig {
+                    password: Password::new(pw.clone()),
+                    method,
+                    encrypt_filenames: false,
+                }
+            });
+
+            let input = CreateArchiveInput {
+                destination: archive_path.clone(),
+                format: archive_format,
+                compression_level: 5,
+                encryption,
+            };
+            let mut handle = match create_uc.execute(&input, None) {
+                Ok(h) => h,
+                Err(e) => { eprintln!("Error creating archive: {}", e); return; }
+            };
+
+            // Add files
+            let add_uc = AddToArchiveUseCase::new(repo.clone());
+            match add_uc.execute(&mut handle, &file_paths, None) {
+                Ok(()) => {},
+                Err(e) => { eprintln!("Error adding files: {}", e); repo.close(handle); return; }
+            }
+
+            // Compute sizes for summary
+            let uncompressed: u64 = file_paths.iter()
+                .filter_map(|p| std::fs::metadata(p).ok())
+                .map(|m| m.len())
+                .sum();
+
+            // Get compressed size
+            let compressed = std::fs::metadata(&archive_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+
+            let ratio = if uncompressed > 0 {
+                ((uncompressed - compressed) as f64 / uncompressed as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            println!("Created {} — {} files, {} -> {} ({:.1}%)",
+                dest, file_paths.len(), format_size(uncompressed, BINARY),
+                format_size(compressed, BINARY), ratio);
+
+            repo.close(handle);
         }
         Commands::Preview { path, index, password, max_bytes } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
@@ -209,6 +289,84 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
             }
             repo.close(handle);
         }
+        Commands::List { path, password } => {
+            let pw = password.as_ref().map(|p| Password::new(p.clone()));
+            let handle = match repo.open(path.as_path(), pw.as_ref()) {
+                Ok(h) => h,
+                Err(e) => { eprintln!("Error: {}", e); return; }
+            };
+            match repo.list_page(&handle, 0, u32::MAX as usize) {
+                Ok(page) => {
+                    println!("{0: <6} {1: <40} {2: >10} {3: >10} {4: >7} {5: <10}",
+                        "Index", "Name", "Size", "Packed", "Ratio", "Modified");
+                    println!("{:-<6} {:-<40} {:-<10} {:-<10} {:-<7} {:-<10}", "", "", "", "", "", "");
+                    for entry in &page.items {
+                        let size_str = if entry.is_directory {
+                            "<DIR>".to_string()
+                        } else {
+                            format_size(entry.size, BINARY)
+                        };
+                        let packed_str = if entry.is_directory {
+                            "-".to_string()
+                        } else {
+                            format_size(entry.compressed_size, BINARY)
+                        };
+                        let ratio_str = if entry.is_directory {
+                            "-".to_string()
+                        } else {
+                            format!("{:.0}%", entry.compression_ratio() * 100.0)
+                        };
+                        let date_str = entry.modified
+                            .map(|d| d.format("%Y-%m-%d").to_string())
+                            .unwrap_or_else(|| "-".to_string());
+                        let display_name = if entry.is_directory {
+                            format!("{}/", entry.name)
+                        } else {
+                            entry.name.clone()
+                        };
+                        println!("{0: <6} {1: <40} {2: >10} {3: >10} {4: >7} {5: <10}",
+                            entry.original_index, display_name, size_str, packed_str, ratio_str, date_str);
+                    }
+                }
+                Err(e) => eprintln!("Error listing archive: {}", e),
+            }
+            repo.close(handle);
+        }
+        Commands::Checksum { path, index, algorithm, password } => {
+            let pw = password.as_ref().map(|p| Password::new(p.clone()));
+            let handle = match repo.open(path.as_path(), pw.as_ref()) {
+                Ok(h) => h,
+                Err(e) => { eprintln!("Error: {}", e); return; }
+            };
+            let algorithms = parse_checksum_algorithms(algorithm.as_deref());
+            let uc = CalculateChecksumUseCase::new(repo.clone());
+            match uc.execute(&handle, &[*index as u32], &algorithms) {
+                Ok(results) => {
+                    for result in &results {
+                        println!("Checksums for {} (index {}):", result.path, index);
+                        if let Some(ref crc) = result.crc32 { println!("  CRC32:  {}", crc); }
+                        if let Some(ref md5) = result.md5 { println!("  MD5:    {}", md5); }
+                        if let Some(ref sha1) = result.sha1 { println!("  SHA1:   {}", sha1); }
+                        if let Some(ref sha256) = result.sha256 { println!("  SHA256: {}", sha256); }
+                    }
+                }
+                Err(e) => eprintln!("Checksum error: {}", e),
+            }
+            repo.close(handle);
+        }
+        Commands::NewFolder { path, folder_path, password } => {
+            let pw = password.as_ref().map(|p| Password::new(p.clone()));
+            let mut handle = match repo.open(path.as_path(), pw.as_ref()) {
+                Ok(h) => h,
+                Err(e) => { eprintln!("Error: {}", e); return; }
+            };
+            let repo_clone = repo.clone();
+            match crate::application::new_folder::new_folder(repo_clone, &mut handle, &folder_path) {
+                Ok(()) => println!("Created folder '{}' in {}", folder_path, path.display()),
+                Err(e) => eprintln!("Error: {}", e),
+            }
+            repo.close(handle);
+        }
         Commands::ShellInstall => {
             #[cfg(target_os = "windows")]
             {
@@ -240,6 +398,58 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
             }
             #[cfg(not(any(target_os = "windows", target_os = "linux")))]
             eprintln!("Shell integration not supported on this platform.");
+        }
+    }
+}
+
+fn parse_format(s: &str) -> ArchiveFormat {
+    match s.to_lowercase().as_str() {
+        "7z" | "sevenzip" => ArchiveFormat::SevenZip,
+        "zip" => ArchiveFormat::Zip,
+        "tar" => ArchiveFormat::Tar,
+        "tar.gz" | "tgz" | "targz" => ArchiveFormat::TarGz,
+        "tar.xz" | "txz" | "tarxz" => ArchiveFormat::TarXz,
+        "tar.bz2" | "tbz2" | "tarbz2" => ArchiveFormat::TarBz2,
+        "rar" => ArchiveFormat::Rar,
+        _ => ArchiveFormat::SevenZip,
+    }
+}
+
+fn collect_files(paths: &[String]) -> Vec<PathBuf> {
+    let mut result = Vec::new();
+    for path_str in paths {
+        let path = PathBuf::from(path_str);
+        if path.is_file() {
+            result.push(path);
+        } else if path.is_dir() {
+            collect_dir(&path, &mut result);
+        }
+    }
+    result
+}
+
+fn collect_dir(dir: &Path, out: &mut Vec<PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                out.push(path);
+            } else if path.is_dir() {
+                collect_dir(&path, out);
+            }
+        }
+    }
+}
+
+fn parse_checksum_algorithms(alg: Option<&str>) -> Vec<ChecksumAlgorithm> {
+    match alg.map(|s| s.to_lowercase()).as_deref() {
+        Some("crc32") => vec![ChecksumAlgorithm::Crc32],
+        Some("md5") => vec![ChecksumAlgorithm::Md5],
+        Some("sha1") => vec![ChecksumAlgorithm::Sha1],
+        Some("sha256") | None => vec![ChecksumAlgorithm::Sha256],
+        Some(other) => {
+            eprintln!("Unknown algorithm '{}', defaulting to sha256", other);
+            vec![ChecksumAlgorithm::Sha256]
         }
     }
 }

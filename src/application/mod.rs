@@ -7,3 +7,8 @@ pub mod rename;
 pub mod test;
 pub mod preview;
 pub mod events;
+pub mod progress;
+pub mod checksum;
+pub mod open_entry;
+pub mod new_folder;
+pub mod new_file;

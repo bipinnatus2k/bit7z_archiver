@@ -1,3 +1,4 @@
+use crate::application::events::ArchiveVmEvent;
 use crate::adapters::view_models::archive_vm::{ArchiveViewModel, ViewStatus};
 use crate::adapters::views::components::state_view::{empty_view, error_view, loading_view};
 use crate::theme::Theme;
@@ -169,7 +170,7 @@ impl Render for ArchiveFileList {
                 container.child(
                     div().flex_1().child(DataTable::new(&table_entity).stripe(false).bordered(false))
                         .id("entry-table-area")
-                        .context_menu(move |menu, _window, cx| {
+                        .context_menu(move |menu, window, cx| {
                             let current_vm = avm.read(cx);
                             let has_selection = !current_vm.selection.is_empty();
                             let is_ready = matches!(current_vm.status, ViewStatus::Ready);
@@ -209,6 +210,31 @@ impl Render for ArchiveFileList {
                                             vm_clear.update(cx, |vm, cx| vm.clear_selection(cx));
                                         })
                                 );
+                            }
+                            if has_selection && is_ready {
+                                m = m.submenu("Checksum", window, cx, |menu, _, _| {
+                                    menu
+                                        .item(PopupMenuItem::new("CRC32").on_click(
+                                            move |_: &ClickEvent, _: &mut Window, _: &mut App| {
+                                                log::info!("Checksum CRC32 requested");
+                                            },
+                                        ))
+                                        .item(PopupMenuItem::new("MD5").on_click(
+                                            move |_: &ClickEvent, _: &mut Window, _: &mut App| {
+                                                log::info!("Checksum MD5 requested");
+                                            },
+                                        ))
+                                        .item(PopupMenuItem::new("SHA1").on_click(
+                                            move |_: &ClickEvent, _: &mut Window, _: &mut App| {
+                                                log::info!("Checksum SHA1 requested");
+                                            },
+                                        ))
+                                        .item(PopupMenuItem::new("SHA256").on_click(
+                                            move |_: &ClickEvent, _: &mut Window, _: &mut App| {
+                                                log::info!("Checksum SHA256 requested");
+                                            },
+                                        ))
+                                });
                             }
                             m
                         })

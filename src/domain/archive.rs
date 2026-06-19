@@ -15,9 +15,44 @@ pub struct ArchiveEntry {
     pub is_encrypted: bool,
     pub is_symlink: bool,
     pub modified: Option<DateTime<Utc>>,
+    pub created: Option<DateTime<Utc>>,
+    pub accessed: Option<DateTime<Utc>>,
     pub crc: Option<u32>,
+    pub attributes: Option<u32>,
+    pub posix_attrib: Option<u32>,
+    pub host_os: Option<u8>,
+    pub compression_method: Option<String>,
+    pub comment: Option<String>,
+    pub user: Option<String>,
+    pub group: Option<String>,
     /// Original index in the archive (for preview/extraction).
     pub original_index: u32,
+}
+
+impl Default for ArchiveEntry {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            path: String::new(),
+            size: 0,
+            compressed_size: 0,
+            is_directory: false,
+            is_encrypted: false,
+            is_symlink: false,
+            modified: None,
+            created: None,
+            accessed: None,
+            crc: None,
+            attributes: None,
+            posix_attrib: None,
+            host_os: None,
+            compression_method: None,
+            comment: None,
+            user: None,
+            group: None,
+            original_index: 0,
+        }
+    }
 }
 
 impl ArchiveEntry {
@@ -221,13 +256,23 @@ pub struct EncryptionConfig {
 pub struct TestResult {
     pub total: usize,
     pub passed: usize,
-    pub failures: Vec<TestFailure>,
+    pub failed: Vec<TestFailure>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TestFailure {
     pub entry_path: String,
     pub error: String,
+    pub index: usize,
+    pub path: String,
+    pub reason: TestFailureReason,
+}
+
+#[derive(Debug, Clone)]
+pub enum TestFailureReason {
+    CrcMismatch { expected: u32, actual: u32 },
+    ReadError(String),
+    UnsupportedOperation,
 }
 
 /// Output file info for creation.
@@ -262,8 +307,8 @@ mod tests {
             is_encrypted: false,
             is_symlink: false,
             modified: None,
-            crc: None,
             original_index: 0,
+            ..Default::default()
         };
         assert_eq!(entry.compression_ratio(), 0.0);
     }
@@ -275,12 +320,7 @@ mod tests {
             path: "test.bin".into(),
             size: 1000,
             compressed_size: 1000,
-            is_directory: false,
-            is_encrypted: false,
-            is_symlink: false,
-            modified: None,
-            crc: None,
-            original_index: 0,
+            ..Default::default()
         };
         assert_eq!(entry.compression_ratio(), 0.0);
     }
@@ -292,12 +332,7 @@ mod tests {
             path: "test.txt".into(),
             size: 1000,
             compressed_size: 300,
-            is_directory: false,
-            is_encrypted: false,
-            is_symlink: false,
-            modified: None,
-            crc: None,
-            original_index: 0,
+            ..Default::default()
         };
         let ratio = entry.compression_ratio();
         assert!((ratio - 0.7).abs() < 0.001, "Expected ~0.7, got {}", ratio);
@@ -328,5 +363,53 @@ mod tests {
     fn test_archive_format_display_name() {
         assert_eq!(ArchiveFormat::SevenZip.display_name(), "7z");
         assert_eq!(ArchiveFormat::TarGz.display_name(), "Tar.gz");
+    }
+
+    mod test_result_logic {
+        use super::*;
+
+        #[test]
+        fn test_all_passed() {
+            let r = TestResult { total: 10, passed: 10, failed: vec![] };
+            assert_eq!(r.total, 10);
+            assert_eq!(r.passed, 10);
+            assert!(r.failed.is_empty());
+        }
+
+        #[test]
+        fn test_all_failed() {
+            let failures: Vec<TestFailure> = (0..3).map(|i| TestFailure {
+                entry_path: format!("f{}.txt", i),
+                error: "CRC mismatch".into(),
+                index: i,
+                path: format!("f{}.txt", i),
+                reason: TestFailureReason::CrcMismatch { expected: i as u32, actual: 99 },
+            }).collect();
+            let r = TestResult { total: 3, passed: 0, failed: failures };
+            assert_eq!(r.total, 3);
+            assert_eq!(r.passed, 0);
+            assert_eq!(r.failed.len(), 3);
+        }
+
+        #[test]
+        fn test_mixed() {
+            let r = TestResult {
+                total: 5,
+                passed: 4,
+                failed: vec![TestFailure {
+                    entry_path: "bad.txt".into(), error: "err".into(),
+                    index: 1, path: "bad.txt".into(),
+                    reason: TestFailureReason::ReadError("err".into()),
+                }],
+            };
+            assert_eq!(r.passed, r.total - r.failed.len());
+        }
+
+        #[test]
+        fn test_empty() {
+            let r = TestResult { total: 0, passed: 0, failed: vec![] };
+            assert_eq!(r.total, 0);
+            assert_eq!(r.passed, 0);
+        }
     }
 }

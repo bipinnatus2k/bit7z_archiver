@@ -18,6 +18,7 @@ thiserror = "2"
 secrecy = { version = "0.10", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 crossbeam = "0.8"
+rfd = "0.15"
 directories = "6"
 tracing = "0.1"
 tracing-subscriber = "0.3"
@@ -25,6 +26,10 @@ anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 humansize = "2"
 log = "0.4"
+md-5 = "0.10"
+sha2 = "0.10"
+sha1 = "0.10"
+crc32fast = "1.4"
 
 [profile.dev]
 debug = 1
@@ -46,3 +51,6 @@ windows-sys = { version = "0.59", features = [
     "Win32_Graphics_Gdi",
     "Win32_System_EventNotificationService"
 ] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "4"

@@ -7,6 +7,7 @@ use crate::adapters::repository::Bit7zRepository;
 use crate::adapters::platform;
 use crate::adapters::tray::{TrayManager, TrayGlobal};
 use crate::domain::preferences::{PreferencesRepoGlobal, PreferencesRepository, ThemeMode};
+use crate::adapters::view_models::progress_vm::ProgressState;
 use crate::adapters::views::root::RootView;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,7 +36,11 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
         cx.set_global(prefs);
         cx.set_global(RepoGlobal(repo.clone()));
         cx.set_global(PreferencesRepoGlobal(Arc::new(prefs_repo)));
-        cx.set_global(TrayGlobal(tray));
+        cx.set_global(TrayGlobal(tray.clone()));
+        cx.set_global(ProgressState::default());
+        cx.update_global::<ProgressState, _>(|state, _cx| {
+            state.tray_sender = Some(tray.cmd_tx.clone());
+        });
 
         // Start IPC listener for CLI→GUI handoff
         if let Some(ref open_path) = open_path {

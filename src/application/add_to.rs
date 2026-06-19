@@ -1,3 +1,4 @@
+use crate::application::progress::ProgressSender;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::path::PathBuf;
@@ -7,7 +8,23 @@ pub struct AddToArchiveUseCase { repo: Arc<dyn ArchiveRepository> }
 
 impl AddToArchiveUseCase {
     pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self { Self { repo } }
-    pub fn execute(&self, archive: &mut ArchiveHandle, files: &[PathBuf]) -> Result<(), ArchiveError> {
+    pub fn execute(
+        &self,
+        archive: &mut ArchiveHandle,
+        files: &[PathBuf],
+        progress: Option<ProgressSender>,
+    ) -> Result<(), ArchiveError> {
+        // Validate input paths exist
+        for f in files {
+            if !f.is_file() && !f.is_dir() {
+                return Err(ArchiveError::NotFound(
+                    f.to_string_lossy().to_string(),
+                ));
+            }
+        }
+        if let Some(tx) = progress {
+            self.repo.set_progress_sender(tx);
+        }
         self.repo.add(archive, files)
     }
 }

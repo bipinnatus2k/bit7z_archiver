@@ -5,6 +5,8 @@ pub mod worker;
 use crate::domain::archive::Password;
 use std::ffi::CStr;
 use std::ptr;
+use autocxx::c_int;
+use autocxx::c_void;
 
 /// Store opaque C++ pointers as usize to avoid autocxx c_void type mismatches.
 type Handle = usize;
@@ -145,22 +147,11 @@ impl ArchiveReader {
         Self { raw }
     }
 
-    /// Test archive integrity. Returns (all_ok, total, failed_count, error_message).
-    pub fn test(&self) -> Result<(bool, u32, u32, String), String> {
-        let result = unsafe { bit7z_reader_test(self.raw as *mut _) };
-        if result.is_null() {
-            return Err("Test failed".into());
-        }
-        let all_ok = unsafe { bit7z_test_result_all_ok(result) } != 0;
-        let total = unsafe { bit7z_test_result_total(result) };
-        let failed_count = unsafe { bit7z_test_result_failed_count(result) };
-        let error = unsafe {
-            let ptr = bit7z_test_result_error(result);
-            if ptr.is_null() { String::new() }
-            else { CStr::from_ptr(ptr).to_string_lossy().into_owned() }
-        };
-        unsafe { bit7z_test_result_free(result); }
-        Ok((all_ok, total, failed_count, error))
+    /// Test archive integrity. 
+    /// TODO: re-enable when bit7z_reader_test linker symbols are resolved.
+    #[allow(dead_code)]
+    fn _test_stub(&self) -> Result<(bool, u32, u32, String), String> {
+        Err("test not implemented".into())
     }
 
     /// Check if opened archive has any encrypted items.
@@ -264,6 +255,9 @@ extern "C" {
     fn bit7z_writer_set_update_mode(w: *mut std::ffi::c_void, mode: i32);
     fn bit7z_writer_add_file(w: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
     fn bit7z_writer_add_files(w: *mut std::ffi::c_void, paths: *const *const std::ffi::c_char, count: u32) -> i32;
+    // bit7z_writer_add_items uses `const char**` which autocxx cannot bind,
+    // so it is declared manually here instead of via generate!() in ffi.rs.
+    fn bit7z_writer_add_items(w: *mut std::ffi::c_void, paths: *const *const std::ffi::c_char, archive_paths: *const *const std::ffi::c_char, count: u32) -> i32;
     fn bit7z_writer_add_dir(w: *mut std::ffi::c_void, dir: *const std::ffi::c_char) -> i32;
     fn bit7z_writer_compress_to(w: *mut std::ffi::c_void, out_path: *const std::ffi::c_char) -> i32;
     fn bit7z_writer_compress_to_cb(
@@ -279,13 +273,13 @@ extern "C" {
     fn bit7z_editor_delete(e: *mut std::ffi::c_void, index: u32) -> i32;
     fn bit7z_editor_apply(e: *mut std::ffi::c_void) -> i32;
 
-    // Test archive integrity
-    fn bit7z_reader_test(reader: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
-    fn bit7z_test_result_total(result: *mut std::ffi::c_void) -> u32;
-    fn bit7z_test_result_failed_count(result: *mut std::ffi::c_void) -> u32;
-    fn bit7z_test_result_all_ok(result: *mut std::ffi::c_void) -> i32;
-    fn bit7z_test_result_error(result: *mut std::ffi::c_void) -> *const std::ffi::c_char;
-    fn bit7z_test_result_free(result: *mut std::ffi::c_void);
+    // Test archive integrity — not yet used (inline in demo.h, missing linker symbols)
+    // fn bit7z_reader_test(reader: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    // fn bit7z_test_result_total(result: *mut std::ffi::c_void) -> u32;
+    // fn bit7z_test_result_failed_count(result: *mut std::ffi::c_void) -> u32;
+    // fn bit7z_test_result_all_ok(result: *mut std::ffi::c_void) -> i32;
+    // fn bit7z_test_result_error(result: *mut std::ffi::c_void) -> *const std::ffi::c_char;
+    // fn bit7z_test_result_free(result: *mut std::ffi::c_void);
 
     // Encryption detection
     fn bit7z_is_header_encrypted(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
@@ -330,6 +324,34 @@ pub enum UpdateMode {
     Update = 2,
 }
 
+/// Compression method for writing archives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum WriterCompressionMethod {
+    Copy = 0,
+    Deflate = 1,
+    Deflate64 = 2,
+    BZip2 = 3,
+    Lzma = 4,
+    Lzma2 = 5,
+    Ppmd = 6,
+}
+
+/// Encryption scope for archive passwords.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncryptionScope {
+    DataOnly = 0,
+    DataAndHeaders = 1,
+}
+
+/// Filter policy for directory enumeration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FilterPolicy {
+    Include = 0,
+    Exclude = 1,
+}
+
 pub struct Writer {
     raw: Handle,
 }
@@ -342,6 +364,10 @@ impl Writer {
         let raw = unsafe { bit7z_writer_create(lib.raw_handle() as *mut _, format as i32) };
         if raw.is_null() { Err("failed to create writer".into()) }
         else { Ok(Self { raw: raw as Handle }) }
+    }
+
+    pub unsafe fn from_raw(raw: Handle) -> Self {
+        Self { raw }
     }
 
     pub fn open(lib: &Library, path: &str, format: WriterFormat, password: Option<&str>) -> Result<Self, String> {
@@ -420,6 +446,79 @@ impl Writer {
             on_file,
         );
         if ret == 0 { Ok(()) } else { Err("compress_to failed or cancelled".into()) }
+    }
+
+    pub fn set_compression_method(&self, method: WriterCompressionMethod) {
+        unsafe { crate::ffi::bit7z_writer_set_compression_method(self.raw as *mut _, c_int(method as i32)); }
+    }
+
+    pub fn set_dictionary_size(&self, bytes: u32) {
+        unsafe { crate::ffi::bit7z_writer_set_dictionary_size(self.raw as *mut _, bytes); }
+    }
+
+    pub fn set_word_size(&self, bytes: u32) {
+        unsafe { crate::ffi::bit7z_writer_set_word_size(self.raw as *mut _, bytes); }
+    }
+
+    pub fn set_solid_mode(&self, solid: bool) {
+        unsafe { crate::ffi::bit7z_writer_set_solid_mode(self.raw as *mut _, c_int(solid as i32)); }
+    }
+
+    pub fn set_volume_size(&self, bytes: u64) {
+        unsafe { crate::ffi::bit7z_writer_set_volume_size(self.raw as *mut _, bytes); }
+    }
+
+    pub fn set_password_ex(&self, password: &str, encrypt_header: bool) {
+        let c_pw = std::ffi::CString::new(password).unwrap();
+        unsafe { crate::ffi::bit7z_writer_set_password_ex(self.raw as *mut _, c_pw.as_ptr(), c_int(encrypt_header as i32)); }
+    }
+
+    pub fn set_store_timestamps(&self, modified: bool, created: bool, accessed: bool) {
+        unsafe {
+            crate::ffi::bit7z_writer_set_store_timestamps(
+                self.raw as *mut _,
+                c_int(modified as i32),
+                c_int(created as i32),
+                c_int(accessed as i32),
+            );
+        }
+    }
+
+    pub fn add_dir_filtered(&self, dir: &str, filter: &str, policy: FilterPolicy, recursive: bool) -> Result<(), String> {
+        let c_dir = std::ffi::CString::new(dir).map_err(|e| format!("{}", e))?;
+        let c_filter = std::ffi::CString::new(filter).map_err(|e| format!("{}", e))?;
+        let ret = unsafe {
+            crate::ffi::bit7z_writer_add_dir_filtered(
+                self.raw as *mut _,
+                c_dir.as_ptr(),
+                c_filter.as_ptr(),
+                c_int(policy as i32),
+                c_int(recursive as i32),
+            )
+        };
+        if ret == 0 { Ok(()) } else { Err("add_dir_filtered failed".into()) }
+    }
+
+    pub fn add_items(&self, paths_and_names: &[(&str, &str)]) -> Result<(), String> {
+        let c_paths: Vec<std::ffi::CString> = paths_and_names
+            .iter()
+            .filter_map(|(p, _)| std::ffi::CString::new(*p).ok())
+            .collect();
+        let c_names: Vec<std::ffi::CString> = paths_and_names
+            .iter()
+            .filter_map(|(_, n)| std::ffi::CString::new(*n).ok())
+            .collect();
+        let path_ptrs: Vec<*const std::ffi::c_char> = c_paths.iter().map(|s| s.as_ptr()).collect();
+        let name_ptrs: Vec<*const std::ffi::c_char> = c_names.iter().map(|s| s.as_ptr()).collect();
+        let ret = unsafe {
+            bit7z_writer_add_items(
+                self.raw as *mut _,
+                path_ptrs.as_ptr(),
+                name_ptrs.as_ptr(),
+                path_ptrs.len() as u32,
+            )
+        };
+        if ret == 0 { Ok(()) } else { Err("add_items failed".into()) }
     }
 
     /// Take ownership of the raw handle (prevents Drop from closing).
@@ -517,6 +616,100 @@ impl<'a> Item<'a> {
     }
     pub fn is_encrypted(&self) -> bool {
         unsafe { crate::ffi::bit7z_item_is_encrypted(self.reader.raw as *mut _, self.index) != 0 }
+    }
+
+    fn raw_ptr(&self) -> *mut c_void {
+        unsafe { crate::ffi::bit7z_item_from_reader(self.reader.raw as *mut _, self.index) }
+    }
+
+    pub fn mtime(&self) -> Result<u64, String> {
+        let result = unsafe { crate::ffi::bit7z_item_mtime(self.raw_ptr()) };
+        Ok(result)
+    }
+
+    pub fn ctime(&self) -> Result<u64, String> {
+        let result = unsafe { crate::ffi::bit7z_item_ctime(self.raw_ptr()) };
+        Ok(result)
+    }
+
+    pub fn atime(&self) -> Result<u64, String> {
+        let result = unsafe { crate::ffi::bit7z_item_atime(self.raw_ptr()) };
+        Ok(result)
+    }
+
+    pub fn attributes(&self) -> Result<u32, String> {
+        let result = unsafe { crate::ffi::bit7z_item_attributes(self.raw_ptr()) };
+        Ok(result)
+    }
+
+    pub fn host_os(&self) -> Result<u8, String> {
+        let result = unsafe { crate::ffi::bit7z_item_host_os(self.raw_ptr()) };
+        Ok(result)
+    }
+
+    pub fn compression_method(&self) -> Result<String, String> {
+        let buf_size: u32 = 256;
+        let mut buf: Vec<u8> = vec![0u8; buf_size as usize];
+        let ret = unsafe {
+            crate::ffi::bit7z_item_compression_method(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
+        };
+        if ret < 0 { return Err("failed to get compression method".into()); }
+        let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
+        Ok(c_str.to_string_lossy().into_owned())
+    }
+
+    pub fn comment(&self) -> Result<String, String> {
+        let buf_size: u32 = 256;
+        let mut buf: Vec<u8> = vec![0u8; buf_size as usize];
+        let ret = unsafe {
+            crate::ffi::bit7z_item_comment(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
+        };
+        if ret < 0 { return Err("failed to get comment".into()); }
+        let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
+        Ok(c_str.to_string_lossy().into_owned())
+    }
+
+    pub fn user(&self) -> Result<String, String> {
+        let buf_size: u32 = 256;
+        let mut buf: Vec<u8> = vec![0u8; buf_size as usize];
+        let ret = unsafe {
+            crate::ffi::bit7z_item_user(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
+        };
+        if ret < 0 { return Err("failed to get user".into()); }
+        let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
+        Ok(c_str.to_string_lossy().into_owned())
+    }
+
+    pub fn group(&self) -> Result<String, String> {
+        let buf_size: u32 = 256;
+        let mut buf: Vec<u8> = vec![0u8; buf_size as usize];
+        let ret = unsafe {
+            crate::ffi::bit7z_item_group(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
+        };
+        if ret < 0 { return Err("failed to get group".into()); }
+        let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
+        Ok(c_str.to_string_lossy().into_owned())
+    }
+
+    pub fn is_symlink(&self) -> Result<bool, String> {
+        let result = unsafe { crate::ffi::bit7z_item_is_symlink(self.raw_ptr()) };
+        Ok(result != 0)
+    }
+
+    pub fn posix_attrib(&self) -> Result<u32, String> {
+        let result = unsafe { crate::ffi::bit7z_item_posix_attrib(self.raw_ptr()) };
+        Ok(result)
+    }
+
+    pub fn extension(&self) -> Result<String, String> {
+        let buf_size: u32 = 256;
+        let mut buf: Vec<u8> = vec![0u8; buf_size as usize];
+        let ret = unsafe {
+            crate::ffi::bit7z_item_extension(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
+        };
+        if ret < 0 { return Err("failed to get extension".into()); }
+        let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
+        Ok(c_str.to_string_lossy().into_owned())
     }
 }
 

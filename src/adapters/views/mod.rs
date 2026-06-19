@@ -1,4 +1,5 @@
 pub mod root;
+pub mod menu;
 pub mod toolbar;
 pub mod archive_file_list;
 pub mod archive_browser;

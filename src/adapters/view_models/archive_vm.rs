@@ -1,11 +1,18 @@
-use crate::application::events::ArchiveVmEvent;
+use crate::application::checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
+use crate::application::events::{ArchiveVmEvent, ChecksumAlgorithm as EventChecksumAlgorithm};
+use crate::application::new_folder::new_folder;
+use crate::application::new_file::new_file_and_add;
 use crate::application::open::OpenArchiveUseCase;
+use crate::application::open_entry::OpenEntryUseCase;
+use crate::application::progress::progress_channel;
+use crate::application::{add_to::AddToArchiveUseCase, delete::DeleteEntriesUseCase, rename::RenameEntryUseCase, test::TestEntriesUseCase};
 use crate::domain::archive::*;
 use crate::domain::preferences::{Preferences, PreferencesRepoGlobal};
 use crate::domain::repository::*;
+use crate::adapters::view_models::progress_vm::ProgressState;
 use gpui::{EventEmitter, *};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 
 /// A single item at the current navigation level.
@@ -402,6 +409,33 @@ impl ArchiveViewModel {
         }
     }
 
+    pub fn request_add_files(&mut self, cx: &mut Context<Self>) {
+        cx.emit(ArchiveVmEvent::RequestShowAdd);
+    }
+
+    pub fn request_show_settings(&mut self, cx: &mut Context<Self>) {
+        cx.emit(ArchiveVmEvent::RequestShowSettings);
+    }
+
+    pub fn invert_selection(&mut self, cx: &mut Context<Self>) {
+        let indices: Vec<u32> = self.level_entries.iter().map(|e| e.original_index).collect();
+        for idx in indices {
+            if self.selection.contains(&idx) {
+                self.selection.remove(&idx);
+            } else {
+                self.selection.insert(idx);
+            }
+        }
+        self.selection_anchor = None;
+        if let Some(archive) = &self.archive {
+            let first = self.selection.iter().next().copied();
+            cx.emit(ArchiveVmEvent::SelectionChanged(
+                first.map(|idx| (archive.clone(), idx)),
+            ));
+        }
+        cx.notify();
+    }
+
     /// Collect ArchiveEntry for all selected (original) indices.
     pub fn selected_entries(&self) -> Vec<ArchiveEntry> {
         if self.selection.is_empty() { return vec![]; }
@@ -434,7 +468,320 @@ impl ArchiveViewModel {
         }
     }
 
-    pub fn delete_selected(&mut self, _cx: &mut Context<Self>) {
-        // Placeholder for delete functionality - will be implemented with FFI support
+    pub fn delete_selected(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.status, ViewStatus::Ready) || self.selection.is_empty() {
+            return;
+        }
+        let indices: Vec<u32> = self.selection.iter().copied().collect();
+        cx.emit(ArchiveVmEvent::RequestDelete);
+        let repo = self.repo.clone();
+        let mut handle = self.archive.clone().unwrap();
+        let count = indices.len() as u64;
+
+        let (tx, rx) = progress_channel();
+        cx.update_global::<ProgressState, _>(|state, _cx| {
+            state.is_active = true;
+            state.is_complete = false;
+            state.is_paused = false;
+            state.receiver = Some(Arc::new(Mutex::new(rx)));
+            state.message = format!("Deleting {} entries...", count);
+            state.current = 0;
+            state.total = count;
+            state.error = None;
+        });
+
+        cx.background_spawn(async move {
+            let uc = DeleteEntriesUseCase::new(repo);
+            uc.execute(&mut handle, &indices, Some(tx))
+        }).detach();
+
+        cx.spawn(async move |this, cx| {
+            loop {
+                let done = cx.update_global::<ProgressState, _>(|state, _| {
+                    let _ = state.poll();
+                    state.is_complete
+                });
+                if done {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            }
+            let _ = this.update(cx, |this, cx| {
+                this.refresh(cx);
+                cx.emit(ArchiveVmEvent::RefreshListing);
+            });
+        }).detach();
+    }
+
+    pub fn add_files(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.status, ViewStatus::Ready) {
+            return;
+        }
+        let paths = match crate::adapters::platform::pick_files() {
+            Some(p) if !p.is_empty() => p,
+            _ => return,
+        };
+        let count = paths.len() as u64;
+        cx.emit(ArchiveVmEvent::RequestAddFiles);
+        let repo = self.repo.clone();
+        let mut handle = self.archive.clone().unwrap();
+
+        let (tx, rx) = progress_channel();
+        cx.update_global::<ProgressState, _>(|state, _cx| {
+            state.is_active = true;
+            state.is_complete = false;
+            state.is_paused = false;
+            state.receiver = Some(Arc::new(Mutex::new(rx)));
+            state.message = format!("Adding {} files...", count);
+            state.current = 0;
+            state.total = count;
+            state.error = None;
+        });
+
+        cx.background_spawn(async move {
+            let uc = AddToArchiveUseCase::new(repo);
+            uc.execute(&mut handle, &paths, Some(tx))
+        }).detach();
+
+        cx.spawn(async move |this, cx| {
+            loop {
+                let done = cx.update_global::<ProgressState, _>(|state, _| {
+                    let _ = state.poll();
+                    state.is_complete
+                });
+                if done {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            }
+            let _ = this.update(cx, |this, cx| {
+                this.refresh(cx);
+                cx.emit(ArchiveVmEvent::RefreshListing);
+            });
+        }).detach();
+    }
+
+    pub fn rename_entry(&mut self, index: u32, new_name: &str, cx: &mut Context<Self>) {
+        if !matches!(self.status, ViewStatus::Ready) {
+            return;
+        }
+        let repo = self.repo.clone();
+        let mut handle = self.archive.clone().unwrap();
+        let name = new_name.to_string();
+        let idx = index;
+
+        cx.background_spawn(async move {
+            let uc = RenameEntryUseCase::new(repo);
+            uc.execute(&mut handle, idx, &name)
+        }).detach();
+
+        cx.spawn(async move |this, cx| {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            let _ = this.update(cx, |this, cx| {
+                this.refresh(cx);
+            });
+        }).detach();
+    }
+
+    pub fn test_selected(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.status, ViewStatus::Ready) {
+            return;
+        }
+        let indices: Option<Vec<u32>> = if self.selection.is_empty() {
+            None
+        } else {
+            Some(self.selection.iter().copied().collect())
+        };
+        let count = indices.as_ref().map(|v| v.len()).unwrap_or(0) as u64;
+        cx.emit(ArchiveVmEvent::RequestTestEntries { selected_only: true });
+        let repo = self.repo.clone();
+        let handle = self.archive.clone().unwrap();
+
+        let (tx, rx) = progress_channel();
+        cx.update_global::<ProgressState, _>(|state, _cx| {
+            state.is_active = true;
+            state.is_complete = false;
+            state.is_paused = false;
+            state.receiver = Some(Arc::new(Mutex::new(rx)));
+            state.message = String::from("Testing archive...");
+            state.current = 0;
+            state.total = count;
+            state.error = None;
+        });
+
+        cx.background_spawn(async move {
+            let uc = TestEntriesUseCase::new(repo);
+            uc.execute(&handle, indices.as_deref(), Some(tx))
+        }).detach();
+
+        cx.spawn(async move |this, cx| {
+            loop {
+                let done = cx.update_global::<ProgressState, _>(|state, _| {
+                    let _ = state.poll();
+                    state.is_complete
+                });
+                if done {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            }
+            let _ = this.update(cx, |this, cx| {
+                this.refresh(cx);
+                cx.emit(ArchiveVmEvent::RefreshListing);
+            });
+        }).detach();
+    }
+
+    pub fn first_selected_index(&self) -> Option<u32> {
+        self.selection.iter().next().copied()
+    }
+
+    pub fn open_entry(&mut self, cx: &mut Context<Self>) {
+        let idx = match self.first_selected_index() {
+            Some(i) => i,
+            None => {
+                log::info!("Open entry: no selection");
+                return;
+            }
+        };
+        let handle = match self.archive.as_ref() {
+            Some(h) => h.clone(),
+            None => {
+                log::info!("Open entry: no archive open");
+                return;
+            }
+        };
+        let repo = self.repo.clone();
+        cx.background_spawn(async move {
+            let uc = OpenEntryUseCase::new(repo);
+            if let Err(e) = uc.execute(&handle, idx) {
+                log::error!("Failed to open entry: {}", e);
+            }
+        }).detach();
+    }
+
+    pub fn preview_entry(&mut self, cx: &mut Context<Self>) {
+        let idx = match self.first_selected_index() {
+            Some(i) => i,
+            None => {
+                log::info!("View entry: no selection");
+                return;
+            }
+        };
+        let handle = match self.archive.as_ref() {
+            Some(h) => h.clone(),
+            None => {
+                log::info!("View entry: no archive open");
+                return;
+            }
+        };
+        let repo = self.repo.clone();
+        cx.background_spawn(async move {
+            let uc = OpenEntryUseCase::new(repo);
+            if let Err(e) = uc.execute(&handle, idx) {
+                log::error!("Failed to view entry: {}", e);
+            }
+        }).detach();
+    }
+
+    pub fn edit_entry(&mut self, cx: &mut Context<Self>) {
+        let idx = match self.first_selected_index() {
+            Some(i) => i,
+            None => {
+                log::info!("Edit entry: no selection");
+                return;
+            }
+        };
+        let handle = match self.archive.as_ref() {
+            Some(h) => h.clone(),
+            None => {
+                log::info!("Edit entry: no archive open");
+                return;
+            }
+        };
+        let repo = self.repo.clone();
+        let mut handle = handle;
+        cx.background_spawn(async move {
+            if let Err(e) = new_file_and_add(repo, &mut handle, "new_file.txt") {
+                log::error!("Failed to edit entry: {}", e);
+            }
+        }).detach();
+    }
+
+    pub fn show_properties(&mut self, cx: &mut Context<Self>) {
+        let entries = self.selected_entries();
+        if entries.is_empty() {
+            log::info!("Properties: no selection");
+            return;
+        }
+        cx.emit(ArchiveVmEvent::RequestProperties);
+    }
+
+    pub fn test_all(&mut self, cx: &mut Context<Self>) {
+        self.test_selected(cx);
+    }
+
+    pub fn request_new_folder(&mut self, cx: &mut Context<Self>) {
+        cx.emit(ArchiveVmEvent::RequestNewFolder);
+    }
+
+    pub fn request_new_file(&mut self, cx: &mut Context<Self>) {
+        cx.emit(ArchiveVmEvent::RequestNewFile);
+    }
+
+    pub fn request_checksum(&mut self, cx: &mut Context<Self>, algorithm: EventChecksumAlgorithm) {
+        if !matches!(self.status, ViewStatus::Ready) || self.selection.is_empty() {
+            return;
+        }
+        let indices: Vec<u32> = self.selection.iter().copied().collect();
+        let count = indices.len() as u64;
+        cx.emit(ArchiveVmEvent::RequestChecksum { algorithm });
+        let repo = self.repo.clone();
+        let handle = self.archive.clone().unwrap();
+
+        let (tx, rx) = progress_channel();
+        cx.update_global::<ProgressState, _>(|state, _cx| {
+            state.is_active = true;
+            state.is_complete = false;
+            state.is_paused = false;
+            state.receiver = Some(Arc::new(Mutex::new(rx)));
+            state.message = format!("Calculating {}...", match algorithm {
+                EventChecksumAlgorithm::Crc32 => "CRC32",
+                EventChecksumAlgorithm::Md5 => "MD5",
+                EventChecksumAlgorithm::Sha1 => "SHA1",
+                EventChecksumAlgorithm::Sha256 => "SHA256",
+            });
+            state.current = 0;
+            state.total = count;
+            state.error = None;
+        });
+
+        cx.background_spawn(async move {
+            let uc = CalculateChecksumUseCase::new(repo);
+            let algos = match algorithm {
+                EventChecksumAlgorithm::Crc32 => vec![ChecksumAlgorithm::Crc32],
+                EventChecksumAlgorithm::Md5 => vec![ChecksumAlgorithm::Md5],
+                EventChecksumAlgorithm::Sha1 => vec![ChecksumAlgorithm::Sha1],
+                EventChecksumAlgorithm::Sha256 => vec![ChecksumAlgorithm::Sha256],
+            };
+            let _ = uc.execute(&handle, &indices, &algos);
+        }).detach();
+
+        cx.spawn(async move |this, cx| {
+            loop {
+                let done = cx.update_global::<ProgressState, _>(|state, _| {
+                    let _ = state.poll();
+                    state.is_complete
+                });
+                if done {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            }
+            let _ = this.update(cx, |this, cx| {
+                this.refresh(cx);
+                cx.emit(ArchiveVmEvent::RefreshListing);
+            });
+        }).detach();
     }
 }

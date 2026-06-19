@@ -21,7 +21,7 @@ impl Render for Toolbar {
         let has_selection = !vm.selection.is_empty();
         drop(vm);
 
-        gpui_component::h_flex().gap_2().p_2()
+        gpui_component::h_flex().gap_2().p_2().w_full()
             .child(
                 Button::new("open")
                     .label("Open")
@@ -43,6 +43,17 @@ impl Render for Toolbar {
                         let vm = self.archive_vm.clone();
                         move |_, _, cx| {
                             vm.update(cx, |vm, cx| vm.request_create(cx));
+                        }
+                    })
+            )
+            .child(
+                Button::new("add")
+                    .label("Add")
+                    .disabled(!is_open)
+                    .on_click({
+                        let vm = self.archive_vm.clone();
+                        move |_, _, cx| {
+                            vm.update(cx, |vm, cx| vm.request_add_files(cx));
                         }
                     })
             )
@@ -76,6 +87,17 @@ impl Render for Toolbar {
                         let vm = self.archive_vm.clone();
                         move |_, _, cx| {
                             vm.update(cx, |vm, cx| vm.close(cx));
+                        }
+                    })
+            )
+            .child(div().flex_1())
+            .child(
+                Button::new("settings")
+                    .label("\u{2699}")
+                    .on_click({
+                        let vm = self.archive_vm.clone();
+                        move |_, _, cx| {
+                            vm.update(cx, |vm, cx| vm.request_show_settings(cx));
                         }
                     })
             )

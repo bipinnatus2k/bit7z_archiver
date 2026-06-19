@@ -11,7 +11,9 @@
 #include "bit7z/bittypes.hpp"
 #include <bit7z/bitwindows.hpp>
 #include <sys/stat.h>
+#include <chrono>
 #include <memory>
+#include <type_traits>
 
 // Type aliases for ergonomic Rust naming
 using ArchiveFormatFeatures = bit7z::FormatFeatures;
@@ -120,6 +122,119 @@ inline uint32_t bit7z_item_crc(void* reader_ptr, uint32_t index) {
     try {
         return static_cast<bit7z::BitArchiveReader*>(reader_ptr)->items()[index].crc();
     } catch (...) { return 0; }
+}
+
+// Helper: copy bit7z::tstring to a UTF-8 char buffer (caller-owned).
+// Returns byte count written (excluding null terminator), or -1 on error.
+inline int32_t tstring_to_utf8(const bit7z::tstring& src, char* out_buf, uint32_t buf_size) {
+    if (!out_buf || buf_size == 0) return 0;
+    size_t len = src.size();
+    if (len >= (size_t)buf_size) len = (size_t)buf_size - 1;
+    std::copy(src.begin(), src.begin() + len, out_buf);
+    out_buf[len] = '\0';
+    return (int32_t)len;
+}
+
+// ===== Item property wrappers (direct BitArchiveItem pointer) =====
+
+inline uint64_t bit7z_item_mtime(void* ptr) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        auto tp = item->lastWriteTime();
+        return static_cast<uint64_t>(std::chrono::system_clock::to_time_t(tp));
+    } catch (...) { return 0; }
+}
+
+inline uint64_t bit7z_item_ctime(void* ptr) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        auto tp = item->creationTime();
+        return static_cast<uint64_t>(std::chrono::system_clock::to_time_t(tp));
+    } catch (...) { return 0; }
+}
+
+inline uint64_t bit7z_item_atime(void* ptr) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        auto tp = item->lastAccessTime();
+        return static_cast<uint64_t>(std::chrono::system_clock::to_time_t(tp));
+    } catch (...) { return 0; }
+}
+
+inline uint32_t bit7z_item_attributes(void* ptr) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        return item->attributes();
+    } catch (...) { return 0; }
+}
+
+inline uint8_t bit7z_item_host_os(void* ptr) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        return item->itemProperty(bit7z::BitProperty::HostOS).getUInt8();
+    } catch (...) { return 0; }
+}
+
+inline int32_t bit7z_item_compression_method(void* ptr, char* out_buf, uint32_t buf_size) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        auto prop = item->itemProperty(bit7z::BitProperty::Method).getString();
+        return tstring_to_utf8(prop, out_buf, buf_size);
+    } catch (...) { if (out_buf && buf_size > 0) out_buf[0] = '\0'; return -1; }
+}
+
+inline int32_t bit7z_item_comment(void* ptr, char* out_buf, uint32_t buf_size) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        auto prop = item->itemProperty(bit7z::BitProperty::Comment).getString();
+        return tstring_to_utf8(prop, out_buf, buf_size);
+    } catch (...) { if (out_buf && buf_size > 0) out_buf[0] = '\0'; return -1; }
+}
+
+inline int32_t bit7z_item_user(void* ptr, char* out_buf, uint32_t buf_size) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        auto prop = item->itemProperty(bit7z::BitProperty::User).getString();
+        return tstring_to_utf8(prop, out_buf, buf_size);
+    } catch (...) { if (out_buf && buf_size > 0) out_buf[0] = '\0'; return -1; }
+}
+
+inline int32_t bit7z_item_group(void* ptr, char* out_buf, uint32_t buf_size) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        auto prop = item->itemProperty(bit7z::BitProperty::Group).getString();
+        return tstring_to_utf8(prop, out_buf, buf_size);
+    } catch (...) { if (out_buf && buf_size > 0) out_buf[0] = '\0'; return -1; }
+}
+
+inline int32_t bit7z_item_is_symlink(void* ptr) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        return item->isSymLink() ? 1 : 0;
+    } catch (...) { return 0; }
+}
+
+inline uint32_t bit7z_item_posix_attrib(void* ptr) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        return item->itemProperty(bit7z::BitProperty::PosixAttrib).getUInt32();
+    } catch (...) { return 0; }
+}
+
+inline int32_t bit7z_item_extension(void* ptr, char* out_buf, uint32_t buf_size) {
+    try {
+        auto* item = static_cast<bit7z::BitArchiveItem*>(ptr);
+        auto ext = item->extension();
+        return tstring_to_utf8(ext, out_buf, buf_size);
+    } catch (...) { if (out_buf && buf_size > 0) out_buf[0] = '\0'; return -1; }
+}
+
+// Retrieve raw BitArchiveItem* from reader + index (for property wrappers above)
+inline void* bit7z_item_from_reader(void* reader_ptr, uint32_t index) {
+    try {
+        auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
+        return (void*)&reader.items()[index];
+    } catch (...) { return nullptr; }
 }
 
 // ===== Extract wrappers =====
@@ -442,6 +557,73 @@ extern "C" void bit7z_writer_set_update_mode(void* writer_ptr, int mode) {
     if (mode == 1) modeEnum = bit7z::UpdateMode::Append;
     else if (mode == 2) modeEnum = bit7z::UpdateMode::Update;
     static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setUpdateMode(modeEnum);
+}
+
+extern "C" void bit7z_writer_set_compression_method(void* writer_ptr, int method) {
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setCompressionMethod(
+        static_cast<bit7z::BitCompressionMethod>(method));
+}
+
+extern "C" void bit7z_writer_set_dictionary_size(void* writer_ptr, uint32_t bytes) {
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setDictionarySize(bytes);
+}
+
+extern "C" void bit7z_writer_set_word_size(void* writer_ptr, uint32_t bytes) {
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setWordSize(bytes);
+}
+
+extern "C" void bit7z_writer_set_solid_mode(void* writer_ptr, int solid) {
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setSolidMode(solid != 0);
+}
+
+extern "C" void bit7z_writer_set_volume_size(void* writer_ptr, uint64_t bytes) {
+    static_cast<bit7z::BitArchiveWriter*>(writer_ptr)->setVolumeSize(bytes);
+}
+
+extern "C" void bit7z_writer_set_password_ex(void* writer_ptr, const char* password, int encrypt_header) {
+    auto& writer = *static_cast<bit7z::BitArchiveWriter*>(writer_ptr);
+    if (encrypt_header) {
+        writer.setPassword(
+            bit7z::tstring(password ? password : ""),
+            bit7z::EncryptionScope::DataAndHeaders);
+    } else {
+        writer.setPassword(
+            bit7z::tstring(password ? password : ""));
+    }
+}
+
+extern "C" void bit7z_writer_set_store_timestamps(void* writer_ptr, int modified, int created, int accessed) {
+    auto& writer = *static_cast<bit7z::BitArchiveWriter*>(writer_ptr);
+    writer.setStoreLastWriteTime(modified != 0);
+    writer.setStoreCreationTime(created != 0);
+    writer.setStoreLastAccessTime(accessed != 0);
+}
+
+extern "C" int32_t bit7z_writer_add_dir_filtered(void* writer_ptr, const char* dir, const char* filter, int policy, int recursive) {
+    try {
+        auto& writer = *static_cast<bit7z::BitArchiveWriter*>(writer_ptr);
+        writer.addFiles(
+            bit7z::tstring(dir ? dir : ""),
+            bit7z::tstring(filter ? filter : ""),
+            policy == 0 ? bit7z::FilterPolicy::Include : bit7z::FilterPolicy::Exclude,
+            recursive != 0);
+        return 0;
+    } catch (...) { return -1; }
+}
+
+extern "C" int32_t bit7z_writer_add_items(void* writer_ptr, const char** paths, const char** archive_paths, uint32_t count) {
+    try {
+        auto& writer = *static_cast<bit7z::BitArchiveWriter*>(writer_ptr);
+        std::vector<std::pair<bit7z::tstring, bit7z::tstring>> pairs;
+        pairs.reserve(count);
+        for (uint32_t i = 0; i < count; ++i) {
+            pairs.emplace_back(
+                bit7z::tstring(paths[i] ? paths[i] : ""),
+                bit7z::tstring(archive_paths[i] ? archive_paths[i] : ""));
+        }
+        writer.addItems(pairs);
+        return 0;
+    } catch (...) { return -1; }
 }
 
 extern "C" int32_t bit7z_writer_add_file(void* writer_ptr, const char* path) {

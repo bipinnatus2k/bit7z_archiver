@@ -1,6 +1,8 @@
 //! System tray icon manager.
 
+#[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "windows")]
 pub mod windows;
 
 use crossbeam::channel::{Sender, Receiver};
