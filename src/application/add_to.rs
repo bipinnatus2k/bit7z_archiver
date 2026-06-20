@@ -14,6 +14,16 @@ impl AddToArchiveUseCase {
         files: &[PathBuf],
         progress: Option<ProgressSender>,
     ) -> Result<(), ArchiveError> {
+        self.execute_with_password(archive, files, progress, None)
+    }
+
+    pub fn execute_with_password(
+        &self,
+        archive: &mut ArchiveHandle,
+        files: &[PathBuf],
+        progress: Option<ProgressSender>,
+        password: Option<&Password>,
+    ) -> Result<(), ArchiveError> {
         // Validate input paths exist
         for f in files {
             if !f.is_file() && !f.is_dir() {
@@ -25,6 +35,6 @@ impl AddToArchiveUseCase {
         if let Some(tx) = progress {
             self.repo.set_progress_sender(tx);
         }
-        self.repo.add(archive, files)
+        self.repo.add(archive, files, password)
     }
 }

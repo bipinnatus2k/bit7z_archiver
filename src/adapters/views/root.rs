@@ -193,6 +193,17 @@ impl RootView {
                                             let prefs = cx.global::<crate::domain::preferences::Preferences>().clone();
                                             crate::adapters::views::dialogs::settings::SettingsDialog { prefs }
                                         });
+                                        cx.subscribe::<crate::adapters::views::dialogs::settings::SettingsDialog, crate::adapters::views::dialogs::settings::SettingsDialogEvent>(&settings, |_this, event, cx| {
+                                            match event {
+                                                crate::adapters::views::dialogs::settings::SettingsDialogEvent::Saved(prefs) => {
+                                                    cx.set_global(prefs.clone());
+                                                    if let Err(e) = cx.global::<crate::domain::preferences::PreferencesRepoGlobal>().0.save(&cx.global::<crate::domain::preferences::Preferences>()) {
+                                                        log::error!("Failed to save preferences: {}", e);
+                                                    }
+                                                }
+                                                crate::adapters::views::dialogs::settings::SettingsDialogEvent::Canceled => {}
+                                            }
+                                        }).detach();
                                         cx.new(|cx| gpui_component::Root::new(settings, window, cx))
                                     }
                                 );

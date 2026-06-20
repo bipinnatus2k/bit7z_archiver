@@ -119,21 +119,24 @@ impl ArchiveReader {
     }
 
     pub fn extract_to_buffer(&self, index: u32) -> Result<Vec<u8>, String> {
-    let size: i64 = unsafe {
-        crate::ffi::bit7z_reader_extract_item_size(self.raw as *mut _, index)
-    };
-    if size <= 0 { return Err("Extraction to buffer failed".into()); }
-    let data = unsafe {
-        crate::ffi::bit7z_reader_extract_item_data(self.raw as *mut _, index)
-    };
-    if data.is_null() {
-        return Err("Extraction to buffer failed (null)".into());
+        let mut out_data: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut out_size: i64 = 0;
+        let ret = unsafe {
+            bit7z_reader_extract_to_buffer_c(
+                self.raw as *mut _,
+                index,
+                &mut out_data,
+                &mut out_size,
+            )
+        };
+        if ret != 0 || out_data.is_null() || out_size <= 0 {
+            return Err("Extraction to buffer failed".into());
+        }
+        let slice = unsafe { std::slice::from_raw_parts(out_data as *const u8, out_size as usize) };
+        let result = slice.to_vec();
+        unsafe { crate::ffi::bit7z_reader_free_buffer(out_data as *mut autocxx::c_void); }
+        Ok(result)
     }
-    let slice = unsafe { std::slice::from_raw_parts(data as *const u8, size as usize) };
-    let result = slice.to_vec();
-    unsafe { crate::ffi::bit7z_reader_free_buffer(data as *mut _); }
-    Ok(result)
-}
 
     /// Take ownership of the raw handle (prevents Drop from closing).
     pub fn into_raw(self) -> Handle {
@@ -285,6 +288,13 @@ extern "C" {
     fn bit7z_is_header_encrypted(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
     fn bit7z_is_encrypted(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
     fn bit7z_reader_has_encrypted_items(reader: *mut std::ffi::c_void) -> i32;
+    // Single-call extract to buffer (avoids double-extraction).
+    pub fn bit7z_reader_extract_to_buffer_c(
+        reader: *mut std::ffi::c_void,
+        index: u32,
+        out_data: *mut *mut std::ffi::c_void,
+        out_size: *mut i64,
+    ) -> i32;
 }
 
 // ============================================================================

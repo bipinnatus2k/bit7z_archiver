@@ -95,6 +95,14 @@ impl Bit7zRepository {
     pub fn new(lib: bit7z::Library) -> Self {
         Self { lib: Mutex::new(lib), progress_sender: Mutex::new(None) }
     }
+
+    /// Lock the library mutex, recovering from poison if a previous holder panicked.
+    fn lock_lib(&self) -> Result<std::sync::MutexGuard<'_, bit7z::Library>, ArchiveError> {
+        self.lib.lock().or_else(|poisoned| {
+            log::warn!("Mutex was poisoned, recovering library handle");
+            Ok(poisoned.into_inner())
+        })
+    }
 }
 
 impl ArchiveRepository for Bit7zRepository {
@@ -105,7 +113,7 @@ impl ArchiveRepository for Bit7zRepository {
     }
 
     fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
-        let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let lib = self.lock_lib()?;
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal("Non-UTF-8 path".into()))?;
 
@@ -153,7 +161,7 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn create(&self, path: &Path, format: ArchiveFormat,
               encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
-        let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let lib = self.lock_lib()?;
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal("Non-UTF-8 path".into()))?;
 
@@ -261,23 +269,26 @@ impl ArchiveRepository for Bit7zRepository {
     fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32)
                          -> Result<Vec<u8>, ArchiveError> {
         let raw = archive.raw as usize;
-        let size: i64 = unsafe {
-            crate::ffi::bit7z_reader_extract_item_size(raw as *mut _, index)
+        let mut out_data: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut out_size: i64 = 0;
+        let ret = unsafe {
+            crate::adapters::bit7z::bit7z_reader_extract_to_buffer_c(
+                raw as *mut _,
+                index,
+                &mut out_data,
+                &mut out_size,
+            )
         };
-        if size <= 0 { return Err(ArchiveError::Internal("Extract buffer failed".into())); }
-        let data = unsafe {
-            crate::ffi::bit7z_reader_extract_item_data(raw as *mut _, index)
-        };
-        if data.is_null() {
-            return Err(ArchiveError::Internal("Extract data null".into()));
+        if ret != 0 || out_data.is_null() || out_size <= 0 {
+            return Err(ArchiveError::Internal("Extract buffer failed".into()));
         }
-        let slice = unsafe { std::slice::from_raw_parts(data as *const u8, size as usize) };
+        let slice = unsafe { std::slice::from_raw_parts(out_data as *const u8, out_size as usize) };
         let result = slice.to_vec();
-        unsafe { crate::ffi::bit7z_reader_free_buffer(data as *mut _); }
+        unsafe { crate::ffi::bit7z_reader_free_buffer(out_data as *mut autocxx::c_void); }
         Ok(result)
     }
 
-    fn add(&self, archive: &mut ArchiveHandle, files: &[std::path::PathBuf])
+    fn add(&self, archive: &mut ArchiveHandle, files: &[std::path::PathBuf], password: Option<&Password>)
            -> Result<(), ArchiveError> {
         // Save archive path before closing the reader to avoid holding a borrow
         // across the mutable update to archive.raw.
@@ -295,10 +306,11 @@ impl ArchiveRepository for Bit7zRepository {
             archive.raw = std::ptr::null_mut();
         }
 
-        let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let lib = self.lock_lib()?;
         let format = detect_writer_format(&archive_path);
+        let pw_str = password.map(|p| p.as_str().to_string());
 
-        let writer = bit7z::Writer::open(&lib, &archive_path_str, format, None)
+        let writer = bit7z::Writer::open(&lib, &archive_path_str, format, pw_str.as_deref())
             .map_err(|e| ArchiveError::Internal(e))?;
         writer.set_update_mode(bit7z::UpdateMode::Append);
 
@@ -322,7 +334,7 @@ impl ArchiveRepository for Bit7zRepository {
         drop(writer);
 
         // Re-open the reader so the handle remains valid for the caller.
-        let reader = bit7z::ArchiveReader::open(&lib, &archive_path_str, None)
+        let reader = bit7z::ArchiveReader::open(&lib, &archive_path_str, password)
             .map_err(|e| ArchiveError::Internal(e))?;
         let has_encrypted = reader.has_encrypted_items();
         archive.raw = reader.into_raw() as *mut std::ffi::c_void;
@@ -348,7 +360,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(())
     }
 
-    fn add_file_to_path(&self, archive: &mut ArchiveHandle, file_path: &Path, archive_path: &str)
+    fn add_file_to_path(&self, archive: &mut ArchiveHandle, file_path: &Path, archive_path: &str, password: Option<&Password>)
                         -> Result<(), ArchiveError> {
         let archive_file_path = archive.path.clone()
             .ok_or_else(|| ArchiveError::Internal("No path in archive handle".into()))?;
@@ -362,10 +374,11 @@ impl ArchiveRepository for Bit7zRepository {
             archive.raw = std::ptr::null_mut();
         }
 
-        let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let lib = self.lock_lib()?;
         let format = detect_writer_format(&archive_file_path);
+        let pw_str = password.map(|p| p.as_str().to_string());
 
-        let writer = bit7z::Writer::open(&lib, &archive_path_str, format, None)
+        let writer = bit7z::Writer::open(&lib, &archive_path_str, format, pw_str.as_deref())
             .map_err(|e| ArchiveError::Internal(e))?;
         writer.set_update_mode(bit7z::UpdateMode::Append);
 
@@ -379,7 +392,7 @@ impl ArchiveRepository for Bit7zRepository {
 
         drop(writer);
 
-        let reader = bit7z::ArchiveReader::open(&lib, &archive_path_str, None)
+        let reader = bit7z::ArchiveReader::open(&lib, &archive_path_str, password)
             .map_err(|e| ArchiveError::Internal(e))?;
         let has_encrypted = reader.has_encrypted_items();
         archive.raw = reader.into_raw() as *mut std::ffi::c_void;
@@ -391,7 +404,7 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32])
                -> Result<(), ArchiveError> {
-        let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let lib = self.lock_lib()?;
         let archive_path = archive.path.as_ref()
             .ok_or_else(|| ArchiveError::Internal("No path in archive handle".into()))?;
         let archive_path_str = archive_path.to_str()
@@ -429,7 +442,7 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn rename(&self, archive: &mut ArchiveHandle, index: u32, new_name: &str)
               -> Result<(), ArchiveError> {
-        let lib = self.lib.lock().map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let lib = self.lock_lib()?;
         let archive_path = archive.path.as_ref()
             .ok_or_else(|| ArchiveError::Internal("No path in archive handle".into()))?;
         let archive_path_str = archive_path.to_str()
@@ -468,20 +481,36 @@ impl ArchiveRepository for Bit7zRepository {
         let all_ok = unsafe { crate::ffi::bit7z_test_result_all_ok(result) } != 0;
         let total = unsafe { crate::ffi::bit7z_test_result_total(result) };
         let failed_count = unsafe { crate::ffi::bit7z_test_result_failed_count(result) };
-        unsafe { crate::ffi::bit7z_test_result_free(result); }
         let passed = total.saturating_sub(failed_count);
         let mut failures = Vec::new();
-        if !all_ok && failed_count > 0 {
-            for i in 0..failed_count.min(total) {
+        if !all_ok {
+            if failed_count > 0 && total > 0 {
+                for i in 0..failed_count.min(total) {
+                    failures.push(TestFailure {
+                        entry_path: format!("index {}", i),
+                        error: "test failed".into(),
+                        index: i as usize,
+                        path: String::new(),
+                        reason: TestFailureReason::ReadError("entry test failed".into()),
+                    });
+                }
+            } else if failed_count > 0 {
+                // C++ exception path: total=0, failed_count=1, error in failed_errors[0]
+                let error_msg = unsafe {
+                    let ptr = crate::ffi::bit7z_test_result_error(result);
+                    if ptr.is_null() { "test failed".to_string() }
+                    else { std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned() }
+                };
                 failures.push(TestFailure {
-                    entry_path: format!("index {}", i),
-                    error: "test failed".into(),
-                    index: i as usize,
+                    entry_path: String::new(),
+                    error: error_msg.clone(),
+                    index: 0,
                     path: String::new(),
-                    reason: TestFailureReason::ReadError("entry test failed".into()),
+                    reason: TestFailureReason::ReadError(error_msg),
                 });
             }
         }
+        unsafe { crate::ffi::bit7z_test_result_free(result); }
         Ok(TestResult { total: total as usize, passed: passed as usize, failed: failures })
     }
 
@@ -558,8 +587,8 @@ mod tests {
         fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError> {
             self.inner.extract_to_buffer(archive, index)
         }
-        fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf]) -> Result<(), ArchiveError> {
-            self.inner.add(archive, files)
+        fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError> {
+            self.inner.add(archive, files, password)
         }
         fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError> {
             self.inner.delete(archive, indices)

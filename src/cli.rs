@@ -33,6 +33,8 @@ pub enum Commands {
         #[arg(long)]
         to: Option<String>,
         #[arg(long)]
+        indices: Option<String>,
+        #[arg(long)]
         password: Option<String>,
     },
     Test {
@@ -128,14 +130,28 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Err(e) => eprintln!("Error: {}", e),
             }
         }
-        Commands::Extract { path, to, password } => {
+        Commands::Extract { path, to, indices, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
             let dest = to.as_deref().unwrap_or(".");
             match repo.open(Path::new(path), pw.as_ref()) {
                 Ok(handle) => {
                     let props = repo.get_properties(&handle).ok();
                     let count = props.map(|p| p.items_count).unwrap_or(0);
-                    let indices: Vec<u32> = if count > 0 { (0..count).collect() } else { vec![] };
+                    let indices: Vec<u32> = if let Some(s) = indices {
+                        s.split(',')
+                            .filter_map(|part| part.trim().parse::<u32>().ok())
+                            .filter(|&i| i < count)
+                            .collect()
+                    } else if count > 0 {
+                        (0..count).collect()
+                    } else {
+                        vec![]
+                    };
+                    if indices.is_empty() {
+                        eprintln!("No valid indices specified");
+                        repo.close(handle);
+                        return;
+                    }
                     match repo.extract(&handle, &indices, Path::new(dest)) {
                         Ok(()) => println!("Extracted {} entries to {}", indices.len(), dest),
                         Err(e) => eprintln!("Extract error: {}", e),
@@ -230,12 +246,13 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                         Ok(data) => match data {
                             crate::application::preview::PreviewData::Text(t) => println!("{}", t),
                             crate::application::preview::PreviewData::Hex(h) => {
-                                for chunk in h.chunks(16) {
+                                for (ci, chunk) in h.chunks(16).enumerate() {
+                                    let offset = ci * 16;
                                     let hex: String = chunk.iter().map(|b| format!("{:02x} ", b)).collect();
                                     let ascii: String = chunk.iter()
                                         .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
                                         .collect();
-                                    println!("{:08x}  {:<48}  {}", 0, hex, ascii);
+                                    println!("{:08x}  {:<48}  {}", offset, hex, ascii);
                                 }
                             }
                             crate::application::preview::PreviewData::Image(img) => {
@@ -259,7 +276,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Err(e) => { eprintln!("Error: {}", e); return; }
             };
             let paths: Vec<std::path::PathBuf> = files.iter().map(std::path::PathBuf::from).collect();
-            match repo.add(&mut handle, &paths) {
+            match repo.add(&mut handle, &paths, pw.as_ref()) {
                 Ok(()) => println!("Added {} files to {}", files.len(), path),
                 Err(e) => eprintln!("Add error: {}", e),
             }
@@ -361,7 +378,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Err(e) => { eprintln!("Error: {}", e); return; }
             };
             let repo_clone = repo.clone();
-            match crate::application::new_folder::new_folder(repo_clone, &mut handle, &folder_path) {
+            match crate::application::new_folder::new_folder(repo_clone, &mut handle, &folder_path, pw.as_ref()) {
                 Ok(()) => println!("Created folder '{}' in {}", folder_path, path.display()),
                 Err(e) => eprintln!("Error: {}", e),
             }

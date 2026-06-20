@@ -45,6 +45,8 @@ pub struct ArchiveViewModel {
     pub current_path: String,
     pub path_history: Vec<String>,
     selection_anchor: Option<u32>,
+    /// Password used to open the current archive (needed for add/delete/rename).
+    archive_password: Option<Password>,
 }
 
 pub enum ViewStatus {
@@ -71,6 +73,7 @@ impl ArchiveViewModel {
             current_path: String::new(),
             path_history: Vec::new(),
             selection_anchor: None,
+            archive_password: None,
         }
     }
 
@@ -90,6 +93,7 @@ impl ArchiveViewModel {
 
         let use_case = OpenArchiveUseCase::new(repo);
         let pw = password.map(Password::new);
+        let pw_clone = pw.clone();
         let bg_task = cx.background_spawn(async move {
             use_case.execute(&path_buf, pw.as_ref())
         });
@@ -101,6 +105,7 @@ impl ArchiveViewModel {
                     Ok(output) => {
                         this.archive = Some(output.handle);
                         this.properties = Some(output.properties);
+                        this.archive_password = pw_clone;
                         this.current_path = String::new();
                         this.path_history.clear();
                         this.directory_cache.clear();
@@ -226,7 +231,7 @@ impl ArchiveViewModel {
 
     fn ratio_key(e: &LevelEntry) -> u64 {
         if e.size == 0 { 0 }
-        else { ((1.0 - e.compressed_size as f64 / e.size as f64) * 10000.0) as u64 }
+        else { (((1.0 - e.compressed_size as f64 / e.size as f64) * 10000.0).max(0.0)) as u64 }
     }
 
     // Helper: pop history without triggering load
@@ -476,6 +481,7 @@ impl ArchiveViewModel {
         self.level_entries.clear();
         self.current_path.clear();
         self.path_history.clear();
+        self.archive_password = None;
         self.status = ViewStatus::Empty;
         cx.notify();
     }
@@ -544,6 +550,7 @@ impl ArchiveViewModel {
         cx.emit(ArchiveVmEvent::RequestAddFiles);
         let repo = self.repo.clone();
         let mut handle = self.archive.clone().unwrap();
+        let password = self.archive_password.clone();
 
         let (tx, rx) = progress_channel();
         cx.update_global::<ProgressState, _>(|state, _cx| {
@@ -559,7 +566,7 @@ impl ArchiveViewModel {
 
         cx.background_spawn(async move {
             let uc = AddToArchiveUseCase::new(repo);
-            uc.execute(&mut handle, &paths, Some(tx))
+            let _ = uc.execute_with_password(&mut handle, &paths, Some(tx), password.as_ref());
         }).detach();
 
         cx.spawn(async move |this, cx| {
@@ -720,8 +727,9 @@ impl ArchiveViewModel {
         };
         let repo = self.repo.clone();
         let mut handle = handle;
+        let password = self.archive_password.clone();
         cx.background_spawn(async move {
-            if let Err(e) = new_file_and_add(repo, &mut handle, "new_file.txt") {
+            if let Err(e) = new_file_and_add(repo, &mut handle, "new_file.txt", password.as_ref()) {
                 log::error!("Failed to edit entry: {}", e);
             }
         }).detach();

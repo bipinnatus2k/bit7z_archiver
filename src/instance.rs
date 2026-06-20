@@ -30,7 +30,7 @@ mod win {
             Ok(super::InstanceLockWin { handle, key })
         }
     }
-    pub struct InstanceLockWin { handle: *mut std::ffi::c_void, key: String }
+    pub struct InstanceLockWin { handle: windows_sys::Win32::Foundation::HANDLE, key: String }
     impl Drop for InstanceLockWin {
         fn drop(&mut self) { unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle); } }
     }

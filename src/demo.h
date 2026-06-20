@@ -264,6 +264,14 @@ inline void bit7z_reader_free_buffer(void* data) {
     delete[] static_cast<unsigned char*>(data);
 }
 
+// C-linkage wrapper that extracts item to buffer in a single call
+// (avoids double-extract from calling size + data separately).
+extern "C" int32_t bit7z_reader_extract_to_buffer_c(
+    void* reader_ptr, uint32_t index, void** out_data, int64_t* out_size
+) {
+    return bit7z_reader_extract_item_to_buffer(reader_ptr, index, out_data, out_size);
+}
+
 inline int64_t bit7z_reader_extract_item_size(void* reader_ptr, uint32_t index) {
     try {
         auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);

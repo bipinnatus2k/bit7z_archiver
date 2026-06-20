@@ -10,6 +10,7 @@ pub fn new_file_and_add(
     repo: Arc<dyn ArchiveRepository>,
     archive: &mut ArchiveHandle,
     file_name: &str,
+    password: Option<&Password>,
 ) -> Result<(), ArchiveError> {
     let mut temp_path = std::env::temp_dir();
     temp_path.push(file_name);
@@ -70,7 +71,7 @@ pub fn new_file_and_add(
     if was_modified {
         let uc = AddToArchiveUseCase::new(repo);
         let files = [temp_path];
-        uc.execute(archive, &files, None)?;
+        uc.execute_with_password(archive, &files, None, password)?;
     }
 
     Ok(())

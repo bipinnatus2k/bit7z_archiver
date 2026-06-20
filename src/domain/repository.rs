@@ -31,7 +31,7 @@ pub trait ArchiveRepository: Send + Sync {
     fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError>;
     fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path) -> Result<(), ArchiveError>;
     fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError>;
-    fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf]) -> Result<(), ArchiveError>;
+    fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError>;
     fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError>;
     fn rename(&self, archive: &mut ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError>;
     fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError>;
@@ -48,7 +48,7 @@ pub trait ArchiveRepository: Send + Sync {
     /// Add a single file to the archive at a specific archive-internal path.
     /// This is used for creating directory entries by adding a placeholder file
     /// at e.g. "subdir/.bit7z_keep" — which implicitly creates the subdir tree.
-    fn add_file_to_path(&self, _archive: &mut ArchiveHandle, _file_path: &Path, _archive_path: &str) -> Result<(), ArchiveError> {
+    fn add_file_to_path(&self, _archive: &mut ArchiveHandle, _file_path: &Path, _archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
         Err(ArchiveError::UnsupportedOperation)
     }
 }
@@ -235,7 +235,7 @@ pub mod test_utils {
             Ok(vec![fill; size.max(1)])
         }
 
-        fn add(&self, _archive: &mut ArchiveHandle, files: &[PathBuf]) -> Result<(), ArchiveError> {
+        fn add(&self, _archive: &mut ArchiveHandle, files: &[PathBuf], _password: Option<&Password>) -> Result<(), ArchiveError> {
             let mut entries = self.entries.lock().unwrap();
             let next_idx = entries.len() as u32;
             for (i, path) in files.iter().enumerate() {
