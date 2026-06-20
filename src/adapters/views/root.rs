@@ -107,26 +107,40 @@ impl RootView {
                             }
                         }
                         ArchiveVmEvent::RequestShowCreate => {
-                            let dialog = cx.new(|cx| CreateArchiveDialog::new(cx, vec![]));
-                            cx.subscribe::<CreateArchiveDialog, _>(&dialog, move |this: &mut RootView, _, event: &crate::adapters::views::dialogs::create::CreateDialogEvent, cx| {
-                                match event {
-                                    crate::adapters::views::dialogs::create::CreateDialogEvent::CreateCompleted { success, error } => {
-                                        if *success {
-                                            this.archive_vm.update(cx, |vm, cx| vm.refresh(cx));
-                                        } else if let Some(e) = error {
-                                            log::error!("Create archive failed: {}", e);
-                                        }
-                                        cx.notify();
+                            cx.spawn(async move |_, cx: &mut AsyncApp| {
+                                let _ = cx.open_window(
+                                    WindowOptions {
+                                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                                            point(px(100.), px(100.)),
+                                            size(px(560.), px(600.)),
+                                        ))),
+                                        window_background: WindowBackgroundAppearance::Opaque,
+                                        window_decorations: Some(WindowDecorations::Client),
+                                        ..Default::default()
+                                    },
+                                    |window, cx| {
+                                        let dialog = cx.new(|cx| CreateArchiveDialog::new(cx, vec![]));
+                                        cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
                                     }
-                                    crate::adapters::views::dialogs::create::CreateDialogEvent::Canceled => {
-                                        cx.notify();
-                                    }
-                                    _ => {}
-                                }
+                                );
                             }).detach();
                         }
                         ArchiveVmEvent::RequestTest => {
-                            archive_vm.update(cx, |vm, cx| vm.test_all(cx));
+                            let vm = archive_vm.read(cx);
+                            if let Some(ref archive) = vm.archive {
+                                let handle = archive.clone();
+                                let repo = repo.clone();
+                                drop(vm);
+                                // Run test synchronously to avoid background-thread FFI issues
+                                match repo.test(&handle) {
+                                    Ok(result) => {
+                                        log::info!("Test completed: {}/{} passed", result.passed, result.total);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Test failed: {}", e);
+                                    }
+                                }
+                            }
                         }
                         ArchiveVmEvent::RequestShowAdd => {
                             let vm = archive_vm.read(cx);
