@@ -38,12 +38,12 @@ include_cpp! {
     generate!("bit7z_item_list_free")
 
     // Test archive integrity
-    // generate!("bit7z_reader_test")
-    // generate!("bit7z_test_result_total")
-    // generate!("bit7z_test_result_failed_count")
-    // generate!("bit7z_test_result_all_ok")
-    // generate!("bit7z_test_result_error")
-    // generate!("bit7z_test_result_free")
+    generate!("bit7z_reader_test")
+    generate!("bit7z_test_result_total")
+    generate!("bit7z_test_result_failed_count")
+    generate!("bit7z_test_result_all_ok")
+    generate!("bit7z_test_result_error")
+    generate!("bit7z_test_result_free")
 
     // Encryption detection
     generate!("bit7z_is_header_encrypted")

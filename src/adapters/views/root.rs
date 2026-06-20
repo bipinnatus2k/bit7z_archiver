@@ -131,15 +131,16 @@ impl RootView {
                                 let handle = archive.clone();
                                 let repo = repo.clone();
                                 drop(vm);
-                                // Run test synchronously to avoid background-thread FFI issues
-                                match repo.test(&handle) {
-                                    Ok(result) => {
-                                        log::info!("Test completed: {}/{} passed", result.passed, result.total);
+                                std::thread::spawn(move || {
+                                    match repo.test(&handle) {
+                                        Ok(result) => {
+                                            log::info!("Test completed: {}/{} passed", result.passed, result.total);
+                                        }
+                                        Err(e) => {
+                                            log::error!("Test failed: {}", e);
+                                        }
                                     }
-                                    Err(e) => {
-                                        log::error!("Test failed: {}", e);
-                                    }
-                                }
+                                });
                             }
                         }
                         ArchiveVmEvent::RequestShowAdd => {

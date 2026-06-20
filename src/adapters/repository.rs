@@ -460,54 +460,29 @@ impl ArchiveRepository for Bit7zRepository {
         if count == 0 {
             return Ok(TestResult { total: 0, passed: 0, failed: vec![] });
         }
-        // Entry-by-entry test via extract_to_buffer + CRC verification
-        let mut passed = 0usize;
-        let mut failed = Vec::new();
-        for i in 0..count {
-            let size: i64 = unsafe {
-                crate::ffi::bit7z_reader_extract_item_size(raw as *mut _, i)
-            };
-            if size <= 0 {
-                failed.push(TestFailure {
+        // Use the fast C++ built-in test (bit7z BitArchiveReader::test())
+        let result = unsafe { crate::ffi::bit7z_reader_test(raw as *mut _) };
+        if result.is_null() {
+            return Err(ArchiveError::Internal("test call failed".into()));
+        }
+        let all_ok = unsafe { crate::ffi::bit7z_test_result_all_ok(result) } != 0;
+        let total = unsafe { crate::ffi::bit7z_test_result_total(result) };
+        let failed_count = unsafe { crate::ffi::bit7z_test_result_failed_count(result) };
+        unsafe { crate::ffi::bit7z_test_result_free(result); }
+        let passed = total.saturating_sub(failed_count);
+        let mut failures = Vec::new();
+        if !all_ok && failed_count > 0 {
+            for i in 0..failed_count.min(total) {
+                failures.push(TestFailure {
                     entry_path: format!("index {}", i),
-                    error: "extract size failed".into(),
+                    error: "test failed".into(),
                     index: i as usize,
                     path: String::new(),
-                    reason: TestFailureReason::ReadError("extract size failed".into()),
+                    reason: TestFailureReason::ReadError("entry test failed".into()),
                 });
-                continue;
-            }
-            let data = unsafe {
-                crate::ffi::bit7z_reader_extract_item_data(raw as *mut _, i)
-            };
-            if data.is_null() {
-                failed.push(TestFailure {
-                    entry_path: format!("index {}", i),
-                    error: "extract data null".into(),
-                    index: i as usize,
-                    path: String::new(),
-                    reason: TestFailureReason::ReadError("extract data null".into()),
-                });
-                continue;
-            }
-            let slice = unsafe { std::slice::from_raw_parts(data as *const u8, size as usize) };
-            let computed_crc = crc32fast::hash(slice);
-            unsafe { crate::ffi::bit7z_reader_free_buffer(data as *mut _); }
-
-            let stored_crc = unsafe { crate::ffi::bit7z_item_crc(raw as *mut _, i) };
-            if stored_crc != 0 && computed_crc != stored_crc {
-                failed.push(TestFailure {
-                    entry_path: format!("index {}", i),
-                    error: format!("CRC mismatch: expected {:08x}, got {:08x}", stored_crc, computed_crc),
-                    index: i as usize,
-                    path: String::new(),
-                    reason: TestFailureReason::CrcMismatch { expected: stored_crc, actual: computed_crc },
-                });
-            } else {
-                passed += 1;
             }
         }
-        Ok(TestResult { total: count as usize, passed, failed })
+        Ok(TestResult { total: total as usize, passed: passed as usize, failed: failures })
     }
 
     fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
