@@ -20,8 +20,10 @@ impl Render for Menu {
         let vm = self.archive_vm.read(cx);
         let is_open = vm.archive.is_some();
         let has_selection = !vm.selection.is_empty();
+        let single_selection = vm.selection.len() == 1;
 
         let vm_entity = self.archive_vm.clone();
+        drop(vm);
 
         TitleBar::new()
             .child(
@@ -69,34 +71,12 @@ impl Render for Menu {
                             }
                         })
                         .separator()
-                        .item(PopupMenuItem::new("Open").disabled(!has_selection).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.open_entry(cx))
-                        }))
-                        .item(PopupMenuItem::new("View").disabled(!has_selection).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.preview_entry(cx))
-                        }))
-                        .item(PopupMenuItem::new("Edit").disabled(!has_selection).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.edit_entry(cx))
-                        }))
-                        .separator()
-                        .item(PopupMenuItem::new("New Folder").disabled(!is_open).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.request_new_folder(cx))
-                        }))
-                        .item(PopupMenuItem::new("New File").disabled(!is_open).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.request_new_file(cx))
-                        }))
-                        .separator()
                         .item(PopupMenuItem::new("Close Archive").disabled(!is_open).on_click({
                             let vm = vm.clone();
                             move |_, _, cx| vm.update(cx, |vm, cx| vm.close(cx))
                         }))
                         .separator()
-                        .item(PopupMenuItem::new("Properties").disabled(!has_selection).on_click({
+                        .item(PopupMenuItem::new("Properties").disabled(!single_selection).on_click({
                             let vm = vm.clone();
                             move |_, _, cx| vm.update(cx, |vm, cx| vm.show_properties(cx))
                         }))
@@ -118,15 +98,11 @@ impl Render for Menu {
                                 }),
                         )
                         .separator()
-                        .item(PopupMenuItem::new("Copy").disabled(!has_selection))
-                        .item(PopupMenuItem::new("Cut").disabled(!has_selection))
-                        .item(PopupMenuItem::new("Paste").disabled(!is_open))
-                        .separator()
                         .item(PopupMenuItem::new("Delete").disabled(!has_selection).on_click({
                             let vm = vm.clone();
                             move |_, _, cx| vm.update(cx, |vm, cx| vm.delete_selected(cx))
                         }))
-                        .item(PopupMenuItem::new("Rename").disabled(!has_selection).on_click({
+                        .item(PopupMenuItem::new("Rename").disabled(!single_selection).on_click({
                             let vm = vm.clone();
                             move |_, _, cx| {
                                 vm.update(cx, |vm, cx| {
@@ -141,55 +117,39 @@ impl Render for Menu {
                         }))
                     }
                 }))
-                .child(Button::new("menu-view").label("View").ghost().dropdown_menu(
-                    |menu, _window, _cx| {
-                        menu.item(PopupMenuItem::new("Large Icons"))
-                            .item(PopupMenuItem::new("Small Icons"))
-                            .item(PopupMenuItem::new("List"))
-                            .item(PopupMenuItem::new("Details"))
-                            .separator()
-                            .item(PopupMenuItem::new("Flat View"))
-                            .separator()
-                            .item(PopupMenuItem::new("Show Toolbar"))
-                            .item(PopupMenuItem::new("Show Status Bar"))
-                            .item(PopupMenuItem::new("Show Preview Panel"))
-                            .item(PopupMenuItem::new("Show Directory Tree"))
-                    },
-                ))
                 .child(Button::new("menu-tools").label("Tools").ghost().dropdown_menu({
                     let vm = vm_entity.clone();
                     move |menu, window, cx| {
                         let vm_sub = vm.clone();
                         menu.submenu("Checksum", window, cx, move |sub, _w, _c| {
-                            let vm = vm_sub.clone();
+                            let vm_crc32 = vm_sub.clone();
+                            let vm_md5 = vm_sub.clone();
+                            let vm_sha1 = vm_sub.clone();
+                            let vm_sha256 = vm_sub.clone();
                             sub.item(PopupMenuItem::new("CRC32").disabled(!has_selection).on_click({
-                                let vm = vm.clone();
                                 move |_, _, cx| {
-                                    vm.update(cx, |vm, cx| {
+                                    vm_crc32.update(cx, |vm, cx| {
                                         vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Crc32)
                                     });
                                 }
                             }))
                             .item(PopupMenuItem::new("MD5").disabled(!has_selection).on_click({
-                                let vm = vm.clone();
                                 move |_, _, cx| {
-                                    vm.update(cx, |vm, cx| {
+                                    vm_md5.update(cx, |vm, cx| {
                                         vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Md5)
                                     });
                                 }
                             }))
                             .item(PopupMenuItem::new("SHA1").disabled(!has_selection).on_click({
-                                let vm = vm.clone();
                                 move |_, _, cx| {
-                                    vm.update(cx, |vm, cx| {
+                                    vm_sha1.update(cx, |vm, cx| {
                                         vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Sha1)
                                     });
                                 }
                             }))
                             .item(PopupMenuItem::new("SHA256").disabled(!has_selection).on_click({
-                                let vm = vm.clone();
                                 move |_, _, cx| {
-                                    vm.update(cx, |vm, cx| {
+                                    vm_sha256.update(cx, |vm, cx| {
                                         vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Sha256)
                                     });
                                 }
@@ -197,28 +157,20 @@ impl Render for Menu {
                         })
                         .separator()
                         .item(PopupMenuItem::new("Settings").on_click({
-                            let vm = vm_entity.clone();
+                            let vm = vm.clone();
                             move |_, _, cx| vm.update(cx, |vm, cx| vm.request_show_settings(cx))
                         }))
                     }
                 }))
-                .child(
-                    Button::new("menu-favorites")
-                        .label("Favorites")
-                        .ghost()
-                        .dropdown_menu(move |menu, _window, _cx| {
-                            menu.item(PopupMenuItem::new("Add to Favorites").disabled(!is_open))
-                                .item(PopupMenuItem::new("Organize Favorites"))
-                        }),
-                )
-                .child(
-                    Button::new("menu-help")
-                        .label("Help")
-                        .ghost()
-                        .dropdown_menu(|menu, _window, _cx| {
-                            menu.item(PopupMenuItem::new("About"))
-                        }),
-                ),
+                .child(Button::new("menu-help").label("Help").ghost().dropdown_menu({
+                    let vm = vm_entity.clone();
+                    move |menu, _window, _cx| {
+                        menu.item(PopupMenuItem::new("About bit7z Archiver").on_click({
+                            let vm = vm.clone();
+                            move |_, _, cx| log::info!("bit7z Archiver {}", env!("CARGO_PKG_VERSION"))
+                        }))
+                    }
+                })),
         )
     }
 }

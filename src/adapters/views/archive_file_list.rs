@@ -173,32 +173,103 @@ impl Render for ArchiveFileList {
                         .context_menu(move |menu, window, cx| {
                             let current_vm = avm.read(cx);
                             let has_selection = !current_vm.selection.is_empty();
+                            let single_selection = current_vm.selection.len() == 1;
                             let is_ready = matches!(current_vm.status, ViewStatus::Ready);
                             drop(current_vm);
 
                             let mut m = menu;
+                            let vm_open = avm.clone();
+                            if has_selection {
+                                m = m.item(
+                                    PopupMenuItem::new("Open")
+                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            vm_open.update(cx, |vm, cx| vm.open_entry(cx));
+                                        })
+                                );
+                            }
+                            let vm_preview = avm.clone();
+                            if single_selection {
+                                m = m.item(
+                                    PopupMenuItem::new("Preview")
+                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            vm_preview.update(cx, |vm, cx| vm.preview_entry(cx));
+                                        })
+                                );
+                            }
                             let vm_extract = avm.clone();
                             if has_selection {
                                 m = m.item(
                                     PopupMenuItem::new("Extract...")
-                                        .on_click(move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                                             vm_extract.update(cx, |vm, cx| vm.request_extract(cx));
                                         })
                                 );
                             }
-                            let vm_refresh = avm.clone();
-                            if is_ready {
+                            m = m.separator();
+                            let vm_rename = avm.clone();
+                            if single_selection {
                                 m = m.item(
-                                    PopupMenuItem::new("Refresh")
-                                        .on_click(move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                                            vm_refresh.update(cx, |vm, cx| vm.refresh(cx));
+                                    PopupMenuItem::new("Rename")
+                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            vm_rename.update(cx, |vm, cx| {
+                                                if let Some(idx) = vm.first_selected_index() {
+                                                    cx.emit(crate::application::events::ArchiveVmEvent::RequestRename {
+                                                        index: idx,
+                                                        new_name: String::new(),
+                                                    });
+                                                }
+                                            });
                                         })
                                 );
                             }
+                            let vm_delete = avm.clone();
+                            if has_selection {
+                                m = m.item(
+                                    PopupMenuItem::new("Delete")
+                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            vm_delete.update(cx, |vm, cx| vm.delete_selected(cx));
+                                        })
+                                );
+                            }
+                            if has_selection {
+                                m = m.separator();
+                                let avm_ck = avm.clone();
+                                m = m.submenu("Checksum", window, cx, move |menu, _, _| {
+                                    let avm_crc32 = avm_ck.clone();
+                                    let avm_md5 = avm_ck.clone();
+                                    let avm_sha1 = avm_ck.clone();
+                                    let avm_sha256 = avm_ck.clone();
+                                    menu.item(PopupMenuItem::new("CRC32").on_click({
+                                        let avm = avm_crc32.clone();
+                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Crc32));
+                                        }
+                                    }))
+                                    .item(PopupMenuItem::new("MD5").on_click({
+                                        let avm = avm_md5.clone();
+                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Md5));
+                                        }
+                                    }))
+                                    .item(PopupMenuItem::new("SHA1").on_click({
+                                        let avm = avm_sha1.clone();
+                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Sha1));
+                                        }
+                                    }))
+                                    .item(PopupMenuItem::new("SHA256").on_click({
+                                        let avm = avm_sha256.clone();
+                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Sha256));
+                                        }
+                                    }))
+                                });
+                            }
+                            m = m.separator();
                             let vm_all = avm.clone();
                             m = m.item(
                                 PopupMenuItem::new("Select All")
-                                    .on_click(move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                                         vm_all.update(cx, |vm, cx| vm.select_all(cx));
                                     })
                             );
@@ -206,35 +277,29 @@ impl Render for ArchiveFileList {
                             if has_selection {
                                 m = m.item(
                                     PopupMenuItem::new("Clear Selection")
-                                        .on_click(move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                                             vm_clear.update(cx, |vm, cx| vm.clear_selection(cx));
                                         })
                                 );
                             }
-                            if has_selection && is_ready {
-                                m = m.submenu("Checksum", window, cx, |menu, _, _| {
-                                    menu
-                                        .item(PopupMenuItem::new("CRC32").on_click(
-                                            move |_: &ClickEvent, _: &mut Window, _: &mut App| {
-                                                log::info!("Checksum CRC32 requested");
-                                            },
-                                        ))
-                                        .item(PopupMenuItem::new("MD5").on_click(
-                                            move |_: &ClickEvent, _: &mut Window, _: &mut App| {
-                                                log::info!("Checksum MD5 requested");
-                                            },
-                                        ))
-                                        .item(PopupMenuItem::new("SHA1").on_click(
-                                            move |_: &ClickEvent, _: &mut Window, _: &mut App| {
-                                                log::info!("Checksum SHA1 requested");
-                                            },
-                                        ))
-                                        .item(PopupMenuItem::new("SHA256").on_click(
-                                            move |_: &ClickEvent, _: &mut Window, _: &mut App| {
-                                                log::info!("Checksum SHA256 requested");
-                                            },
-                                        ))
-                                });
+                            m = m.separator();
+                            let vm_refresh = avm.clone();
+                            if is_ready {
+                                m = m.item(
+                                    PopupMenuItem::new("Refresh")
+                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            vm_refresh.update(cx, |vm, cx| vm.refresh(cx));
+                                        })
+                                );
+                            }
+                            let vm_props = avm.clone();
+                            if single_selection {
+                                m = m.item(
+                                    PopupMenuItem::new("Properties")
+                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            vm_props.update(cx, |vm, cx| vm.show_properties(cx));
+                                        })
+                                );
                             }
                             m
                         })
