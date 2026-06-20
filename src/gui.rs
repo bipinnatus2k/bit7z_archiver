@@ -1,5 +1,6 @@
 use gpui::*;
 use gpui_component::*;
+use gpui_component_assets::Assets;
 use crate::theme::Theme;
 use crate::domain::repository::RepoGlobal;
 use crate::adapters::bit7z::Library;
@@ -17,7 +18,7 @@ pub fn run_gui() {
 }
 
 pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<String>) {
-    gpui_platform::application().run(move |cx: &mut App| {
+    gpui_platform::application().with_assets(Assets).run(move |cx: &mut App| {
         gpui_component::init(cx);
         let prefs_repo = crate::adapters::preferences_json::JsonPreferencesRepository::new();
         let prefs = prefs_repo.load().unwrap_or_default();
@@ -69,9 +70,10 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
         cx.spawn(async move |cx| {
             cx.open_window(
                 WindowOptions {
+                    titlebar: Option::from(TitleBar::title_bar_options()),
                     window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                         point(px(100.), px(100.)),
-                        size(px(1200.), px(800.)),
+                        size(px(800.), px(600.)),
                     ))),
                     window_background: WindowBackgroundAppearance::Opaque,
                     window_decorations: Some(WindowDecorations::Client),

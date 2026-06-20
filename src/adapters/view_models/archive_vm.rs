@@ -115,7 +115,15 @@ impl ArchiveViewModel {
                         this.load_current_directory(cx);
                     }
                     Err(e) => {
-                        this.status = ViewStatus::Error(e.to_string());
+                        match e {
+                            ArchiveError::EncryptedArchiveRequiresPassword => {
+                                this.status = ViewStatus::Empty;
+                                cx.emit(ArchiveVmEvent::RequestPassword { path: path_string });
+                            }
+                            _ => {
+                                this.status = ViewStatus::Error(e.to_string());
+                            }
+                        }
                         cx.notify();
                     }
                 }

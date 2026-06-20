@@ -8,6 +8,7 @@ use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::Toolbar;
 use crate::adapters::views::dialogs::extract::{ExtractDialog, ExtractDialogEvent};
 use crate::adapters::views::dialogs::create::{CreateArchiveDialog, CreateDialogEvent};
+use crate::adapters::views::dialogs::password::{PasswordDialog, PasswordDialogEvent};
 use crate::adapters::views::dialogs::settings::{SettingsDialog, SettingsDialogEvent};
 use crate::adapters::views::dialogs::add_files::{AddFilesDialog, AddFilesDialogEvent};
 use crate::application::events::ArchiveVmEvent;
@@ -34,6 +35,8 @@ pub struct RootView {
     preview_panel: Entity<PreviewPanel>,
     status_bar: Entity<StatusBar>,
     extract_dialog: Option<Entity<ExtractDialog>>,
+    password_dialog: Option<Entity<PasswordDialog>>,
+    pending_password_path: Option<String>,
     repo: Arc<dyn ArchiveRepository>,
 }
 
@@ -173,15 +176,16 @@ impl RootView {
                                     |window, cx| {
                                         let settings = cx.new(|cx| {
                                             let prefs = cx.global::<crate::domain::preferences::Preferences>().clone();
-                                            crate::adapters::views::dialogs::settings::SettingsDialog {
-                                                prefs,
-                                                active_tab: crate::adapters::views::dialogs::settings::SettingsTab::General,
-                                            }
+                                            crate::adapters::views::dialogs::settings::SettingsDialog { prefs }
                                         });
                                         cx.new(|cx| gpui_component::Root::new(settings, window, cx))
                                     }
                                 );
                             }).detach();
+                        }
+                        ArchiveVmEvent::RequestPassword { path } => {
+                            this.pending_password_path = Some(path.clone());
+                            cx.notify();
                         }
                         ArchiveVmEvent::RequestDelete => {
                             archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
@@ -233,6 +237,8 @@ impl RootView {
                 menu, toolbar, archive_vm, preview_vm,
                 archive_browser, entry_list, preview_panel, status_bar,
                 extract_dialog: None,
+                password_dialog: None,
+                pending_password_path: None,
                 repo,
             }
         })
@@ -240,7 +246,31 @@ impl RootView {
 }
 
 impl Render for RootView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Create password dialog if pending (only once)
+        if self.password_dialog.is_none() {
+            if let Some(path) = self.pending_password_path.take() {
+                let dialog_path = path.clone();
+                let dialog = cx.new(|cx| PasswordDialog::new(dialog_path, window, cx));
+                let archive_vm = self.archive_vm.clone();
+                cx.subscribe::<PasswordDialog, PasswordDialogEvent>(&dialog, move |this: &mut RootView, _emitter, event: &PasswordDialogEvent, cx| {
+                    match event {
+                        PasswordDialogEvent::Submitted(password) => {
+                            this.password_dialog = None;
+                            archive_vm.update(cx, |vm, cx| {
+                                vm.open_archive(std::path::Path::new(&path), Some(password.clone()), cx);
+                            });
+                            cx.notify();
+                        }
+                        PasswordDialogEvent::Canceled => {
+                            this.password_dialog = None;
+                            cx.notify();
+                        }
+                    }
+                }).detach();
+                self.password_dialog = Some(dialog);
+            }
+        }
         gpui_component::v_flex().size_full().relative()
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                 let modifiers = event.keystroke.modifiers;
@@ -328,6 +358,14 @@ impl Render for RootView {
             ))
             .child(self.status_bar.clone())
             .when_some(self.extract_dialog.clone(), |el, dialog| {
+                el.child(
+                    div().absolute().size_full().top(px(0.)).left(px(0.))
+                        .bg(hsla(0., 0., 0., 0.2))
+                        .flex().items_center().justify_center()
+                        .child(dialog)
+                )
+            })
+            .when_some(self.password_dialog.clone(), |el, dialog| {
                 el.child(
                     div().absolute().size_full().top(px(0.)).left(px(0.))
                         .bg(hsla(0., 0., 0., 0.2))

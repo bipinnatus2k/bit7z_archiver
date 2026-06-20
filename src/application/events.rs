@@ -21,6 +21,7 @@ pub enum ArchiveVmEvent {
     RequestEditEntry,
     RequestProperties,
     RequestChecksum { algorithm: ChecksumAlgorithm },
+    RequestPassword { path: String },
     RefreshListing,
 }
 

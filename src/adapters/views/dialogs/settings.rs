@@ -1,15 +1,13 @@
+use crate::domain::archive::ArchiveFormat;
 use crate::domain::preferences::*;
-use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::setting::{Settings, SettingPage, SettingGroup, SettingItem, SettingField};
 
 pub struct SettingsDialog {
     pub prefs: Preferences,
-    pub active_tab: SettingsTab,
 }
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SettingsTab { General, Archive, Preview, Appearance }
 
 #[derive(Debug, Clone)]
 pub enum SettingsDialogEvent {
@@ -22,97 +20,216 @@ impl EventEmitter<SettingsDialogEvent> for SettingsDialog {}
 impl SettingsDialog {
     pub fn new(cx: &mut Context<Self>) -> Entity<Self> {
         let prefs = cx.global::<Preferences>().clone();
-        cx.new(|_cx| Self { prefs, active_tab: SettingsTab::General })
+        cx.new(|_cx| Self { prefs })
     }
 }
 
 impl Render for SettingsDialog {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let prefs = self.prefs.clone();
+        let window_width = window.bounds().size.width;
+        let dialog_width = if window_width < px(640.) { px(400.) } else { px(720.) };
+        let dialog_height = if window_width < px(640.) { px(480.) } else { px(540.) };
+
         div()
-            .flex().flex_col().gap_3().p_4().w(px(480.))
-            .child(div().font_weight(FontWeight::BOLD).text_lg().child("Settings"))
+            .flex().flex_col().p_4().w(dialog_width).h(dialog_height)
             .child(
-                div().flex().flex_row().gap_1().border_b_1().border_color(cx.global::<Theme>().border).pb_1()
-                    .child(tab_button("General".to_string(), SettingsTab::General, &self.active_tab, cx))
-                    .child(tab_button("Archive".to_string(), SettingsTab::Archive, &self.active_tab, cx))
-                    .child(tab_button("Preview".to_string(), SettingsTab::Preview, &self.active_tab, cx))
-                    .child(tab_button("Appearance".to_string(), SettingsTab::Appearance, &self.active_tab, cx))
+                Settings::new("app-settings")
+                    .sidebar_width(px(180.))
+                    .pages(vec![
+                        // General
+                        SettingPage::new("General")
+                            .default_open(true)
+                            .group(
+                                SettingGroup::new()
+                                    .title("Application")
+                                    .items(vec![
+                                        SettingItem::new(
+                                            "Minimize to tray",
+                                            SettingField::switch(
+                                                move |_| prefs.ui.minimize_to_tray,
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("Keep the application running in the system tray when minimized."),
+                                        SettingItem::new(
+                                            "Confirm before delete",
+                                            SettingField::switch(
+                                                move |_| prefs.ui.confirm_delete,
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("Show a confirmation dialog before deleting archive entries."),
+                                    ])
+                            ),
+                        // Archive
+                        SettingPage::new("Archive")
+                            .group(
+                                SettingGroup::new()
+                                    .title("Defaults")
+                                    .items(vec![
+                                        SettingItem::new(
+                                            "Default format",
+                                            SettingField::dropdown(
+                                                writable_formats(),
+                                                move |_| SharedString::from(prefs.archive.default_format.display_name()),
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("The default archive format when creating new archives."),
+                                        SettingItem::new(
+                                            "Compression level",
+                                            SettingField::dropdown(
+                                                vec![
+                                                    ("0 - None".into(), "0".into()),
+                                                    ("1 - Fastest".into(), "1".into()),
+                                                    ("2 - Fast".into(), "2".into()),
+                                                    ("3 - Normal".into(), "3".into()),
+                                                    ("4 - Maximum".into(), "4".into()),
+                                                    ("5 - Ultra".into(), "5".into()),
+                                                ],
+                                                move |_| SharedString::from(format!("{} - {}", prefs.archive.default_compression_level, compression_level_name(prefs.archive.default_compression_level))),
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("The default compression level for new archives."),
+                                        SettingItem::new(
+                                            "Encrypt filenames",
+                                            SettingField::switch(
+                                                move |_| prefs.archive.default_encrypt_filenames,
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("Encrypt file names in the archive by default."),
+                                    ]),
+                            )
+                            .group(
+                                SettingGroup::new()
+                                    .title("Recent Files")
+                                    .item(
+                                        SettingItem::render(move |_, _, _| {
+                                            let recent = prefs.archive.recent_files.clone();
+                                            if recent.is_empty() {
+                                                return div().text_sm().text_color(gpui::black()).child("No recent files").into_any_element();
+                                            }
+                                            div().flex().flex_col().gap_1()
+                                                .children(recent.into_iter().take(5).map(|f| {
+                                                    div().text_sm().truncate().child(f).into_any_element()
+                                                }).collect::<Vec<_>>())
+                                                .into_any_element()
+                                        }),
+                                    ),
+                            ),
+                        // Preview
+                        SettingPage::new("Preview")
+                            .group(
+                                SettingGroup::new()
+                                    .title("Preview Options")
+                                    .items(vec![
+                                        SettingItem::new(
+                                            "Auto-preview files",
+                                            SettingField::switch(
+                                                move |_| prefs.preview.auto_preview,
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("Automatically preview files when selected."),
+                                        SettingItem::new(
+                                            "Text preview max size (KB)",
+                                            SettingField::number_input(
+                                                gpui_component::setting::NumberFieldOptions {
+                                                    min: 64.0,
+                                                    max: 10240.0,
+                                                    step: 64.0,
+                                                    ..Default::default()
+                                                },
+                                                move |_| (prefs.preview.text_max_bytes / 1024) as f64,
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("Maximum file size in KB for text preview."),
+                                        SettingItem::new(
+                                            "Hex dump bytes",
+                                            SettingField::number_input(
+                                                gpui_component::setting::NumberFieldOptions {
+                                                    min: 256.0,
+                                                    max: 65536.0,
+                                                    step: 256.0,
+                                                    ..Default::default()
+                                                },
+                                                move |_| prefs.preview.hex_dump_bytes as f64,
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("Number of bytes to show in hex dump view."),
+                                    ]),
+                            ),
+                        // Appearance
+                        SettingPage::new("Appearance")
+                            .group(
+                                SettingGroup::new()
+                                    .title("Theme")
+                                    .item(
+                                        SettingItem::new(
+                                            "Color scheme",
+                                            SettingField::dropdown(
+                                                vec![
+                                                    ("Light".into(), "light".into()),
+                                                    ("Dark".into(), "dark".into()),
+                                                    ("System".into(), "system".into()),
+                                                ],
+                                                move |_| SharedString::from(match prefs.ui.theme {
+                                                    ThemeMode::Light => "Light",
+                                                    ThemeMode::Dark => "Dark",
+                                                    ThemeMode::System => "System",
+                                                }),
+                                                |val, _| {},
+                                            )
+                                        )
+                                        .description("Choose your preferred color scheme."),
+                                    ),
+                            ),
+                    ]),
             )
-            .child(match self.active_tab {
-                SettingsTab::General => div().flex().flex_col().gap_2()
-                    .child(div().child("Minimize to tray"))
-                    .child(div().child(if self.prefs.ui.minimize_to_tray { "☑ Enabled" } else { "☐ Disabled" }))
-                    .child(div().child("Confirm before delete"))
-                    .child(div().child(if self.prefs.ui.confirm_delete { "☑ Yes" } else { "☐ No" }))
-                    .into_any(),
-                SettingsTab::Archive => div().flex().flex_col().gap_2()
-                    .child(div().child(format!("Default format: {}", self.prefs.archive.default_format.display_name())))
-                    .child(div().child(format!("Compression level: {}", self.prefs.archive.default_compression_level)))
-                    .child(div().child(format!("Encrypt filenames: {}", self.prefs.archive.default_encrypt_filenames)))
-                    .child(div().text_sm().text_color(cx.global::<Theme>().muted).child("Recent files:"))
-                    .children(self.prefs.archive.recent_files.iter().map(|f|
-                        div().text_sm().text_color(cx.global::<Theme>().muted).child(f.clone()).into_any()
-                    ).collect::<Vec<_>>())
-                    .into_any(),
-                SettingsTab::Preview => div().flex().flex_col().gap_2()
-                    .child(div().child(format!("Text preview max: {} KB", self.prefs.preview.text_max_bytes / 1024)))
-                    .child(div().child(format!("Hex dump bytes: {}", self.prefs.preview.hex_dump_bytes)))
-                    .child(div().child(format!("Auto-preview: {}", self.prefs.preview.auto_preview)))
-                    .into_any(),
-                SettingsTab::Appearance => div().flex().flex_col().gap_3()
-                    .child(
-                        div().flex().flex_col().gap_1()
-                            .child(div().font_weight(FontWeight::MEDIUM).child("Theme"))
-                            .child(div().text_sm().text_color(cx.global::<Theme>().muted).child("Choose your preferred color scheme"))
-                    )
-                    .child(
-                        div().flex().flex_row().gap_2()
-                            .child(theme_option(ThemeMode::Light, "Light".to_string(), "Always use light theme".to_string(), &self.prefs.ui.theme, cx))
-                            .child(theme_option(ThemeMode::Dark, "Dark".to_string(), "Always use dark theme".to_string(), &self.prefs.ui.theme, cx))
-                            .child(theme_option(ThemeMode::System, "System".to_string(), "Match system setting".to_string(), &self.prefs.ui.theme, cx))
-                    )
-                    .into_any(),
-            })
+            // Action buttons
             .child(
                 div().flex().flex_row().justify_end().gap_2().pt_2()
-                    .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _e, _window, cx| cx.emit(SettingsDialogEvent::Canceled))))
-                    .child(div().px_3().py_1().rounded_md().bg(cx.global::<Theme>().primary).cursor_pointer().child("Save")
-                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _e, _window, cx| cx.emit(SettingsDialogEvent::Saved(this.prefs.clone())))))
+                    .child(
+                        Button::new("cancel")
+                            .label("Cancel")
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsDialogEvent::Canceled)))
+                    )
+                    .child(
+                        Button::new("save")
+                            .primary()
+                            .label("Save")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                cx.emit(SettingsDialogEvent::Saved(this.prefs.clone()));
+                            }))
+                    )
             )
     }
 }
 
-fn tab_button(label: String, tab: SettingsTab, active: &SettingsTab, cx: &mut Context<SettingsDialog>) -> impl IntoElement {
-    let is_active = *active == tab;
-    div()
-        .px_3().py_1().rounded_md()
-        .when(is_active, |el| el.bg(cx.global::<Theme>().selection))
-        .hover(|mut s| { s.background = Some(cx.global::<Theme>().hover.into()); s })
-        .cursor_pointer()
-        .child(label)
+fn writable_formats() -> Vec<(SharedString, SharedString)> {
+    vec![
+        ("7Z".into(), "7z".into()),
+        ("ZIP".into(), "zip".into()),
+        ("TAR".into(), "tar".into()),
+        ("TAR.GZ".into(), "tar.gz".into()),
+        ("TAR.BZ2".into(), "tar.bz2".into()),
+        ("TAR.XZ".into(), "tar.xz".into()),
+    ]
 }
 
-fn theme_option(mode: ThemeMode, label: String, description: String, current: &ThemeMode, cx: &mut Context<SettingsDialog>) -> impl IntoElement {
-    let is_selected = current == &mode;
-    let theme = cx.global::<Theme>();
-    div()
-        .flex().flex_col().gap_1().flex_1().p_3().rounded_md().cursor_pointer()
-        .border_1()
-        .border_color(if is_selected { theme.primary } else { theme.border })
-        .bg(if is_selected { theme.selection } else { theme.surface })
-        .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-        .on_mouse_down(MouseButton::Left, cx.listener(move |this: &mut SettingsDialog, _e, _window, cx| {
-            this.prefs.ui.theme = mode;
-            cx.notify();
-        }))
-        .child(div().font_weight(FontWeight::MEDIUM).child(label))
-        .child(div().text_sm().text_color(theme.muted).child(description))
+fn compression_level_name(level: u8) -> &'static str {
+    match level {
+        0 => "None",
+        1 => "Fastest",
+        2 => "Fast",
+        3 => "Normal",
+        4 => "Maximum",
+        5 => "Ultra",
+        _ => "Normal",
+    }
 }
-
-
-
-
-
-
-

@@ -7,7 +7,7 @@ use gpui_component::sidebar::{
     Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem,
     SidebarToggleButton,
 };
-use gpui_component::{Icon, IconName};
+use gpui_component::{h_flex, Icon, IconName};
 use std::path::Path;
 
 pub struct ArchiveBrowser {
@@ -59,7 +59,6 @@ impl Render for ArchiveBrowser {
         let has_recent = !recent_files.is_empty();
         let collapsed = self.collapsed;
         let subdirs = vm.filtered_subdirs();
-        drop(vm);
 
         let this = cx.entity();
 
@@ -69,9 +68,17 @@ impl Render for ArchiveBrowser {
             .header(
                 SidebarHeader::new()
                     .child(
-                        div().flex().flex_row().gap_2()
+                        h_flex()
                             .child(Icon::new(IconName::FolderOpen))
                             .when(!collapsed, |this| this.child("File Explorer"))
+                            .child(SidebarToggleButton::new()
+                                .collapsed(collapsed)
+                                .on_click({
+                                    let this = this.clone();
+                                    move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                        this.update(cx, |this, cx| this.toggle_collapsed(cx));
+                                    }
+                                }))
                     )
             )
             .child(
@@ -112,19 +119,7 @@ impl Render for ArchiveBrowser {
                             }))
                     )
             ))
-            .footer(
-                SidebarFooter::new()
-                    .child(
-                        SidebarToggleButton::new()
-                            .collapsed(collapsed)
-                            .on_click({
-                                let this = this.clone();
-                                move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                    this.update(cx, |this, cx| this.toggle_collapsed(cx));
-                                }
-                            })
-                    )
-            );
+            ;
 
         div().flex().flex_col().size_full()
             .child(Input::new(&self.input_state).px_1().py_1())

@@ -112,6 +112,11 @@ impl ArchiveRepository for Bit7zRepository {
         // Detect if archive has encrypted headers (static check without opening)
         let is_header_encrypted = lib.is_header_encrypted(path_str);
 
+        // Return specific error if password is required but not provided
+        if is_header_encrypted && password.is_none() {
+            return Err(ArchiveError::EncryptedArchiveRequiresPassword);
+        }
+
         let reader = bit7z::ArchiveReader::open(&lib, path_str, password)
             .map_err(|e| ArchiveError::Internal(e))?;
 

@@ -2,7 +2,7 @@ use crate::adapters::view_models::archive_vm::ArchiveViewModel;
 use crate::application::events::ArchiveVmEvent;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::menu::{DropdownMenu, PopupMenuItem};
+use gpui_component::menu::{AppMenuBar, DropdownMenu, PopupMenuItem};
 use gpui_component::TitleBar;
 
 pub struct Menu {
@@ -20,11 +20,17 @@ impl Render for Menu {
         let vm = self.archive_vm.read(cx);
         let is_open = vm.archive.is_some();
         let has_selection = !vm.selection.is_empty();
-        drop(vm);
 
         let vm_entity = self.archive_vm.clone();
 
-        TitleBar::new().child(
+        TitleBar::new()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .child(AppMenuBar::new(cx))
+            )
+            .child(
             div()
                 .flex()
                 .items_center()
