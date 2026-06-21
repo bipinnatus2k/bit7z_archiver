@@ -1,5 +1,23 @@
 use std::path::PathBuf;
 
+/// Trait for platform-specific file dialog operations.
+pub trait DialogProvider: Send + Sync {
+    /// Pick a single archive file. Returns `None` if cancelled.
+    fn pick_archive_file(&self) -> Option<PathBuf>;
+    /// Pick a folder. Returns `None` if cancelled.
+    fn pick_folder(&self) -> Option<PathBuf>;
+    /// Pick one or more files. Returns `None` if cancelled.
+    fn pick_files(&self) -> Option<Vec<PathBuf>>;
+}
+
+/// Returns the platform-specific dialog provider.
+pub fn dialog_provider() -> Box<dyn DialogProvider> {
+    #[cfg(target_os = "windows")]
+    { Box::new(WinDialogProvider) }
+    #[cfg(not(target_os = "windows"))]
+    { Box::new(RfdDialogProvider) }
+}
+
 /// Find the 7-Zip shared library on the current platform.
 pub fn find_7z_library() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
@@ -333,4 +351,46 @@ pub fn pick_files() -> Option<Vec<std::path::PathBuf>> {
 #[cfg(not(target_os = "windows"))]
 pub fn pick_files() -> Option<Vec<std::path::PathBuf>> {
     rfd::FileDialog::new().pick_files()
+}
+
+// ============================================================================
+// DialogProvider implementations
+// ============================================================================
+
+/// Windows dialog provider using raw Win32 API.
+#[cfg(target_os = "windows")]
+pub struct WinDialogProvider;
+
+#[cfg(target_os = "windows")]
+impl DialogProvider for WinDialogProvider {
+    fn pick_archive_file(&self) -> Option<PathBuf> {
+        pick_archive_file()
+    }
+
+    fn pick_folder(&self) -> Option<PathBuf> {
+        pick_folder()
+    }
+
+    fn pick_files(&self) -> Option<Vec<PathBuf>> {
+        pick_files()
+    }
+}
+
+/// Non-Windows dialog provider using the `rfd` crate.
+#[cfg(not(target_os = "windows"))]
+pub struct RfdDialogProvider;
+
+#[cfg(not(target_os = "windows"))]
+impl DialogProvider for RfdDialogProvider {
+    fn pick_archive_file(&self) -> Option<PathBuf> {
+        pick_archive_file()
+    }
+
+    fn pick_folder(&self) -> Option<PathBuf> {
+        pick_folder()
+    }
+
+    fn pick_files(&self) -> Option<Vec<PathBuf>> {
+        pick_files()
+    }
 }

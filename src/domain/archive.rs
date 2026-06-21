@@ -3,6 +3,20 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard};
+
+/// Wrapper for raw C++ pointer that implements Send/Sync.
+/// The underlying C++ object is NOT thread-safe - the mutex in ArchiveHandle serializes access.
+#[derive(Debug)]
+struct RawPtr(pub(crate) *mut std::ffi::c_void);
+unsafe impl Send for RawPtr {}
+unsafe impl Sync for RawPtr {}
+
+impl RawPtr {
+    pub(crate) fn as_ptr(&self) -> *mut std::ffi::c_void {
+        self.0
+    }
+}
 
 /// An entry (file or directory) inside a compressed archive.
 #[derive(Debug, Clone, PartialEq)]
@@ -127,9 +141,13 @@ impl ArchiveFormat {
 }
 
 /// Opaque handle to an opened archive (wraps a raw C++ pointer).
+/// 
+/// The handle internally uses a mutex to serialize access to the underlying C++
+/// archive reader/writer/editor objects, which are not thread-safe. Cloning the
+/// handle is cheap (Arc clone) and safe to send across threads.
 #[derive(Debug, Clone)]
 pub struct ArchiveHandle {
-    pub(crate) raw: *mut std::ffi::c_void,
+    raw: Arc<Mutex<RawPtr>>,
     pub(crate) is_writer: bool,
     pub(crate) path: Option<PathBuf>,
     pub(crate) format: Option<ArchiveFormat>,
@@ -137,17 +155,47 @@ pub struct ArchiveHandle {
     pub(crate) has_encrypted_items: bool,
 }
 
-// SAFETY: ArchiveHandle is only accessed from the main GPUI thread.
-unsafe impl Send for ArchiveHandle {}
-unsafe impl Sync for ArchiveHandle {}
-
 impl ArchiveHandle {
     pub fn new_reader(raw: *mut std::ffi::c_void) -> Self {
-        Self { raw, is_writer: false, path: None, format: None, is_header_encrypted: false, has_encrypted_items: false }
+        Self {
+            raw: Arc::new(Mutex::new(RawPtr(raw))),
+            is_writer: false,
+            path: None,
+            format: None,
+            is_header_encrypted: false,
+            has_encrypted_items: false,
+        }
     }
 
     pub fn new_writer(raw: *mut std::ffi::c_void) -> Self {
-        Self { raw, is_writer: true, path: None, format: None, is_header_encrypted: false, has_encrypted_items: false }
+        Self {
+            raw: Arc::new(Mutex::new(RawPtr(raw))),
+            is_writer: true,
+            path: None,
+            format: None,
+            is_header_encrypted: false,
+            has_encrypted_items: false,
+        }
+    }
+
+    /// Get the raw pointer for FFI calls (locks the mutex).
+    pub(crate) fn raw_locked(&self) -> MutexGuard<'_, RawPtr> {
+        self.raw.lock().unwrap()
+    }
+
+    /// Get the raw pointer as a raw pointer for FFI calls.
+    pub(crate) fn as_ptr(&self) -> *mut std::ffi::c_void {
+        self.raw.lock().unwrap().0
+    }
+
+    /// Set the raw pointer (used when re-opening archive after modifications).
+    pub(crate) fn set_raw(&mut self, raw: *mut std::ffi::c_void) {
+        *self.raw.lock().unwrap() = RawPtr(raw);
+    }
+
+    /// Check if the raw pointer is null.
+    pub(crate) fn is_null(&self) -> bool {
+        self.raw.lock().unwrap().0.is_null()
     }
 
     pub fn with_path(mut self, path: PathBuf) -> Self {
@@ -178,6 +226,8 @@ impl ArchiveHandle {
         self.has_encrypted_items = has_encrypted_items;
     }
 }
+
+
 
 /// Paginated result for large archives.
 #[derive(Debug, Clone)]
@@ -249,6 +299,30 @@ pub struct EncryptionConfig {
     pub password: Password,
     pub method: EncryptionMethod,
     pub encrypt_filenames: bool,
+}
+
+/// Overwrite mode for extraction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverwriteMode {
+    Ask,
+    Overwrite,
+    Skip,
+    RenameExtracted,
+}
+
+impl OverwriteMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            OverwriteMode::Ask => "Ask",
+            OverwriteMode::Overwrite => "Overwrite",
+            OverwriteMode::Skip => "Skip",
+            OverwriteMode::RenameExtracted => "Rename extracted",
+        }
+    }
+
+    pub fn all() -> Vec<OverwriteMode> {
+        vec![OverwriteMode::Ask, OverwriteMode::Overwrite, OverwriteMode::Skip, OverwriteMode::RenameExtracted]
+    }
 }
 
 /// Result of an archive integrity test.

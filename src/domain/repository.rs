@@ -29,7 +29,7 @@ pub trait ArchiveRepository: Send + Sync {
     fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError>;
     fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError>;
     fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError>;
-    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path) -> Result<(), ArchiveError>;
+    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path, overwrite_mode: OverwriteMode, keep_broken: bool, progress: Option<Sender<ProgressUpdate>>) -> Result<(), ArchiveError>;
     fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError>;
     fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError>;
     fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError>;
@@ -217,7 +217,7 @@ pub mod test_utils {
             })
         }
 
-        fn extract(&self, _archive: &ArchiveHandle, _indices: &[u32], _dest: &Path) -> Result<(), ArchiveError> {
+        fn extract(&self, _archive: &ArchiveHandle, _indices: &[u32], _dest: &Path, _overwrite_mode: OverwriteMode, _keep_broken: bool, _progress: Option<Sender<ProgressUpdate>>) -> Result<(), ArchiveError> {
             Ok(())
         }
 

@@ -17,7 +17,10 @@ use crate::application::add_to::AddToArchiveUseCase;
 use crate::domain::archive::*;
 use crate::domain::preferences::ThemeMode;
 use crate::domain::repository::ArchiveRepository;
+use crate::gui::IpcReceiver;
+use crate::ipc::GuiCommand;
 use crate::theme::Theme;
+use crossbeam::channel::unbounded;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use std::path::Path;
@@ -92,10 +95,10 @@ impl RootView {
                                             this.extract_dialog = None;
                                             cx.notify();
                                         }
-                                        ExtractDialogEvent::ExtractRequested { destination, .. } => {
+                                        ExtractDialogEvent::ExtractRequested { destination, preserve_paths: _, overwrite_mode, keep_broken } => {
                                             if let Some(ref handle) = handle {
                                                 let uc = ExtractEntriesUseCase::new(repo.clone());
-                                                let _ = uc.execute(handle, &indices, destination, None);
+                                                let _ = uc.execute(handle, &indices, destination, None, *overwrite_mode, *keep_broken);
                                             }
                                             this.extract_dialog = None;
                                             cx.notify();
@@ -257,6 +260,50 @@ impl RootView {
                 }
             }).detach();
 
+            // Poll IPC commands using a dedicated background thread with std::thread::sleep
+            // GPUI does not use tokio, so we cannot use tokio::time::sleep anywhere.
+            let archive_vm_ipc = archive_vm.clone();
+            let (ipc_cmd_tx, ipc_cmd_rx) = unbounded::<GuiCommand>();
+            let ipc_receiver_arc = cx.global::<IpcReceiver>().0.clone();
+
+            // Background thread polls IPC receiver with std::thread::sleep
+            std::thread::Builder::new()
+                .name("ipc-poll".into())
+                .spawn(move || {
+                    loop {
+                        let cmd = ipc_receiver_arc.lock()
+                            .ok()
+                            .and_then(|rx| rx.recv().ok());
+                        if let Some(cmd) = cmd {
+                            let _ = ipc_cmd_tx.send(cmd);
+                        } else {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                        }
+                    }
+                })
+                .ok();
+
+            // Main thread processes commands forwarded from background task
+            cx.spawn(async move |_, cx| {
+                loop {
+                    while let Ok(cmd) = ipc_cmd_rx.try_recv() {
+                        match cmd {
+                            GuiCommand::Open { path, password } => {
+                                log::info!("IPC open: {} (password: {:?})", path, password.is_some());
+                                archive_vm_ipc.update(cx, |vm, cx| {
+                                    vm.open_archive(std::path::Path::new(&path), password, cx);
+                                });
+                            }
+                            GuiCommand::Activate => {
+                                log::info!("IPC activate");
+                            }
+                        }
+                    }
+                    // Yield to GPUI event loop without using tokio
+                    cx.background_spawn(std::future::ready(())).await;
+                }
+            }).detach();
+
             // Settings dialog subscription is handled in the dialog creation code
 
             Self {
@@ -297,6 +344,7 @@ impl Render for RootView {
                 self.password_dialog = Some(dialog);
             }
         }
+
         gpui_component::v_flex().size_full().relative()
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                 let modifiers = event.keystroke.modifiers;

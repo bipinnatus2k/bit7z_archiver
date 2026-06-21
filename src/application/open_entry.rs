@@ -34,7 +34,7 @@ impl OpenEntryUseCase {
         temp_path.push(&entry.name);
 
         let indices = [index];
-        self.repo.extract(archive, &indices, &temp_path)?;
+        self.repo.extract(archive, &indices, &temp_path, crate::domain::archive::OverwriteMode::Ask, false, None)?;
 
         // Open with OS association
         #[cfg(target_os = "windows")]

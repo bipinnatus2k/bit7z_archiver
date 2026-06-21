@@ -150,11 +150,29 @@ impl ArchiveReader {
         Self { raw }
     }
 
-    /// Test archive integrity. 
-    /// TODO: re-enable when bit7z_reader_test linker symbols are resolved.
-    #[allow(dead_code)]
-    fn _test_stub(&self) -> Result<(bool, u32, u32, String), String> {
-        Err("test not implemented".into())
+    /// Test archive integrity.
+    pub fn test(&self) -> Result<(bool, u32, u32, Vec<String>, Vec<String>), String> {
+        let result = unsafe { crate::ffi::bit7z_reader_test(self.raw as *mut _) };
+        if result.is_null() {
+            return Err("test call failed".into());
+        }
+        let all_ok = unsafe { crate::ffi::bit7z_test_result_all_ok(result) } != 0;
+        let total = unsafe { crate::ffi::bit7z_test_result_total(result) };
+        let failed_count = unsafe { crate::ffi::bit7z_test_result_failed_count(result) };
+        let failed_paths = Vec::new();
+        let mut failed_errors = Vec::new();
+        // Note: The C++ implementation only stores one error path/error for exception case
+        // For per-item failures, we'd need extended C++ API
+        if !all_ok && failed_count > 0 {
+            let error_msg = unsafe {
+                let ptr = crate::ffi::bit7z_test_result_error(result);
+                if ptr.is_null() { "test failed".to_string() }
+                else { std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned() }
+            };
+            failed_errors.push(error_msg);
+        }
+        unsafe { crate::ffi::bit7z_test_result_free(result); }
+        Ok((all_ok, total, failed_count, failed_paths, failed_errors))
     }
 
     /// Check if opened archive has any encrypted items.

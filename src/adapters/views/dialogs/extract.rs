@@ -1,4 +1,4 @@
-use crate::domain::archive::ArchiveEntry;
+use crate::domain::archive::{ArchiveEntry, OverwriteMode};
 use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
@@ -11,29 +11,6 @@ pub struct ExtractDialog {
     pub overwrite_mode: OverwriteMode,
     pub show_overwrite_dropdown: bool,
     pub keep_broken: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum OverwriteMode {
-    Ask,
-    Overwrite,
-    Skip,
-    RenameExtracted,
-}
-
-impl OverwriteMode {
-    fn label(&self) -> &'static str {
-        match self {
-            OverwriteMode::Ask => "Ask",
-            OverwriteMode::Overwrite => "Overwrite",
-            OverwriteMode::Skip => "Skip",
-            OverwriteMode::RenameExtracted => "Rename extracted",
-        }
-    }
-
-    fn all() -> Vec<OverwriteMode> {
-        vec![OverwriteMode::Ask, OverwriteMode::Overwrite, OverwriteMode::Skip, OverwriteMode::RenameExtracted]
-    }
 }
 
 #[derive(Debug, Clone)]

@@ -10,8 +10,16 @@ use crate::adapters::tray::{TrayManager, TrayGlobal};
 use crate::domain::preferences::{PreferencesRepoGlobal, PreferencesRepository, ThemeMode};
 use crate::adapters::view_models::progress_vm::ProgressState;
 use crate::adapters::views::root::RootView;
+use crate::ipc::GuiCommand;
+use crossbeam::channel::unbounded;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+/// Global receiver for IPC commands from CLI.
+pub struct IpcReceiver(pub Arc<Mutex<crossbeam::channel::Receiver<GuiCommand>>>);
+impl Global for IpcReceiver {}
+
+
 
 pub fn run_gui() {
     run_gui_with_path(None, None);
@@ -34,6 +42,10 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
 
         let tray = Arc::new(TrayManager::new());
 
+        // Create IPC channel for CLI→GUI communication
+        let (ipc_tx, ipc_rx) = unbounded::<GuiCommand>();
+        cx.set_global(IpcReceiver(Arc::new(Mutex::new(ipc_rx))));
+
         cx.set_global(prefs);
         cx.set_global(RepoGlobal(repo.clone()));
         cx.set_global(PreferencesRepoGlobal(Arc::new(prefs_repo)));
@@ -45,22 +57,9 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
 
         // Start IPC listener for CLI→GUI handoff
         if let Some(ref open_path) = open_path {
-            crate::ipc_connect::start_listener(open_path.as_ref(), {
-                let repo = repo.clone();
-                move |cmd| {
-                    use crate::ipc::GuiCommand;
-                    match cmd {
-                        GuiCommand::Open { path, password } => {
-                            let repo = repo.clone();
-                            // Dispatch to the opened window via global
-                            // The actual open happens through the ViewModel in RootView
-                            log::info!("IPC open: {} (password: {:?})", path, password.is_some());
-                        }
-                        GuiCommand::Activate => {
-                            log::info!("IPC activate");
-                        }
-                    }
-                }
+            let ipc_tx = ipc_tx.clone();
+            crate::ipc_connect::start_listener(open_path.as_ref(), move |cmd| {
+                let _ = ipc_tx.send(cmd);
             });
         }
 

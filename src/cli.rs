@@ -2,8 +2,8 @@ use crate::application::create::{CreateArchiveInput, CreateArchiveUseCase};
 use crate::application::add_to::AddToArchiveUseCase;
 use crate::application::preview::PreviewEntryUseCase;
 use crate::application::checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
-use crate::domain::archive::{ArchiveFormat, EncryptionConfig, EncryptionMethod, Password};
-use crate::domain::repository::ArchiveRepository;
+use crate::domain::archive::{ArchiveFormat, ArchiveHandle, EncryptionConfig, EncryptionMethod, OverwriteMode, Password};
+use crate::domain::repository::{ArchiveError, ArchiveRepository};
 use crate::adapters::shell::ShellIntegration;
 use clap::{Parser, Subcommand};
 use humansize::{format_size, BINARY};
@@ -109,6 +109,22 @@ pub enum Commands {
     ShellUninstall,
 }
 
+/// Helper to open an archive, run a closure, and ensure the handle is closed.
+fn with_archive<F, R>(
+    repo: &Arc<dyn ArchiveRepository>,
+    path: &Path,
+    password: Option<&Password>,
+    f: F,
+) -> Result<R, ArchiveError>
+where
+    F: FnOnce(&ArchiveHandle) -> Result<R, ArchiveError>,
+{
+    let handle = repo.open(path, password)?;
+    let result = f(&handle);
+    repo.close(handle);
+    result
+}
+
 pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
     let Some(ref cmd) = cli.command else {
         eprintln!("No command specified. Use --help for usage.");
@@ -117,61 +133,86 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
     match cmd {
         Commands::Open { path, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
-            match repo.open(Path::new(path), pw.as_ref()) {
-                Ok(handle) => {
-                    let props = repo.get_properties(&handle).unwrap_or_else(|e| {
-                        eprintln!("Warning: could not read properties: {}", e);
-                        crate::domain::repository::ArchiveProperties::default()
-                    });
-                    println!("Opened: {} ({} items, {} files, {} folders)",
-                        path, props.items_count, props.files_count, props.folders_count);
-                    repo.close(handle);
-                }
-                Err(e) => eprintln!("Error: {}", e),
+            if let Err(e) = with_archive(&repo, Path::new(path), pw.as_ref(), |handle| {
+                let props = repo.get_properties(handle).unwrap_or_else(|e| {
+                    eprintln!("Warning: could not read properties: {}", e);
+                    crate::domain::repository::ArchiveProperties::default()
+                });
+                println!("Opened: {} ({} items, {} files, {} folders)",
+                    path, props.items_count, props.files_count, props.folders_count);
+                Ok(())
+            }) {
+                eprintln!("Error: {}", e);
             }
         }
         Commands::Extract { path, to, indices, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
             let dest = to.as_deref().unwrap_or(".");
-            match repo.open(Path::new(path), pw.as_ref()) {
-                Ok(handle) => {
-                    let props = repo.get_properties(&handle).ok();
-                    let count = props.map(|p| p.items_count).unwrap_or(0);
-                    let indices: Vec<u32> = if let Some(s) = indices {
-                        s.split(',')
-                            .filter_map(|part| part.trim().parse::<u32>().ok())
-                            .filter(|&i| i < count)
-                            .collect()
-                    } else if count > 0 {
-                        (0..count).collect()
+            // Create progress channel
+            let (progress_tx, progress_rx): (crossbeam::channel::Sender<crate::domain::repository::ProgressUpdate>, crossbeam::channel::Receiver<crate::domain::repository::ProgressUpdate>) = crossbeam::channel::unbounded();
+            // Spawn progress reporter
+            let progress_handle = std::thread::spawn(move || {
+                let mut last_file: Option<String> = None;
+                while let Ok(update) = progress_rx.recv() {
+                    if update.current_file != last_file {
+                        if let Some(ref prev) = last_file {
+                            if !prev.is_empty() {
+                                println!();
+                            }
+                        }
+                        last_file = update.current_file.clone();
+                        if let Some(ref file) = last_file {
+                            print!("Extracting: {}... ", file);
+                        }
                     } else {
-                        vec![]
-                    };
-                    if indices.is_empty() {
-                        eprintln!("No valid indices specified");
-                        repo.close(handle);
-                        return;
+                        print!(".");
                     }
-                    match repo.extract(&handle, &indices, Path::new(dest)) {
-                        Ok(()) => println!("Extracted {} entries to {}", indices.len(), dest),
-                        Err(e) => eprintln!("Extract error: {}", e),
-                    }
-                    repo.close(handle);
+                    std::io::Write::flush(&mut std::io::stdout()).ok();
                 }
-                Err(e) => eprintln!("Error: {}", e),
+                if let Some(ref prev) = last_file {
+                    if !prev.is_empty() {
+                        println!();
+                    }
+                }
+            });
+            let pw = password.as_ref().map(|p| Password::new(p.clone()));
+            let dest = to.as_deref().unwrap_or(".");
+            if let Err(e) = with_archive(&repo, Path::new(path), pw.as_ref(), |handle| {
+                let props = repo.get_properties(handle).ok();
+                let count = props.map(|p| p.items_count).unwrap_or(0);
+                let indices: Vec<u32> = if let Some(s) = indices {
+                    s.split(',')
+                        .filter_map(|part| part.trim().parse::<u32>().ok())
+                        .filter(|&i| i < count)
+                        .collect()
+                } else if count > 0 {
+                    (0..count).collect()
+                } else {
+                    vec![]
+                };
+                if indices.is_empty() {
+                    eprintln!("No valid indices specified");
+                    return Ok(());
+                }
+                repo.extract(handle, &indices, Path::new(dest), crate::domain::archive::OverwriteMode::Ask, false, Some(progress_tx))?;
+                println!("Extracted {} entries to {}", indices.len(), dest);
+                Ok(())
+            }) {
+                eprintln!("Error: {}", e);
             }
+            // Wait for progress reporter to finish
+            progress_handle.join().ok();
         }
         Commands::Test { path, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
-            match repo.open(Path::new(path), pw.as_ref()) {
-                Ok(handle) => {
-                    match repo.test(&handle) {
-                        Ok(result) => println!("Test result: {}/{} passed", result.passed, result.total),
-                        Err(e) => eprintln!("Test error: {}", e),
-                    }
-                    repo.close(handle);
+            if let Err(e) = with_archive(&repo, Path::new(path), pw.as_ref(), |handle| {
+                match repo.test(handle) {
+                    Ok(result) => println!("Test result: {}/{} passed", result.passed, result.total),
+                    Err(e) => eprintln!("Test error: {}", e),
                 }
-                Err(e) => eprintln!("Error: {}", e),
+                Ok(())
+            }) {
+                eprintln!("Error: {}", e);
             }
         }
         Commands::Compress { files, to, format, password } => {
@@ -436,6 +477,11 @@ fn collect_files(paths: &[String]) -> Vec<PathBuf> {
     let mut result = Vec::new();
     for path_str in paths {
         let path = PathBuf::from(path_str);
+        // Skip symlinks to avoid infinite loops
+        if path.is_symlink() {
+            eprintln!("Warning: skipping symlink '{}' (may cause infinite loops)", path_str);
+            continue;
+        }
         if path.is_file() {
             result.push(path);
         } else if path.is_dir() {
@@ -449,6 +495,10 @@ fn collect_dir(dir: &Path, out: &mut Vec<PathBuf>) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
+            // Skip symlinks to avoid infinite loops
+            if path.is_symlink() {
+                continue;
+            }
             if path.is_file() {
                 out.push(path);
             } else if path.is_dir() {

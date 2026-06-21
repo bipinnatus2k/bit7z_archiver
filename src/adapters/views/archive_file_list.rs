@@ -62,7 +62,7 @@ impl TableDelegate for FileTableDelegate {
                 avm_r.update(cx, |vm, cx| {
                     if let Some(entry) = vm.level_entries.get(row_ix) {
                         if !vm.selection.contains(&entry.original_index) {
-                            vm.select(row_ix as u32, &Modifiers::none(), cx);
+                            vm.select(entry.original_index, &Modifiers::none(), cx);
                         }
                     }
                 });
