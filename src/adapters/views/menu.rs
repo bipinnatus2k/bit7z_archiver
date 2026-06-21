@@ -1,29 +1,50 @@
-use crate::adapters::view_models::archive_vm::ArchiveViewModel;
-use crate::adapters::events::ArchiveVmEvent;
+use crate::adapters::events::ChecksumAlgorithm;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::menu::{AppMenuBar, DropdownMenu, PopupMenuItem};
 use gpui_component::TitleBar;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum MenuIntent {
+    OpenArchive,
+    CreateArchive,
+    AddFiles,
+    TestSelected,
+    TestAll,
+    CloseArchive,
+    ShowProperties,
+    SelectAll,
+    InvertSelection,
+    DeleteSelected,
+    RenameSelected,
+    Checksum(ChecksumAlgorithm),
+    ShowSettings,
+    About,
+}
+
+impl EventEmitter<MenuIntent> for Menu {}
+
 pub struct Menu {
-    archive_vm: Entity<ArchiveViewModel>,
+    is_open: bool,
+    has_selection: bool,
+    single_selection: bool,
 }
 
 impl Menu {
-    pub fn new(archive_vm: Entity<ArchiveViewModel>) -> Self {
-        Self { archive_vm }
+    pub fn new() -> Self {
+        Self { is_open: false, has_selection: false, single_selection: false }
+    }
+
+    pub fn set_state(&mut self, is_open: bool, has_selection: bool, single_selection: bool) {
+        self.is_open = is_open;
+        self.has_selection = has_selection;
+        self.single_selection = single_selection;
     }
 }
 
 impl Render for Menu {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let vm = self.archive_vm.read(cx);
-        let is_open = vm.archive.is_some();
-        let has_selection = !vm.selection.is_empty();
-        let single_selection = vm.selection.len() == 1;
-
-        let vm_entity = self.archive_vm.clone();
-        drop(vm);
+        let self_handle = cx.entity();
 
         TitleBar::new()
             .child(
@@ -38,136 +59,103 @@ impl Render for Menu {
                 .items_center()
                 .gap_0()
                 .child(Button::new("menu-file").label("File").ghost().dropdown_menu({
-                    let vm = vm_entity.clone();
+                    let h = self_handle.clone();
                     move |menu, _window, _cx| {
                         menu.item(PopupMenuItem::new("Open Archive").on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| {
-                                if let Some(path) = crate::adapters::platform::pick_archive_file() {
-                                    vm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
-                                }
-                            }
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::OpenArchive)); }
                         }))
                         .item(PopupMenuItem::new("Create Archive").on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.request_create(cx))
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::CreateArchive)); }
                         }))
-                        .item(PopupMenuItem::new("Add Files").disabled(!is_open).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.request_add_files(cx))
+                        .item(PopupMenuItem::new("Add Files").on_click({
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::AddFiles)); }
                         }))
                         .separator()
                         .submenu("Test Archive", _window, _cx, {
-                            let vm = vm.clone();
+                            let h = h.clone();
                             move |sub, _w, _c| {
                                 sub.item(PopupMenuItem::new("Test Selected Files").on_click({
-                                    let vm = vm.clone();
-                                    move |_, _, cx| vm.update(cx, |vm, cx| vm.test_selected(cx))
+                                    let h = h.clone();
+                                    move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::TestSelected)); }
                                 }))
                                 .item(PopupMenuItem::new("Test Entire Archive").on_click({
-                                    let vm = vm.clone();
-                                    move |_, _, cx| vm.update(cx, |vm, cx| vm.test_all(cx))
+                                    let h = h.clone();
+                                    move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::TestAll)); }
                                 }))
                             }
                         })
                         .separator()
-                        .item(PopupMenuItem::new("Close Archive").disabled(!is_open).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.close(cx))
+                        .item(PopupMenuItem::new("Close Archive").on_click({
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::CloseArchive)); }
                         }))
                         .separator()
-                        .item(PopupMenuItem::new("Properties").disabled(!single_selection).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.show_properties(cx))
+                        .item(PopupMenuItem::new("Properties").on_click({
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::ShowProperties)); }
                         }))
                     }
                 }))
                 .child(Button::new("menu-edit").label("Edit").ghost().dropdown_menu({
-                    let vm = vm_entity.clone();
+                    let h = self_handle.clone();
                     move |menu, _window, _cx| {
                         menu.item(PopupMenuItem::new("Select All").on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.select_all(cx))
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::SelectAll)); }
                         }))
-                        .item(
-                            PopupMenuItem::new("Invert Selection")
-                                .disabled(!has_selection)
-                                .on_click({
-                                    let vm = vm.clone();
-                                    move |_, _, cx| vm.update(cx, |vm, cx| vm.invert_selection(cx))
-                                }),
-                        )
+                        .item(PopupMenuItem::new("Invert Selection").on_click({
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::InvertSelection)); }
+                        }))
                         .separator()
-                        .item(PopupMenuItem::new("Delete").disabled(!has_selection).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.delete_selected(cx))
+                        .item(PopupMenuItem::new("Delete").on_click({
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::DeleteSelected)); }
                         }))
-                        .item(PopupMenuItem::new("Rename").disabled(!single_selection).on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| {
-                                vm.update(cx, |vm, cx| {
-                                    if let Some(idx) = vm.first_selected_index() {
-                                        cx.emit(ArchiveVmEvent::RequestRename {
-                                            index: idx,
-                                            new_name: String::new(),
-                                        });
-                                    }
-                                });
-                            }
+                        .item(PopupMenuItem::new("Rename").on_click({
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::RenameSelected)); }
                         }))
                     }
                 }))
                 .child(Button::new("menu-tools").label("Tools").ghost().dropdown_menu({
-                    let vm = vm_entity.clone();
+                    let h = self_handle.clone();
                     move |menu, window, cx| {
-                        let vm_sub = vm.clone();
+                        let h_sub = h.clone();
                         menu.submenu("Checksum", window, cx, move |sub, _w, _c| {
-                            let vm_crc32 = vm_sub.clone();
-                            let vm_md5 = vm_sub.clone();
-                            let vm_sha1 = vm_sub.clone();
-                            let vm_sha256 = vm_sub.clone();
-                            sub.item(PopupMenuItem::new("CRC32").disabled(!has_selection).on_click({
-                                move |_, _, cx| {
-                                    vm_crc32.update(cx, |vm, cx| {
-                                        vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Crc32)
-                                    });
-                                }
+                            let h_crc32 = h_sub.clone();
+                            let h_md5 = h_sub.clone();
+                            let h_sha1 = h_sub.clone();
+                            let h_sha256 = h_sub.clone();
+                            sub.item(PopupMenuItem::new("CRC32").on_click({
+                                move |_, _, cx| { h_crc32.update(cx, |_, cx| cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Crc32))); }
                             }))
-                            .item(PopupMenuItem::new("MD5").disabled(!has_selection).on_click({
-                                move |_, _, cx| {
-                                    vm_md5.update(cx, |vm, cx| {
-                                        vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Md5)
-                                    });
-                                }
+                            .item(PopupMenuItem::new("MD5").on_click({
+                                move |_, _, cx| { h_md5.update(cx, |_, cx| cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Md5))); }
                             }))
-                            .item(PopupMenuItem::new("SHA1").disabled(!has_selection).on_click({
-                                move |_, _, cx| {
-                                    vm_sha1.update(cx, |vm, cx| {
-                                        vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Sha1)
-                                    });
-                                }
+                            .item(PopupMenuItem::new("SHA1").on_click({
+                                move |_, _, cx| { h_sha1.update(cx, |_, cx| cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha1))); }
                             }))
-                            .item(PopupMenuItem::new("SHA256").disabled(!has_selection).on_click({
-                                move |_, _, cx| {
-                                    vm_sha256.update(cx, |vm, cx| {
-                                        vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Sha256)
-                                    });
-                                }
+                            .item(PopupMenuItem::new("SHA256").on_click({
+                                move |_, _, cx| { h_sha256.update(cx, |_, cx| cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha256))); }
                             }))
                         })
                         .separator()
                         .item(PopupMenuItem::new("Settings").on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| vm.update(cx, |vm, cx| vm.request_show_settings(cx))
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::ShowSettings)); }
                         }))
                     }
                 }))
                 .child(Button::new("menu-help").label("Help").ghost().dropdown_menu({
-                    let vm = vm_entity.clone();
+                    let h = self_handle.clone();
                     move |menu, _window, _cx| {
                         menu.item(PopupMenuItem::new("About bit7z Archiver").on_click({
-                            let vm = vm.clone();
-                            move |_, _, cx| log::info!("bit7z Archiver {}", env!("CARGO_PKG_VERSION"))
+                            let h = h.clone();
+                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::About)); }
                         }))
                     }
                 })),

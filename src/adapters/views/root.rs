@@ -1,7 +1,7 @@
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
 use crate::adapters::views::archive_browser::ArchiveBrowser;
 use crate::adapters::views::archive_file_list::ArchiveFileList;
-use crate::adapters::views::menu::Menu;
+use crate::adapters::views::menu::{Menu, MenuIntent};
 use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
@@ -47,7 +47,7 @@ impl RootView {
             let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
             let archive_vm = cx.new(|cx| ArchiveViewModel::new(cx));
 
-            let menu = cx.new(|_| Menu::new(archive_vm.clone()));
+            let menu = cx.new(|_| Menu::new());
             let toolbar = cx.new(|_| Toolbar::new());
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(archive_vm.clone(), window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(archive_vm.clone(), window, cx));
@@ -302,6 +302,67 @@ impl RootView {
                         }
                         ToolbarIntent::ShowSettings => {
                             archive_vm.update(cx, |vm, cx| vm.request_show_settings(cx));
+                        }
+                    }
+                }
+            }).detach();
+
+            // Menu intent subscription
+            cx.subscribe::<Menu, MenuIntent>(&menu, {
+                let archive_vm = archive_vm.clone();
+                let repo = repo.clone();
+                move |this: &mut RootView, _emitter, intent: &MenuIntent, cx| {
+                    match intent {
+                        MenuIntent::OpenArchive => {
+                            if let Some(path) = crate::adapters::platform::pick_archive_file() {
+                                archive_vm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
+                            }
+                        }
+                        MenuIntent::CreateArchive => {
+                            archive_vm.update(cx, |vm, cx| vm.request_create(cx));
+                        }
+                        MenuIntent::AddFiles => {
+                            archive_vm.update(cx, |vm, cx| vm.request_add_files(cx));
+                        }
+                        MenuIntent::TestSelected => {
+                            archive_vm.update(cx, |vm, cx| vm.test_selected(cx));
+                        }
+                        MenuIntent::TestAll => {
+                            archive_vm.update(cx, |vm, cx| vm.test_all(cx));
+                        }
+                        MenuIntent::CloseArchive => {
+                            archive_vm.update(cx, |vm, cx| vm.close(cx));
+                        }
+                        MenuIntent::ShowProperties => {
+                            archive_vm.update(cx, |vm, cx| vm.show_properties(cx));
+                        }
+                        MenuIntent::SelectAll => {
+                            archive_vm.update(cx, |vm, cx| vm.select_all(cx));
+                        }
+                        MenuIntent::InvertSelection => {
+                            archive_vm.update(cx, |vm, cx| vm.invert_selection(cx));
+                        }
+                        MenuIntent::DeleteSelected => {
+                            archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
+                        }
+                        MenuIntent::RenameSelected => {
+                            archive_vm.update(cx, |vm, cx| {
+                                if let Some(idx) = vm.first_selected_index() {
+                                    cx.emit(crate::adapters::events::ArchiveVmEvent::RequestRename {
+                                        index: idx,
+                                        new_name: String::new(),
+                                    });
+                                }
+                            });
+                        }
+                        MenuIntent::Checksum(algo) => {
+                            archive_vm.update(cx, |vm, cx| vm.request_checksum(cx, *algo));
+                        }
+                        MenuIntent::ShowSettings => {
+                            archive_vm.update(cx, |vm, cx| vm.request_show_settings(cx));
+                        }
+                        MenuIntent::About => {
+                            log::info!("bit7z Archiver {}", env!("CARGO_PKG_VERSION"));
                         }
                     }
                 }
