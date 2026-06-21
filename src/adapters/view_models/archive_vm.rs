@@ -529,7 +529,7 @@ impl ArchiveViewModel {
                 if done {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(80)); }).await;
             }
             let _ = this.update(cx, |this, cx| {
                 this.refresh(cx);
@@ -578,7 +578,7 @@ impl ArchiveViewModel {
                 if done {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(80)); }).await;
             }
             let _ = this.update(cx, |this, cx| {
                 this.refresh(cx);
@@ -602,7 +602,7 @@ impl ArchiveViewModel {
         }).detach();
 
         cx.spawn(async move |this, cx| {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(200)); }).await;
             let _ = this.update(cx, |this, cx| {
                 this.refresh(cx);
             });
@@ -649,7 +649,7 @@ impl ArchiveViewModel {
                 if done {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(80)); }).await;
             }
             let _ = this.update(cx, |this, cx| {
                 this.refresh(cx);
@@ -803,7 +803,7 @@ impl ArchiveViewModel {
                 if done {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(80)); }).await;
             }
             let _ = this.update(cx, |this, cx| {
                 this.refresh(cx);

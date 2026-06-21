@@ -413,7 +413,7 @@ impl Render for CreateArchiveDialog {
                                             if done {
                                                 break;
                                             }
-                                            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                                            cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(80)); }).await;
                                         }
                                         let error = cx.update_global::<crate::adapters::view_models::progress_vm::ProgressState, _>(|state, _| state.error.clone());
                                         dialog_entity.update(cx, |_, cx| {
