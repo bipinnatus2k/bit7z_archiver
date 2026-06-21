@@ -11,7 +11,7 @@ use crate::adapters::views::dialogs::create::{CreateArchiveDialog, CreateDialogE
 use crate::adapters::views::dialogs::password::{PasswordDialog, PasswordDialogEvent};
 use crate::adapters::views::dialogs::settings::{SettingsDialog, SettingsDialogEvent};
 use crate::adapters::views::dialogs::add_files::{AddFilesDialog, AddFilesDialogEvent};
-use crate::application::events::ArchiveVmEvent;
+use crate::adapters::events::ArchiveVmEvent;
 use crate::application::extract::ExtractEntriesUseCase;
 use crate::application::add_to::AddToArchiveUseCase;
 use crate::domain::archive::*;
@@ -46,7 +46,7 @@ pub struct RootView {
 impl RootView {
     pub fn new(window: &mut Window, cx: &mut App, open_path: Option<String>, open_password: Option<String>) -> Entity<Self> {
         cx.new(|cx| {
-            let repo = cx.global::<crate::domain::repository::RepoGlobal>().0.clone();
+            let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
             let archive_vm = cx.new(|cx| ArchiveViewModel::new(cx));
             let preview_vm = cx.new(|cx| PreviewViewModel::new(cx));
 
@@ -98,7 +98,7 @@ impl RootView {
                                         ExtractDialogEvent::ExtractRequested { destination, preserve_paths: _, overwrite_mode, keep_broken } => {
                                             if let Some(ref handle) = handle {
                                                 let uc = ExtractEntriesUseCase::new(repo.clone());
-                                                let _ = uc.execute(handle, &indices, destination, None, *overwrite_mode, *keep_broken);
+                                                let _ = uc.execute(handle, &indices, destination);
                                             }
                                             this.extract_dialog = None;
                                             cx.notify();
@@ -193,14 +193,14 @@ impl RootView {
                                     },
                                     |window, cx| {
                                         let settings = cx.new(|cx| {
-                                            let prefs = cx.global::<crate::domain::preferences::Preferences>().clone();
+                                            let prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
                                             crate::adapters::views::dialogs::settings::SettingsDialog { prefs }
                                         });
                                         cx.subscribe::<crate::adapters::views::dialogs::settings::SettingsDialog, crate::adapters::views::dialogs::settings::SettingsDialogEvent>(&settings, |_this, event, cx| {
                                             match event {
                                                 crate::adapters::views::dialogs::settings::SettingsDialogEvent::Saved(prefs) => {
-                                                    cx.set_global(prefs.clone());
-                                                    if let Err(e) = cx.global::<crate::domain::preferences::PreferencesRepoGlobal>().0.save(&cx.global::<crate::domain::preferences::Preferences>()) {
+                                                    cx.set_global(crate::gui::PreferencesGlobal(prefs.clone()));
+                                                    if let Err(e) = cx.global::<crate::gui::PreferencesRepoGlobal>().0.save(&cx.global::<crate::gui::PreferencesGlobal>().0) {
                                                         log::error!("Failed to save preferences: {}", e);
                                                     }
                                                 }

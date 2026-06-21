@@ -1,5 +1,5 @@
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
-use crate::application::events::ArchiveVmEvent;
+use crate::adapters::events::ArchiveVmEvent;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::menu::{AppMenuBar, DropdownMenu, PopupMenuItem};
@@ -129,28 +129,28 @@ impl Render for Menu {
                             sub.item(PopupMenuItem::new("CRC32").disabled(!has_selection).on_click({
                                 move |_, _, cx| {
                                     vm_crc32.update(cx, |vm, cx| {
-                                        vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Crc32)
+                                        vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Crc32)
                                     });
                                 }
                             }))
                             .item(PopupMenuItem::new("MD5").disabled(!has_selection).on_click({
                                 move |_, _, cx| {
                                     vm_md5.update(cx, |vm, cx| {
-                                        vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Md5)
+                                        vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Md5)
                                     });
                                 }
                             }))
                             .item(PopupMenuItem::new("SHA1").disabled(!has_selection).on_click({
                                 move |_, _, cx| {
                                     vm_sha1.update(cx, |vm, cx| {
-                                        vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Sha1)
+                                        vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Sha1)
                                     });
                                 }
                             }))
                             .item(PopupMenuItem::new("SHA256").disabled(!has_selection).on_click({
                                 move |_, _, cx| {
                                     vm_sha256.update(cx, |vm, cx| {
-                                        vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Sha256)
+                                        vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Sha256)
                                     });
                                 }
                             }))

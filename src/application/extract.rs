@@ -1,5 +1,4 @@
-use crate::application::progress::ProgressSender;
-use crate::domain::archive::{OverwriteMode, ArchiveHandle};
+use crate::domain::archive::ArchiveHandle;
 use crate::domain::repository::{ArchiveRepository, ArchiveError};
 use std::path::Path;
 use std::sync::Arc;
@@ -18,10 +17,7 @@ impl ExtractEntriesUseCase {
         archive: &ArchiveHandle,
         indices: &[u32],
         dest: &Path,
-        progress: Option<ProgressSender>,
-        overwrite_mode: OverwriteMode,
-        keep_broken: bool,
     ) -> Result<(), ArchiveError> {
-        self.repo.extract(archive, indices, dest, overwrite_mode, keep_broken, progress)
+        self.repo.extract(archive, indices, dest)
     }
 }

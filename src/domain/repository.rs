@@ -1,13 +1,6 @@
 use crate::domain::archive::*;
-use crossbeam::channel::Sender;
-use gpui::Global;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-/// Global wrapper for repository access.
-#[derive(Clone)]
-pub struct RepoGlobal(pub Arc<dyn ArchiveRepository>);
-impl Global for RepoGlobal {}
 
 /// Progress update message sent during long-running operations.
 #[derive(Debug, Clone)]
@@ -22,6 +15,11 @@ pub struct ProgressUpdate {
     pub error: Option<String>,
 }
 
+/// Abstraction for progress notification (domain port, adapter implements).
+pub trait ProgressNotifier: Send + Sync {
+    fn notify(&self, update: &ProgressUpdate);
+}
+
 /// Core repository trait for archive operations.
 /// Implementations wrap the bit7z C++ bridge.
 pub trait ArchiveRepository: Send + Sync {
@@ -29,7 +27,7 @@ pub trait ArchiveRepository: Send + Sync {
     fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError>;
     fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError>;
     fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError>;
-    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path, overwrite_mode: OverwriteMode, keep_broken: bool, progress: Option<Sender<ProgressUpdate>>) -> Result<(), ArchiveError>;
+    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path) -> Result<(), ArchiveError>;
     fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError>;
     fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError>;
     fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError>;
@@ -37,8 +35,8 @@ pub trait ArchiveRepository: Send + Sync {
     fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError>;
     fn close(&self, archive: ArchiveHandle);
 
-    /// Set a progress channel sender for long-running operations.
-    fn set_progress_sender(&self, _tx: Sender<ProgressUpdate>) {}
+    /// Set a progress notifier for long-running operations.
+    fn set_progress_notifier(&self, _notifier: Box<dyn ProgressNotifier>) {}
 
     /// List direct children of `path` in the archive.
     /// `""` (empty string) lists root-level items.
@@ -46,8 +44,6 @@ pub trait ArchiveRepository: Send + Sync {
     fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError>;
 
     /// Add a single file to the archive at a specific archive-internal path.
-    /// This is used for creating directory entries by adding a placeholder file
-    /// at e.g. "subdir/.bit7z_keep" — which implicitly creates the subdir tree.
     fn add_file_to_path(&self, _archive: &mut ArchiveHandle, _file_path: &Path, _archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
         Err(ArchiveError::UnsupportedOperation)
     }
@@ -185,13 +181,13 @@ pub mod test_utils {
 
     impl ArchiveRepository for MockArchiveRepository {
         fn open(&self, _path: &Path, _password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
-            let handle = ArchiveHandle::new_reader(std::ptr::null_mut());
+            let handle = ArchiveHandle::new_reader();
             *self.crate_handle.lock().unwrap() = Some(handle.clone());
             Ok(handle)
         }
 
         fn create(&self, path: &Path, _format: ArchiveFormat, _encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
-            let handle = ArchiveHandle::new_writer(std::ptr::null_mut())
+            let handle = ArchiveHandle::new_writer()
                 .with_path(path.to_path_buf());
             *self.crate_handle.lock().unwrap() = Some(handle.clone());
             Ok(handle)
@@ -217,7 +213,7 @@ pub mod test_utils {
             })
         }
 
-        fn extract(&self, _archive: &ArchiveHandle, _indices: &[u32], _dest: &Path, _overwrite_mode: OverwriteMode, _keep_broken: bool, _progress: Option<Sender<ProgressUpdate>>) -> Result<(), ArchiveError> {
+        fn extract(&self, _archive: &ArchiveHandle, _indices: &[u32], _dest: &Path) -> Result<(), ArchiveError> {
             Ok(())
         }
 

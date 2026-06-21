@@ -1,4 +1,4 @@
-use crate::application::events::ArchiveVmEvent;
+use crate::adapters::events::ArchiveVmEvent;
 use crate::adapters::view_models::archive_vm::{ArchiveViewModel, ViewStatus};
 use crate::adapters::views::components::state_view::{empty_view, error_view, loading_view};
 use crate::theme::Theme;
@@ -213,7 +213,7 @@ impl Render for ArchiveFileList {
                                         .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
                                             vm_rename.update(cx, |vm, cx| {
                                                 if let Some(idx) = vm.first_selected_index() {
-                                                    cx.emit(crate::application::events::ArchiveVmEvent::RequestRename {
+                                                    cx.emit(crate::adapters::events::ArchiveVmEvent::RequestRename {
                                                         index: idx,
                                                         new_name: String::new(),
                                                     });
@@ -242,25 +242,25 @@ impl Render for ArchiveFileList {
                                     menu.item(PopupMenuItem::new("CRC32").on_click({
                                         let avm = avm_crc32.clone();
                                         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Crc32));
+                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Crc32));
                                         }
                                     }))
                                     .item(PopupMenuItem::new("MD5").on_click({
                                         let avm = avm_md5.clone();
                                         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Md5));
+                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Md5));
                                         }
                                     }))
                                     .item(PopupMenuItem::new("SHA1").on_click({
                                         let avm = avm_sha1.clone();
                                         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Sha1));
+                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Sha1));
                                         }
                                     }))
                                     .item(PopupMenuItem::new("SHA256").on_click({
                                         let avm = avm_sha256.clone();
                                         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::application::events::ChecksumAlgorithm::Sha256));
+                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Sha256));
                                         }
                                     }))
                                 });

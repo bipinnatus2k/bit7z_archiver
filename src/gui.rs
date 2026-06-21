@@ -2,12 +2,12 @@ use gpui::*;
 use gpui_component::*;
 use gpui_component_assets::Assets;
 use crate::theme::Theme;
-use crate::domain::repository::RepoGlobal;
+use crate::domain::repository::ArchiveRepository;
 use crate::adapters::bit7z::Library;
 use crate::adapters::repository::Bit7zRepository;
 use crate::adapters::platform;
 use crate::adapters::tray::{TrayManager, TrayGlobal};
-use crate::domain::preferences::{PreferencesRepoGlobal, PreferencesRepository, ThemeMode};
+use crate::domain::preferences::{Preferences, PreferencesRepository, ThemeMode};
 use crate::adapters::view_models::progress_vm::ProgressState;
 use crate::adapters::views::root::RootView;
 use crate::ipc::GuiCommand;
@@ -18,6 +18,18 @@ use std::sync::{Arc, Mutex};
 /// Global receiver for IPC commands from CLI.
 pub struct IpcReceiver(pub Arc<Mutex<crossbeam::channel::Receiver<GuiCommand>>>);
 impl Global for IpcReceiver {}
+
+/// Global wrapper for Preferences (avoids gpui::Global in domain).
+pub struct PreferencesGlobal(pub Preferences);
+impl Global for PreferencesGlobal {}
+
+/// Global wrapper for ArchiveRepository (avoids gpui::Global in domain).
+pub struct RepoGlobal(pub Arc<dyn ArchiveRepository>);
+impl Global for RepoGlobal {}
+
+/// Global wrapper for PreferencesRepository (avoids gpui::Global in domain).
+pub struct PreferencesRepoGlobal(pub Arc<dyn crate::domain::preferences::PreferencesRepository>);
+impl Global for PreferencesRepoGlobal {}
 
 
 
@@ -46,7 +58,7 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
         let (ipc_tx, ipc_rx) = unbounded::<GuiCommand>();
         cx.set_global(IpcReceiver(Arc::new(Mutex::new(ipc_rx))));
 
-        cx.set_global(prefs);
+        cx.set_global(PreferencesGlobal(prefs));
         cx.set_global(RepoGlobal(repo.clone()));
         cx.set_global(PreferencesRepoGlobal(Arc::new(prefs_repo)));
         cx.set_global(TrayGlobal(tray.clone()));
@@ -78,7 +90,7 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
                     window_decorations: Some(WindowDecorations::Client),
                     ..Default::default()
                 }, |window, cx| {
-                    let prefs = cx.global::<crate::domain::preferences::Preferences>();
+                    let prefs = &cx.global::<PreferencesGlobal>().0;
                     let theme = Theme::from_mode(prefs.ui.theme, window);
                     cx.set_global(theme);
 

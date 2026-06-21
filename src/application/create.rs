@@ -1,4 +1,3 @@
-use crate::application::progress::ProgressSender;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::sync::Arc;
@@ -22,11 +21,7 @@ impl CreateArchiveUseCase {
     pub fn execute(
         &self,
         input: &CreateArchiveInput,
-        progress: Option<ProgressSender>,
     ) -> Result<ArchiveHandle, ArchiveError> {
-        if let Some(tx) = progress {
-            self.repo.set_progress_sender(tx);
-        }
         self.repo.create(
             &input.destination,
             input.format,

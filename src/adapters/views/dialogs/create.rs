@@ -73,7 +73,7 @@ fn format_label(fmt: ArchiveFormat) -> String {
 
 impl CreateArchiveDialog {
     pub fn new(cx: &mut Context<Self>, files: Vec<CreateFileItem>) -> Self {
-        let prefs = cx.global::<Preferences>();
+        let prefs = &cx.global::<crate::gui::PreferencesGlobal>().0;
         let default_format = prefs.archive.default_format;
         let compression_level = prefs.archive.default_compression_level;
         let encrypt_filenames = prefs.archive.default_encrypt_filenames;
@@ -366,7 +366,7 @@ impl Render for CreateArchiveDialog {
                             .child(if self.password.is_empty() { "Create" } else { "Create Encrypted" })
                             .when(self.is_valid(), |el| {
                                 el.on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _e, _window, cx| {
-                                    let repo = cx.global::<crate::domain::repository::RepoGlobal>().0.clone();
+                                    let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
                                     let dest = std::path::PathBuf::from(&this.destination);
                                     let format = this.format;
                                     let encryption = this.build_encryption();

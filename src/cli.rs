@@ -148,35 +148,6 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
         Commands::Extract { path, to, indices, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
             let dest = to.as_deref().unwrap_or(".");
-            // Create progress channel
-            let (progress_tx, progress_rx): (crossbeam::channel::Sender<crate::domain::repository::ProgressUpdate>, crossbeam::channel::Receiver<crate::domain::repository::ProgressUpdate>) = crossbeam::channel::unbounded();
-            // Spawn progress reporter
-            let progress_handle = std::thread::spawn(move || {
-                let mut last_file: Option<String> = None;
-                while let Ok(update) = progress_rx.recv() {
-                    if update.current_file != last_file {
-                        if let Some(ref prev) = last_file {
-                            if !prev.is_empty() {
-                                println!();
-                            }
-                        }
-                        last_file = update.current_file.clone();
-                        if let Some(ref file) = last_file {
-                            print!("Extracting: {}... ", file);
-                        }
-                    } else {
-                        print!(".");
-                    }
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
-                }
-                if let Some(ref prev) = last_file {
-                    if !prev.is_empty() {
-                        println!();
-                    }
-                }
-            });
-            let pw = password.as_ref().map(|p| Password::new(p.clone()));
-            let dest = to.as_deref().unwrap_or(".");
             if let Err(e) = with_archive(&repo, Path::new(path), pw.as_ref(), |handle| {
                 let props = repo.get_properties(handle).ok();
                 let count = props.map(|p| p.items_count).unwrap_or(0);
@@ -194,14 +165,12 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                     eprintln!("No valid indices specified");
                     return Ok(());
                 }
-                repo.extract(handle, &indices, Path::new(dest), crate::domain::archive::OverwriteMode::Ask, false, Some(progress_tx))?;
+                repo.extract(handle, &indices, Path::new(dest))?;
                 println!("Extracted {} entries to {}", indices.len(), dest);
                 Ok(())
             }) {
                 eprintln!("Error: {}", e);
             }
-            // Wait for progress reporter to finish
-            progress_handle.join().ok();
         }
         Commands::Test { path, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
@@ -243,7 +212,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 compression_level: 5,
                 encryption,
             };
-            let mut handle = match create_uc.execute(&input, None) {
+            let mut handle = match create_uc.execute(&input) {
                 Ok(h) => h,
                 Err(e) => { eprintln!("Error creating archive: {}", e); return; }
             };

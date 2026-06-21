@@ -54,7 +54,7 @@ impl ArchiveBrowser {
 impl Render for ArchiveBrowser {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let vm = self.archive_vm.read(cx);
-        let prefs = cx.global::<Preferences>();
+        let prefs = &cx.global::<crate::gui::PreferencesGlobal>().0;
         let recent_files = &prefs.archive.recent_files;
         let has_recent = !recent_files.is_empty();
         let collapsed = self.collapsed;

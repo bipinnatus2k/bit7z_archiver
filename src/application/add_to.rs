@@ -1,4 +1,4 @@
-use crate::application::progress::ProgressSender;
+use crate::application::progress::{CrossbeamNotifier, ProgressSender};
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ impl AddToArchiveUseCase {
             }
         }
         if let Some(tx) = progress {
-            self.repo.set_progress_sender(tx);
+            self.repo.set_progress_notifier(Box::new(CrossbeamNotifier(tx)));
         }
         self.repo.add(archive, files, password)
     }

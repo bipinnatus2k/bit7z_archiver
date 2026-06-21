@@ -1,5 +1,5 @@
 use crate::application::checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
-use crate::application::events::{ArchiveVmEvent, ChecksumAlgorithm as EventChecksumAlgorithm};
+use crate::adapters::events::{ArchiveVmEvent, ChecksumAlgorithm as EventChecksumAlgorithm};
 use crate::application::new_folder::new_folder;
 use crate::application::new_file::new_file_and_add;
 use crate::application::open::OpenArchiveUseCase;
@@ -7,7 +7,7 @@ use crate::application::open_entry::OpenEntryUseCase;
 use crate::application::progress::progress_channel;
 use crate::application::{add_to::AddToArchiveUseCase, delete::DeleteEntriesUseCase, rename::RenameEntryUseCase, test::TestEntriesUseCase};
 use crate::domain::archive::*;
-use crate::domain::preferences::{Preferences, PreferencesRepoGlobal};
+use crate::domain::preferences::Preferences;
 use crate::domain::repository::*;
 use crate::adapters::view_models::progress_vm::ProgressState;
 use gpui::{EventEmitter, *};
@@ -58,7 +58,7 @@ pub enum ViewStatus {
 
 impl ArchiveViewModel {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let repo = cx.global::<RepoGlobal>().0.clone();
+        let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
         Self {
             repo,
             archive: None,
@@ -110,10 +110,10 @@ impl ArchiveViewModel {
                         this.path_history.clear();
                         this.directory_cache.clear();
                         // Save recent files
-                        let mut prefs = cx.global::<Preferences>().clone();
+                        let mut prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
                         prefs.archive.add_recent(path_string);
-                        cx.set_global(prefs);
-                        if let Err(e) = cx.global::<PreferencesRepoGlobal>().0.save(&cx.global::<Preferences>()) {
+                        cx.set_global(crate::gui::PreferencesGlobal(prefs));
+                        if let Err(e) = cx.global::<crate::gui::PreferencesRepoGlobal>().0.save(&cx.global::<crate::gui::PreferencesGlobal>().0) {
                             log::warn!("Failed to persist preferences: {}", e);
                         }
                         // Load root directory

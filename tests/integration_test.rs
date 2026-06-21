@@ -31,7 +31,7 @@ mod repo_operations {
         assert_eq!(repo.entry_count(), 1);
 
         let mut handle = repo.open(Path::new("test.7z"), None).unwrap();
-        let result = repo.add(&mut handle, &[PathBuf::from("new1.txt"), PathBuf::from("new2.txt")]);
+        let result = repo.add(&mut handle, &[PathBuf::from("new1.txt"), PathBuf::from("new2.txt")], None);
         assert!(result.is_ok());
         assert_eq!(repo.entry_count(), 3);
     }
@@ -282,7 +282,7 @@ mod compress_cli {
             PathBuf::from("b.txt"),
             PathBuf::from("sub/c.txt"),
         ];
-        let result = repo.add(&mut handle, &files);
+        let result = repo.add(&mut handle, &files, None);
         assert!(result.is_ok());
 
         let page = repo.list_page(&handle, 0, 10).unwrap();

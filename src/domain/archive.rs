@@ -3,19 +3,12 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Wrapper for raw C++ pointer that implements Send/Sync.
-/// The underlying C++ object is NOT thread-safe - the mutex in ArchiveHandle serializes access.
-#[derive(Debug)]
-struct RawPtr(pub(crate) *mut std::ffi::c_void);
-unsafe impl Send for RawPtr {}
-unsafe impl Sync for RawPtr {}
+static NEXT_ARCHIVE_ID: AtomicU64 = AtomicU64::new(1);
 
-impl RawPtr {
-    pub(crate) fn as_ptr(&self) -> *mut std::ffi::c_void {
-        self.0
-    }
+pub(crate) fn next_archive_id() -> u64 {
+    NEXT_ARCHIVE_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 /// An entry (file or directory) inside a compressed archive.
@@ -140,14 +133,11 @@ impl ArchiveFormat {
     }
 }
 
-/// Opaque handle to an opened archive (wraps a raw C++ pointer).
-/// 
-/// The handle internally uses a mutex to serialize access to the underlying C++
-/// archive reader/writer/editor objects, which are not thread-safe. Cloning the
-/// handle is cheap (Arc clone) and safe to send across threads.
+/// Opaque handle to an opened archive.
+/// The raw FFI pointer is managed by the adapter layer (Bit7zRepository).
 #[derive(Debug, Clone)]
 pub struct ArchiveHandle {
-    raw: Arc<Mutex<RawPtr>>,
+    pub(crate) id: u64,
     pub(crate) is_writer: bool,
     pub(crate) path: Option<PathBuf>,
     pub(crate) format: Option<ArchiveFormat>,
@@ -156,9 +146,9 @@ pub struct ArchiveHandle {
 }
 
 impl ArchiveHandle {
-    pub fn new_reader(raw: *mut std::ffi::c_void) -> Self {
+    pub fn new_reader() -> Self {
         Self {
-            raw: Arc::new(Mutex::new(RawPtr(raw))),
+            id: next_archive_id(),
             is_writer: false,
             path: None,
             format: None,
@@ -167,35 +157,15 @@ impl ArchiveHandle {
         }
     }
 
-    pub fn new_writer(raw: *mut std::ffi::c_void) -> Self {
+    pub fn new_writer() -> Self {
         Self {
-            raw: Arc::new(Mutex::new(RawPtr(raw))),
+            id: next_archive_id(),
             is_writer: true,
             path: None,
             format: None,
             is_header_encrypted: false,
             has_encrypted_items: false,
         }
-    }
-
-    /// Get the raw pointer for FFI calls (locks the mutex).
-    pub(crate) fn raw_locked(&self) -> MutexGuard<'_, RawPtr> {
-        self.raw.lock().unwrap()
-    }
-
-    /// Get the raw pointer as a raw pointer for FFI calls.
-    pub(crate) fn as_ptr(&self) -> *mut std::ffi::c_void {
-        self.raw.lock().unwrap().0
-    }
-
-    /// Set the raw pointer (used when re-opening archive after modifications).
-    pub(crate) fn set_raw(&mut self, raw: *mut std::ffi::c_void) {
-        *self.raw.lock().unwrap() = RawPtr(raw);
-    }
-
-    /// Check if the raw pointer is null.
-    pub(crate) fn is_null(&self) -> bool {
-        self.raw.lock().unwrap().0.is_null()
     }
 
     pub fn with_path(mut self, path: PathBuf) -> Self {

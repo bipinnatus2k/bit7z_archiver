@@ -19,7 +19,7 @@ impl EventEmitter<SettingsDialogEvent> for SettingsDialog {}
 
 impl SettingsDialog {
     pub fn new(cx: &mut Context<Self>) -> Entity<Self> {
-        let prefs = cx.global::<Preferences>().clone();
+        let prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
         cx.new(|_cx| Self { prefs })
     }
 }

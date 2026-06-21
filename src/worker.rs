@@ -35,7 +35,7 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
                         current: 0, total: indices.len() as u64,
                         file: String::new(), bytes: 0,
                     });
-                    let result = repo.extract(&archive, &indices, &dest, crate::domain::archive::OverwriteMode::Ask, false, None);
+                    let result = repo.extract(&archive, &indices, &dest);
                     match result {
                         Ok(()) => send_msg(&mut stdout, &WorkerMessage::Complete {
                             total_files: indices.len() as u64,

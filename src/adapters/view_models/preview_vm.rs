@@ -1,7 +1,7 @@
 use crate::application::preview::{PreviewData, PreviewEntryUseCase};
 use crate::domain::archive::ArchiveHandle;
 use crate::domain::preferences::Preferences;
-use crate::domain::repository::{ArchiveRepository, RepoGlobal};
+use crate::domain::repository::ArchiveRepository;
 use gpui::*;
 use std::sync::Arc;
 
@@ -14,8 +14,8 @@ pub struct PreviewViewModel {
 
 impl PreviewViewModel {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let repo = cx.global::<RepoGlobal>().0.clone();
-        let prefs = cx.global::<Preferences>();
+        let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
+        let prefs = &cx.global::<crate::gui::PreferencesGlobal>().0;
         Self {
             data: None,
             is_loading: false,

@@ -122,7 +122,7 @@ impl AddFilesDialog {
         repo: Option<std::sync::Arc<dyn crate::domain::repository::ArchiveRepository>>,
         is_solid: bool,
     ) -> Self {
-        let prefs = cx.global::<Preferences>();
+        let prefs = &cx.global::<crate::gui::PreferencesGlobal>().0;
         let compression_level = prefs.archive.default_compression_level;
         let encrypt_filenames = prefs.archive.default_encrypt_filenames;
         Self {
