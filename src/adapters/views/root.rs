@@ -4,7 +4,7 @@ use crate::adapters::views::archive_file_list::ArchiveFileList;
 use crate::adapters::views::menu::Menu;
 use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
-use crate::adapters::views::toolbar::Toolbar;
+use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
 use crate::adapters::views::dialogs::extract::{ExtractDialog, ExtractDialogEvent};
 use crate::adapters::views::dialogs::create::{CreateArchiveDialog, CreateDialogEvent};
 use crate::adapters::views::dialogs::password::{PasswordDialog, PasswordDialogEvent};
@@ -48,7 +48,7 @@ impl RootView {
             let archive_vm = cx.new(|cx| ArchiveViewModel::new(cx));
 
             let menu = cx.new(|_| Menu::new(archive_vm.clone()));
-            let toolbar = cx.new(|_| Toolbar::new(archive_vm.clone()));
+            let toolbar = cx.new(|_| Toolbar::new());
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(archive_vm.clone(), window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(archive_vm.clone(), window, cx));
             let preview_panel = cx.new(|_| PreviewPanel::new());
@@ -269,6 +269,39 @@ impl RootView {
                         }
                         ArchiveVmEvent::RefreshListing => {
                             cx.notify();
+                        }
+                    }
+                }
+            }).detach();
+
+            // Toolbar intent subscription
+            cx.subscribe::<Toolbar, ToolbarIntent>(&toolbar, {
+                let archive_vm = archive_vm.clone();
+                let repo = repo.clone();
+                move |this: &mut RootView, _emitter, intent: &ToolbarIntent, cx| {
+                    match intent {
+                        ToolbarIntent::OpenArchive => {
+                            if let Some(path) = crate::adapters::platform::pick_archive_file() {
+                                archive_vm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
+                            }
+                        }
+                        ToolbarIntent::CreateArchive => {
+                            archive_vm.update(cx, |vm, cx| vm.request_create(cx));
+                        }
+                        ToolbarIntent::AddFiles => {
+                            archive_vm.update(cx, |vm, cx| vm.request_add_files(cx));
+                        }
+                        ToolbarIntent::ExtractSelected => {
+                            archive_vm.update(cx, |vm, cx| vm.request_extract(cx));
+                        }
+                        ToolbarIntent::TestArchive => {
+                            archive_vm.update(cx, |vm, cx| vm.request_test(cx));
+                        }
+                        ToolbarIntent::CloseArchive => {
+                            archive_vm.update(cx, |vm, cx| vm.close(cx));
+                        }
+                        ToolbarIntent::ShowSettings => {
+                            archive_vm.update(cx, |vm, cx| vm.request_show_settings(cx));
                         }
                     }
                 }
