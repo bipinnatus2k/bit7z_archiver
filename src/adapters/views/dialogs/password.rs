@@ -1,6 +1,8 @@
 use crate::theme::Theme;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::h_flex;
 use gpui_component::input::{Input, InputEvent, InputState};
 
 #[derive(Debug, Clone)]
@@ -11,12 +13,18 @@ pub enum PasswordDialogEvent {
 
 impl EventEmitter<PasswordDialogEvent> for PasswordDialog {}
 
+pub enum PasswordResult {
+    Submitted(String),
+    Canceled,
+}
+
 pub struct PasswordDialog {
-    pub archive_name: String,
+    archive_name: String,
     password: String,
     input_state: Entity<InputState>,
     pub error: Option<String>,
     _subscription: Subscription,
+    result_tx: Option<Sender<PasswordResult>>,
 }
 
 impl PasswordDialog {
@@ -32,12 +40,44 @@ impl PasswordDialog {
                 _ => {}
             }
         });
-        Self {
-            archive_name,
-            password: String::new(),
-            input_state,
-            error: None,
-            _subscription: subscription,
+        Self { archive_name, password: String::new(), input_state, error: None, _subscription: subscription, result_tx: None }
+    }
+
+    /// Open as independent window. Returns a receiver for the result.
+    pub fn open(archive_name: String, cx: &mut AsyncApp) -> Receiver<PasswordResult> {
+        let (tx, rx) = unbounded::<PasswordResult>();
+        let tx = std::sync::Mutex::new(Some(tx));
+        cx.spawn(async move |cx| {
+            let _ = cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(200.), px(200.)),
+                        size(px(420.), px(220.)),
+                    ))),
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let tx_lock = tx.lock().unwrap().take().unwrap();
+                    let mut dialog = cx.new(|cx| PasswordDialog::new(archive_name, window, cx));
+                    dialog.update(cx, |d, _| d.result_tx = Some(tx_lock));
+                    cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
+                },
+            );
+        }).detach();
+        rx
+    }
+
+    fn submit(&mut self) {
+        if let Some(tx) = self.result_tx.take() {
+            let _ = tx.send(PasswordResult::Submitted(self.password.clone()));
+        }
+    }
+
+    fn cancel(&mut self) {
+        if let Some(tx) = self.result_tx.take() {
+            let _ = tx.send(PasswordResult::Canceled);
         }
     }
 }
@@ -45,22 +85,22 @@ impl PasswordDialog {
 impl Render for PasswordDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.global::<Theme>();
-        div().flex().flex_col().gap_3().p_4().w(px(360.))
+        let has_error = self.error.is_some();
+        let err = self.error.clone();
+
+        div().flex().flex_col().gap_3().p_4()
             .child(div().font_weight(FontWeight::BOLD).child("Password Required"))
             .child(div().text_sm().child(format!("The archive \"{}\" is encrypted.", self.archive_name)))
-            .child(
-                Input::new(&self.input_state)
-                    .flex_1()
-            )
-            .when_some(self.error.as_ref(), |el, err| {
-                el.child(div().text_sm().mt_1().text_color(theme.error).child(err.clone()))
-            })
-            .child(
-                div().flex().flex_row().justify_end().gap_2()
-                    .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|_this, _e, _window, cx| cx.emit(PasswordDialogEvent::Canceled))))
-                    .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("OK")
-                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _e, _window, cx| cx.emit(PasswordDialogEvent::Submitted(this.password.clone())))))
-            )
+            .child(Input::new(&self.input_state).flex_1())
+            .when(has_error, |el| el.child(div().text_sm().mt_1().text_color(theme.error).child(err.unwrap_or_default())))
+            .child(h_flex().justify_end().gap_2()
+                .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, _cx| {
+                        this.cancel();
+                    })))
+                .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("OK")
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, _cx| {
+                        this.submit();
+                    }))))
     }
 }
