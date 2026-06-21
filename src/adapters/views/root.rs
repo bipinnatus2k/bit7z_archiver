@@ -1,5 +1,5 @@
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
-use crate::adapters::views::archive_browser::ArchiveBrowser;
+use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::ArchiveFileList;
 use crate::adapters::views::menu::{Menu, MenuIntent};
 use crate::adapters::views::preview_panel::PreviewPanel;
@@ -49,7 +49,7 @@ impl RootView {
 
             let menu = cx.new(|_| Menu::new());
             let toolbar = cx.new(|_| Toolbar::new());
-            let archive_browser = cx.new(|cx| ArchiveBrowser::new(archive_vm.clone(), window, cx));
+            let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(archive_vm.clone(), window, cx));
             let preview_panel = cx.new(|_| PreviewPanel::new());
             let status_bar = cx.new(|_| StatusBar::new());
@@ -363,6 +363,24 @@ impl RootView {
                         }
                         MenuIntent::About => {
                             log::info!("bit7z Archiver {}", env!("CARGO_PKG_VERSION"));
+                        }
+                    }
+                }
+            }).detach();
+
+            // Browser intent subscription
+            cx.subscribe::<ArchiveBrowser, BrowserIntent>(&archive_browser, {
+                let archive_vm = archive_vm.clone();
+                move |_this: &mut RootView, _emitter, intent: &BrowserIntent, cx| {
+                    match intent {
+                        BrowserIntent::NavigateInto(dir) => {
+                            archive_vm.update(cx, |vm, cx| vm.navigate_into(dir, cx));
+                        }
+                        BrowserIntent::OpenRecentFile(path) => {
+                            archive_vm.update(cx, |vm, cx| vm.open_archive(std::path::Path::new(path), None, cx));
+                        }
+                        BrowserIntent::SetFilter(text) => {
+                            archive_vm.update(cx, |vm, cx| vm.set_filter(text, cx));
                         }
                     }
                 }
