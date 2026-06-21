@@ -1,5 +1,4 @@
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
-use crate::adapters::view_models::preview_vm::PreviewViewModel;
 use crate::adapters::views::archive_browser::ArchiveBrowser;
 use crate::adapters::views::archive_file_list::ArchiveFileList;
 use crate::adapters::views::menu::Menu;
@@ -32,7 +31,6 @@ pub struct RootView {
     menu: Entity<Menu>,
     toolbar: Entity<Toolbar>,
     archive_vm: Entity<ArchiveViewModel>,
-    preview_vm: Entity<PreviewViewModel>,
     archive_browser: Entity<ArchiveBrowser>,
     entry_list: Entity<ArchiveFileList>,
     preview_panel: Entity<PreviewPanel>,
@@ -48,14 +46,13 @@ impl RootView {
         cx.new(|cx| {
             let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
             let archive_vm = cx.new(|cx| ArchiveViewModel::new(cx));
-            let preview_vm = cx.new(|cx| PreviewViewModel::new(cx));
 
             let menu = cx.new(|_| Menu::new(archive_vm.clone()));
             let toolbar = cx.new(|_| Toolbar::new(archive_vm.clone()));
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(archive_vm.clone(), window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(archive_vm.clone(), window, cx));
-            let preview_panel = cx.new(|_| PreviewPanel::new(preview_vm.clone()));
-            let status_bar = cx.new(|_| StatusBar::new(archive_vm.clone()));
+            let preview_panel = cx.new(|_| PreviewPanel::new());
+            let status_bar = cx.new(|_| StatusBar::new());
 
             // Auto-open archive if provided (CLI handoff)
             if let Some(path) = open_path {
@@ -72,10 +69,27 @@ impl RootView {
                 move |this: &mut RootView, _src, event: &ArchiveVmEvent, cx| {
                     match event {
                         ArchiveVmEvent::SelectionChanged(Some((handle, index))) => {
-                            this.preview_vm.update(cx, |vm, cx| vm.load(handle.clone(), *index, cx));
+                            let h = handle.clone();
+                            let idx = *index;
+                            this.preview_panel.update(cx, |panel, _| panel.set_loading());
+                            cx.notify();
+                            let repo = repo.clone();
+                            let preview_panel = this.preview_panel.clone();
+                            cx.spawn(async move |this, cx| {
+                                let use_case = crate::application::preview::PreviewEntryUseCase::new(repo);
+                                match use_case.execute(&h, idx, 1_048_576) {
+                                    Ok(data) => {
+                                        preview_panel.update(cx, |panel, _| panel.set_data(Some(data)));
+                                    }
+                                    Err(_) => {
+                                        preview_panel.update(cx, |panel, _| panel.set_data(None));
+                                    }
+                                }
+                                let _ = this.update(cx, |_, cx| cx.notify());
+                            }).detach();
                         }
                         ArchiveVmEvent::SelectionChanged(None) => {
-                            this.preview_vm.update(cx, |vm, cx| vm.clear(cx));
+                            this.preview_panel.update(cx, |panel, _| panel.set_data(None));
                             this.entry_list.update(cx, |_, cx| cx.notify());
                             cx.notify();
                         }
@@ -307,7 +321,7 @@ impl RootView {
             // Settings dialog subscription is handled in the dialog creation code
 
             Self {
-                menu, toolbar, archive_vm, preview_vm,
+                menu, toolbar, archive_vm,
                 archive_browser, entry_list, preview_panel, status_bar,
                 extract_dialog: None,
                 password_dialog: None,
