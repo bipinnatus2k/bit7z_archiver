@@ -1,5 +1,5 @@
-use crate::adapters::events::ArchiveVmEvent;
-use crate::adapters::view_models::archive_vm::{ArchiveViewModel, ViewStatus};
+use crate::adapters::events::ChecksumAlgorithm;
+use crate::adapters::view_models::archive_state::{LevelEntry, ViewStatus};
 use crate::adapters::views::components::state_view::{empty_view, error_view, loading_view};
 use crate::theme::Theme;
 use gpui::*;
@@ -8,15 +8,46 @@ use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_component::table::{Column as TableColumn, ColumnSort, DataTable, TableDelegate, TableState};
 use humansize::{format_size, BINARY};
 
-struct FileTableDelegate {
-    archive_vm: Entity<ArchiveViewModel>,
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileListIntent {
+    RowClicked(usize, gpui::Modifiers),
+    SortByColumn(u32, bool),
+    NavigateUp,
+    OpenEntry,
+    PreviewEntry,
+    ExtractSelected,
+    RenameEntry(u32),
+    DeleteSelected,
+    Checksum(ChecksumAlgorithm),
+    SelectAll,
+    ClearSelection,
+    Refresh,
+    ShowProperties,
 }
 
-impl TableDelegate for FileTableDelegate {
+impl EventEmitter<FileListIntent> for ArchiveFileList {}
+
+struct FileListTableDelegate {
+    entries: Vec<LevelEntry>,
+    file_list: gpui::WeakEntity<ArchiveFileList>,
+}
+
+fn read_fl<F, R>(fl: &gpui::WeakEntity<ArchiveFileList>, cx: &App, f: F) -> Option<R>
+where F: FnOnce(&ArchiveFileList) -> R {
+    fl.upgrade().map(|fl| f(&fl.read(cx)))
+}
+
+impl FileListTableDelegate {
+    fn sync(&mut self, fl: &ArchiveFileList) {
+        self.entries = fl.entries.clone();
+    }
+}
+
+impl TableDelegate for FileListTableDelegate {
     fn columns_count(&self, _cx: &App) -> usize { 5 }
 
-    fn rows_count(&self, cx: &App) -> usize {
-        self.archive_vm.read(cx).displayed_entries().len()
+    fn rows_count(&self, _cx: &App) -> usize {
+        self.entries.len()
     }
 
     fn column(&self, col_ix: usize, _cx: &App) -> TableColumn {
@@ -32,47 +63,37 @@ impl TableDelegate for FileTableDelegate {
 
     fn perform_sort(&mut self, col_ix: usize, sort: ColumnSort, _window: &mut Window, cx: &mut Context<TableState<Self>>) {
         if sort == ColumnSort::Default { return; }
-        let avm = self.archive_vm.clone();
-        avm.update(cx, |vm, cx| {
-            vm.apply_sort(col_ix as u32, sort == ColumnSort::Ascending);
-            cx.notify();
-        });
+        if let Some(fl) = self.file_list.upgrade() {
+            fl.update(cx, |_, cx| cx.emit(FileListIntent::SortByColumn(col_ix as u32, sort == ColumnSort::Ascending)));
+        }
     }
 
     fn render_tr(&mut self, row_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> Stateful<Div> {
-        let vm = self.archive_vm.read(cx);
-        let entries = vm.displayed_entries();
-        let selected = entries.get(row_ix)
-            .map(|e| e.original_index as usize)
-            .map(|idx| vm.selection.contains(&(idx as u32)))
-            .unwrap_or(false);
+        let selected = read_fl(&self.file_list, cx, |fl| {
+            fl.entries.get(row_ix).map(|e| fl.selection.contains(&e.original_index))
+        }).flatten().unwrap_or(false);
         let theme = cx.global::<Theme>();
-        drop(vm);
 
-        let avm = self.archive_vm.clone();
-        let avm_r = self.archive_vm.clone();
+        let fl_left = self.file_list.clone();
+        let fl_right = self.file_list.clone();
         div().id(("row", row_ix))
             .cursor_pointer()
             .when(selected, |d| d.bg(theme.selection))
             .when(!selected && row_ix % 2 == 0, |d| d.bg(theme.surface))
-            .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _window: &mut Window, cx: &mut App| {
-                avm.update(cx, |vm, cx| vm.handle_level_click(row_ix, &event.modifiers, cx));
+            .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _: &mut Window, cx: &mut App| {
+                if let Some(fl) = fl_left.upgrade() {
+                    fl.update(cx, |_, cx| cx.emit(FileListIntent::RowClicked(row_ix, event.modifiers.clone())));
+                }
             })
-            .on_mouse_down(MouseButton::Right, move |_: &MouseDownEvent, _window: &mut Window, cx: &mut App| {
-                avm_r.update(cx, |vm, cx| {
-                    if let Some(entry) = vm.level_entries.get(row_ix) {
-                        if !vm.selection.contains(&entry.original_index) {
-                            vm.select(entry.original_index, &Modifiers::none(), cx);
-                        }
-                    }
-                });
+            .on_mouse_down(MouseButton::Right, move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
+                if let Some(fl) = fl_right.upgrade() {
+                    fl.update(cx, |_, cx| cx.emit(FileListIntent::RowClicked(row_ix, Default::default())));
+                }
             })
     }
 
     fn render_td(&mut self, row_ix: usize, col_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
-        let vm = self.archive_vm.read(cx);
-        let entries = vm.displayed_entries();
-        let entry = entries.get(row_ix);
+        let entry = read_fl(&self.file_list, cx, |fl| fl.entries.get(row_ix).cloned()).flatten();
 
         match col_ix {
             0 => {
@@ -105,25 +126,39 @@ impl TableDelegate for FileTableDelegate {
 }
 
 pub struct ArchiveFileList {
-    pub archive_vm: Entity<ArchiveViewModel>,
-    table_state: Entity<TableState<FileTableDelegate>>,
+    entries: Vec<LevelEntry>,
+    selection: std::collections::HashSet<u32>,
+    status: ViewStatus,
+    current_path: String,
+    is_ready: bool,
+    table_state: Entity<TableState<FileListTableDelegate>>,
 }
 
 impl ArchiveFileList {
-    pub fn new(archive_vm: Entity<ArchiveViewModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let delegate = FileTableDelegate { archive_vm: archive_vm.clone() };
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let delegate = FileListTableDelegate {
+            entries: vec![],
+            file_list: cx.entity().downgrade(),
+        };
         let table_state = cx.new(|cx| {
             TableState::new(delegate, window, cx)
                 .row_selectable(false)
                 .cell_selectable(false)
         });
-        Self { archive_vm, table_state }
+        Self { entries: vec![], selection: std::collections::HashSet::new(), status: ViewStatus::Empty, current_path: String::new(), is_ready: false, table_state }
+    }
+
+    pub fn set_state(&mut self, entries: Vec<LevelEntry>, selection: std::collections::HashSet<u32>, status: ViewStatus, current_path: String) {
+        self.entries = entries;
+        self.selection = selection;
+        self.status = status;
+        self.current_path = current_path;
+        self.is_ready = self.status == ViewStatus::Ready;
     }
 }
 
 impl Render for ArchiveFileList {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let vm = self.archive_vm.read(cx);
         let theme = cx.global::<Theme>();
 
         let base = gpui_component::v_flex()
@@ -131,7 +166,7 @@ impl Render for ArchiveFileList {
             .border_b_1()
             .border_color(theme.border);
 
-        match &vm.status {
+        match &self.status {
             ViewStatus::Empty => {
                 base.child(empty_view(cx, "Open an archive to browse its contents"))
             }
@@ -142,15 +177,13 @@ impl Render for ArchiveFileList {
                 base.child(error_view(cx, msg))
             }
             ViewStatus::Ready => {
-                let is_root = vm.current_path.is_empty();
-                let path_str = vm.current_path.trim_end_matches('/').to_string();
-                let archive_vm = self.archive_vm.clone();
-                drop(vm);
+                let is_root = self.current_path.is_empty();
+                let path_str = self.current_path.trim_end_matches('/').to_string();
+                let self_handle = cx.entity();
 
-                // Navigation path bar
                 let mut container = base;
                 if !is_root {
-                    let avm = archive_vm.clone();
+                    let h = self_handle.clone();
                     container = container
                         .child(
                             div().flex().flex_row().gap_1().px_2().py_1()
@@ -158,7 +191,7 @@ impl Render for ArchiveFileList {
                                 .child(
                                     div().cursor_pointer().child(" \u{2190} ")
                                         .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| { vm.navigate_up(cx); });
+                                            h.update(cx, |_, cx| cx.emit(FileListIntent::NavigateUp));
                                         })
                                 )
                                 .child(format!(" \u{1f4c2} {}", path_str))
@@ -166,140 +199,86 @@ impl Render for ArchiveFileList {
                 }
 
                 let table_entity = self.table_state.clone();
-                let avm = archive_vm.clone();
+                let has_selection = !self.selection.is_empty();
+                let single_selection = self.selection.len() == 1;
+                let ready = self.is_ready;
+                let h = self_handle.clone();
+
                 container.child(
                     div().flex_1().child(DataTable::new(&table_entity).stripe(false).bordered(false))
                         .id("entry-table-area")
                         .context_menu(move |menu, window, cx| {
-                            let current_vm = avm.read(cx);
-                            let has_selection = !current_vm.selection.is_empty();
-                            let single_selection = current_vm.selection.len() == 1;
-                            let is_ready = matches!(current_vm.status, ViewStatus::Ready);
-                            drop(current_vm);
-
                             let mut m = menu;
-                            let vm_open = avm.clone();
                             if has_selection {
-                                m = m.item(
-                                    PopupMenuItem::new("Open")
-                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            vm_open.update(cx, |vm, cx| vm.open_entry(cx));
-                                        })
-                                );
-                            }
-                            let vm_preview = avm.clone();
-                            if single_selection {
-                                m = m.item(
-                                    PopupMenuItem::new("Preview")
-                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            vm_preview.update(cx, |vm, cx| vm.preview_entry(cx));
-                                        })
-                                );
-                            }
-                            let vm_extract = avm.clone();
-                            if has_selection {
-                                m = m.item(
-                                    PopupMenuItem::new("Extract...")
-                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            vm_extract.update(cx, |vm, cx| vm.request_extract(cx));
-                                        })
-                                );
-                            }
-                            m = m.separator();
-                            let vm_rename = avm.clone();
-                            if single_selection {
-                                m = m.item(
-                                    PopupMenuItem::new("Rename")
-                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            vm_rename.update(cx, |vm, cx| {
-                                                if let Some(idx) = vm.first_selected_index() {
-                                                    cx.emit(crate::adapters::events::ArchiveVmEvent::RequestRename {
-                                                        index: idx,
-                                                        new_name: String::new(),
-                                                    });
-                                                }
-                                            });
-                                        })
-                                );
-                            }
-                            let vm_delete = avm.clone();
-                            if has_selection {
-                                m = m.item(
-                                    PopupMenuItem::new("Delete")
-                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            vm_delete.update(cx, |vm, cx| vm.delete_selected(cx));
-                                        })
-                                );
-                            }
-                            if has_selection {
+                                let h1 = h.clone();
+                                m = m.item(PopupMenuItem::new("Open").on_click(move |_, _, cx| {
+                                    h1.update(cx, |_, cx| cx.emit(FileListIntent::OpenEntry));
+                                }));
+                                if single_selection {
+                                    let h2 = h.clone();
+                                    m = m.item(PopupMenuItem::new("Preview").on_click(move |_, _, cx| {
+                                        h2.update(cx, |_, cx| cx.emit(FileListIntent::PreviewEntry));
+                                    }));
+                                }
+                                let h3 = h.clone();
+                                m = m.item(PopupMenuItem::new("Extract...").on_click(move |_, _, cx| {
+                                    h3.update(cx, |_, cx| cx.emit(FileListIntent::ExtractSelected));
+                                }));
                                 m = m.separator();
-                                let avm_ck = avm.clone();
+                                if single_selection {
+                                    let h4 = h.clone();
+                                    m = m.item(PopupMenuItem::new("Rename").on_click(move |_, _, cx| {
+                                        h4.update(cx, |_, cx| cx.emit(FileListIntent::RenameEntry(0)));
+                                    }));
+                                }
+                                let h5 = h.clone();
+                                m = m.item(PopupMenuItem::new("Delete").on_click(move |_, _, cx| {
+                                    h5.update(cx, |_, cx| cx.emit(FileListIntent::DeleteSelected));
+                                }));
+                                m = m.separator();
+                                let h_ck = h.clone();
                                 m = m.submenu("Checksum", window, cx, move |menu, _, _| {
-                                    let avm_crc32 = avm_ck.clone();
-                                    let avm_md5 = avm_ck.clone();
-                                    let avm_sha1 = avm_ck.clone();
-                                    let avm_sha256 = avm_ck.clone();
-                                    menu.item(PopupMenuItem::new("CRC32").on_click({
-                                        let avm = avm_crc32.clone();
-                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Crc32));
-                                        }
+                                    let h_crc32 = h_ck.clone();
+                                    let h_md5 = h_ck.clone();
+                                    let h_sha1 = h_ck.clone();
+                                    let h_sha256 = h_ck.clone();
+                                    menu.item(PopupMenuItem::new("CRC32").on_click(move |_, _, cx| {
+                                        h_crc32.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Crc32)));
                                     }))
-                                    .item(PopupMenuItem::new("MD5").on_click({
-                                        let avm = avm_md5.clone();
-                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Md5));
-                                        }
+                                    .item(PopupMenuItem::new("MD5").on_click(move |_, _, cx| {
+                                        h_md5.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Md5)));
                                     }))
-                                    .item(PopupMenuItem::new("SHA1").on_click({
-                                        let avm = avm_sha1.clone();
-                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Sha1));
-                                        }
+                                    .item(PopupMenuItem::new("SHA1").on_click(move |_, _, cx| {
+                                        h_sha1.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Sha1)));
                                     }))
-                                    .item(PopupMenuItem::new("SHA256").on_click({
-                                        let avm = avm_sha256.clone();
-                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            avm.update(cx, |vm, cx| vm.request_checksum(cx, crate::adapters::events::ChecksumAlgorithm::Sha256));
-                                        }
+                                    .item(PopupMenuItem::new("SHA256").on_click(move |_, _, cx| {
+                                        h_sha256.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Sha256)));
                                     }))
                                 });
                             }
                             m = m.separator();
-                            let vm_all = avm.clone();
-                            m = m.item(
-                                PopupMenuItem::new("Select All")
-                                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                        vm_all.update(cx, |vm, cx| vm.select_all(cx));
-                                    })
-                            );
-                            let vm_clear = avm.clone();
+                            let h6 = h.clone();
+                            m = m.item(PopupMenuItem::new("Select All").on_click(move |_, _, cx| {
+                                h6.update(cx, |_, cx| cx.emit(FileListIntent::SelectAll));
+                            }));
                             if has_selection {
-                                m = m.item(
-                                    PopupMenuItem::new("Clear Selection")
-                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            vm_clear.update(cx, |vm, cx| vm.clear_selection(cx));
-                                        })
-                                );
+                                let h7 = h.clone();
+                                m = m.item(PopupMenuItem::new("Clear Selection").on_click(move |_, _, cx| {
+                                    h7.update(cx, |_, cx| cx.emit(FileListIntent::ClearSelection));
+                                }));
                             }
                             m = m.separator();
-                            let vm_refresh = avm.clone();
-                            if is_ready {
-                                m = m.item(
-                                    PopupMenuItem::new("Refresh")
-                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            vm_refresh.update(cx, |vm, cx| vm.refresh(cx));
-                                        })
-                                );
+                            if ready {
+                                let h8 = h.clone();
+                                m = m.item(PopupMenuItem::new("Refresh").on_click(move |_, _, cx| {
+                                    h8.update(cx, |_, cx| cx.emit(FileListIntent::Refresh));
+                                }));
                             }
-                            let vm_props = avm.clone();
                             if single_selection {
-                                m = m.item(
-                                    PopupMenuItem::new("Properties")
-                                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            vm_props.update(cx, |vm, cx| vm.show_properties(cx));
-                                        })
-                                );
+                                let h9 = h.clone();
+                                m = m.item(PopupMenuItem::new("Properties").on_click(move |_, _, cx| {
+                                    h9.update(cx, |_, cx| cx.emit(FileListIntent::ShowProperties));
+                                }));
                             }
                             m
                         })

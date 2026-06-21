@@ -1,6 +1,6 @@
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
-use crate::adapters::views::archive_file_list::ArchiveFileList;
+use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
 use crate::adapters::views::menu::{Menu, MenuIntent};
 use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
@@ -50,7 +50,7 @@ impl RootView {
             let menu = cx.new(|_| Menu::new());
             let toolbar = cx.new(|_| Toolbar::new());
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
-            let entry_list = cx.new(|cx| ArchiveFileList::new(archive_vm.clone(), window, cx));
+            let entry_list = cx.new(|cx| ArchiveFileList::new(window, cx));
             let preview_panel = cx.new(|_| PreviewPanel::new());
             let status_bar = cx.new(|_| StatusBar::new());
 
@@ -381,6 +381,60 @@ impl RootView {
                         }
                         BrowserIntent::SetFilter(text) => {
                             archive_vm.update(cx, |vm, cx| vm.set_filter(text, cx));
+                        }
+                    }
+                }
+            }).detach();
+
+            // FileList intent subscription
+            cx.subscribe::<ArchiveFileList, FileListIntent>(&entry_list, {
+                let archive_vm = archive_vm.clone();
+                move |_this: &mut RootView, _emitter, intent: &FileListIntent, cx| {
+                    match intent {
+                        FileListIntent::RowClicked(row, mods) => {
+                            archive_vm.update(cx, |vm, cx| vm.handle_level_click(*row, mods, cx));
+                        }
+                        FileListIntent::SortByColumn(col, asc) => {
+                            archive_vm.update(cx, |vm, cx| vm.apply_sort(*col, *asc));
+                        }
+                        FileListIntent::NavigateUp => {
+                            archive_vm.update(cx, |vm, cx| vm.navigate_up(cx));
+                        }
+                        FileListIntent::OpenEntry => {
+                            archive_vm.update(cx, |vm, cx| vm.open_entry(cx));
+                        }
+                        FileListIntent::PreviewEntry => {
+                            archive_vm.update(cx, |vm, cx| vm.preview_entry(cx));
+                        }
+                        FileListIntent::ExtractSelected => {
+                            archive_vm.update(cx, |vm, cx| vm.request_extract(cx));
+                        }
+                        FileListIntent::RenameEntry(idx) => {
+                            archive_vm.update(cx, |vm, cx| {
+                                let idx = if *idx == 0 { vm.first_selected_index().unwrap_or(0) } else { *idx };
+                                cx.emit(crate::adapters::events::ArchiveVmEvent::RequestRename {
+                                    index: idx,
+                                    new_name: String::new(),
+                                });
+                            });
+                        }
+                        FileListIntent::DeleteSelected => {
+                            archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
+                        }
+                        FileListIntent::Checksum(algo) => {
+                            archive_vm.update(cx, |vm, cx| vm.request_checksum(cx, *algo));
+                        }
+                        FileListIntent::SelectAll => {
+                            archive_vm.update(cx, |vm, cx| vm.select_all(cx));
+                        }
+                        FileListIntent::ClearSelection => {
+                            archive_vm.update(cx, |vm, cx| vm.clear_selection(cx));
+                        }
+                        FileListIntent::Refresh => {
+                            archive_vm.update(cx, |vm, cx| vm.refresh(cx));
+                        }
+                        FileListIntent::ShowProperties => {
+                            archive_vm.update(cx, |vm, cx| vm.show_properties(cx));
                         }
                     }
                 }
