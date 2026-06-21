@@ -5,14 +5,11 @@ use crate::adapters::views::menu::{Menu, MenuIntent};
 use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
-use crate::adapters::views::dialogs::extract::{ExtractDialog, ExtractDialogEvent};
-use crate::adapters::views::dialogs::create::{CreateArchiveDialog, CreateDialogEvent};
-use crate::adapters::views::dialogs::password::{PasswordDialog, PasswordDialogEvent};
-use crate::adapters::views::dialogs::settings::{SettingsDialog, SettingsDialogEvent};
-use crate::adapters::views::dialogs::add_files::{AddFilesDialog, AddFilesDialogEvent};
+use crate::adapters::views::dialogs::password::PasswordDialog;
+use crate::adapters::views::dialogs::create::CreateArchiveDialog;
+use crate::adapters::views::dialogs::settings::SettingsDialog;
+use crate::adapters::views::dialogs::add_files::AddFilesDialog;
 use crate::adapters::events::ArchiveVmEvent;
-use crate::application::extract::ExtractEntriesUseCase;
-use crate::application::add_to::AddToArchiveUseCase;
 use crate::domain::archive::*;
 use crate::domain::preferences::ThemeMode;
 use crate::domain::repository::ArchiveRepository;
@@ -35,8 +32,6 @@ pub struct RootView {
     entry_list: Entity<ArchiveFileList>,
     preview_panel: Entity<PreviewPanel>,
     status_bar: Entity<StatusBar>,
-    extract_dialog: Option<Entity<ExtractDialog>>,
-    password_dialog: Option<Entity<PasswordDialog>>,
     pending_password_path: Option<String>,
     repo: Arc<dyn ArchiveRepository>,
 }
@@ -95,33 +90,7 @@ impl RootView {
                         }
                         ArchiveVmEvent::RequestShowExtract => {
                             let vm = archive_vm.read(cx);
-                            let entries: Vec<ArchiveEntry> = vm.selected_entries();
-                            let indices: Vec<u32> = entries.iter().map(|e| e.original_index).collect();
-                            let handle = vm.archive.clone();
-                            drop(vm);
-                            if !entries.is_empty() {
-                            let entries_count = entries.len();
-                                let dialog = cx.new(|_cx| ExtractDialog::new(entries));
-                                let repo = repo.clone();
-                                cx.subscribe::<ExtractDialog, ExtractDialogEvent>(&dialog, move |this: &mut RootView, _, event: &ExtractDialogEvent, cx| {
-                                    match event {
-                                        ExtractDialogEvent::Canceled => {
-                                            this.extract_dialog = None;
-                                            cx.notify();
-                                        }
-                                        ExtractDialogEvent::ExtractRequested { destination, preserve_paths: _, overwrite_mode, keep_broken } => {
-                                            if let Some(ref handle) = handle {
-                                                let uc = ExtractEntriesUseCase::new(repo.clone());
-                                                let _ = uc.execute(handle, &indices, destination);
-                                            }
-                                            this.extract_dialog = None;
-                                            cx.notify();
-                                        }
-                                    }
-                                }).detach();
-                                this.extract_dialog = Some(dialog);
-                                cx.notify();
-                            }
+                            // Extract dialog will be opened as independent window via ExtractDialog::open()
                         }
                         ArchiveVmEvent::RequestShowCreate => {
                             cx.spawn(async move |_, cx: &mut AsyncApp| {
@@ -489,8 +458,6 @@ impl RootView {
             Self {
                 menu, toolbar, archive_vm,
                 archive_browser, entry_list, preview_panel, status_bar,
-                extract_dialog: None,
-                password_dialog: None,
                 pending_password_path: None,
                 repo,
             }
@@ -500,29 +467,33 @@ impl RootView {
 
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Create password dialog if pending (only once)
-        if self.password_dialog.is_none() {
-            if let Some(path) = self.pending_password_path.take() {
-                let dialog_path = path.clone();
-                let dialog = cx.new(|cx| PasswordDialog::new(dialog_path, window, cx));
-                let archive_vm = self.archive_vm.clone();
-                cx.subscribe::<PasswordDialog, PasswordDialogEvent>(&dialog, move |this: &mut RootView, _emitter, event: &PasswordDialogEvent, cx| {
-                    match event {
-                        PasswordDialogEvent::Submitted(password) => {
-                            this.password_dialog = None;
-                            archive_vm.update(cx, |vm, cx| {
-                                vm.open_archive(std::path::Path::new(&path), Some(password.clone()), cx);
-                            });
-                            cx.notify();
+        // Open password dialog as independent window if pending
+        if let Some(path) = self.pending_password_path.take() {
+            let p = path.clone();
+            let archive_vm = self.archive_vm.clone();
+            cx.spawn(async move |this, cx| {
+                let rx = PasswordDialog::open(path, cx);
+                use crossbeam::channel::RecvTimeoutError;
+                loop {
+                    match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                        Ok(result) => {
+                            use crate::adapters::views::dialogs::password::PasswordResult;
+                            match result {
+                                PasswordResult::Submitted(pw) => {
+                                    archive_vm.update(cx, |vm, cx| {
+                                        vm.open_archive(std::path::Path::new(&p), Some(pw), cx);
+                                    });
+                                }
+                                PasswordResult::Canceled => {}
+                            }
+                            let _ = this.update(cx, |_, cx| cx.notify());
+                            break;
                         }
-                        PasswordDialogEvent::Canceled => {
-                            this.password_dialog = None;
-                            cx.notify();
-                        }
+                        Err(RecvTimeoutError::Timeout) => continue,
+                        Err(RecvTimeoutError::Disconnected) => break,
                     }
-                }).detach();
-                self.password_dialog = Some(dialog);
-            }
+                }
+            }).detach();
         }
 
         gpui_component::v_flex().size_full().relative()
@@ -577,10 +548,7 @@ impl Render for RootView {
                     "Backspace" | "Delete" => {
                         this.archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
                     }
-                    "Escape" => {
-                        this.extract_dialog = None;
-                        cx.notify();
-                    }
+                    "Escape" => {}
                     _ => {}
                 }
             }))
@@ -611,22 +579,7 @@ impl Render for RootView {
                     )
             ))
             .child(self.status_bar.clone())
-            .when_some(self.extract_dialog.clone(), |el, dialog| {
-                el.child(
-                    div().absolute().size_full().top(px(0.)).left(px(0.))
-                        .bg(hsla(0., 0., 0., 0.2))
-                        .flex().items_center().justify_center()
-                        .child(dialog)
-                )
-            })
-            .when_some(self.password_dialog.clone(), |el, dialog| {
-                el.child(
-                    div().absolute().size_full().top(px(0.)).left(px(0.))
-                        .bg(hsla(0., 0., 0., 0.2))
-                        .flex().items_center().justify_center()
-                        .child(dialog)
-                )
-            })
+
 
     }
 }
