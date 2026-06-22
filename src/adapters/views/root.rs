@@ -127,22 +127,8 @@ impl RootView {
                             }
                         }
                         ArchiveVmEvent::RequestShowCreate => {
-                            cx.spawn(async move |_, cx: &mut AsyncApp| {
-                                let _ = cx.open_window(
-                                    WindowOptions {
-                                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                                            point(px(100.), px(100.)),
-                                            size(px(560.), px(600.)),
-                                        ))),
-                                        window_background: WindowBackgroundAppearance::Opaque,
-                                        window_decorations: Some(WindowDecorations::Client),
-                                        ..Default::default()
-                                    },
-                                    |window, cx| {
-                                        let dialog = cx.new(|cx| CreateArchiveDialog::new(cx, vec![]));
-                                        cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
-                                    }
-                                );
+                            cx.spawn(async move |_, cx| {
+                                CreateArchiveDialog::open(cx, vec![]);
                             }).detach();
                         }
                         ArchiveVmEvent::RequestTest => {
@@ -169,64 +155,33 @@ impl RootView {
                             let is_solid = vm.properties.as_ref().map(|p| p.is_solid).unwrap_or(false);
                             let archive_handle = vm.archive.clone();
                             drop(vm);
-                            let repo_clone = repo.clone();
-                            cx.spawn(async move |_, cx: &mut AsyncApp| {
-                                let _ = cx.open_window(
-                                    WindowOptions {
-                                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                                            point(px(100.), px(100.)),
-                                            size(px(560.), px(600.)),
-                                        ))),
-                                        window_background: WindowBackgroundAppearance::Opaque,
-                                        window_decorations: Some(WindowDecorations::Client),
-                                        ..Default::default()
-                                    },
-                                    move |window, cx| {
-                                        let dialog = cx.new(|cx| {
-                                            crate::adapters::views::dialogs::add_files::AddFilesDialog::new(
-                                                cx,
-                                                format,
-                                                archive_handle.clone(),
-                                                Some(repo_clone.clone()),
-                                                is_solid,
-                                            )
-                                        });
-                                        cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
-                                    }
-                                );
+                            cx.spawn(async move |_, cx| {
+                                AddFilesDialog::open(cx, format, archive_handle, None, is_solid);
                             }).detach();
                         }
                         ArchiveVmEvent::RequestShowSettings => {
-                            cx.spawn(async move |_, cx: &mut AsyncApp| {
-                                let _ = cx.open_window(
-                                    WindowOptions {
-                                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                                            point(px(150.), px(150.)),
-                                            size(px(480.), px(500.)),
-                                        ))),
-                                        window_background: WindowBackgroundAppearance::Opaque,
-                                        window_decorations: Some(WindowDecorations::Client),
-                                        ..Default::default()
-                                    },
-                                    |window, cx| {
-                                        let settings = cx.new(|cx| {
-                                            let prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
-                                            crate::adapters::views::dialogs::settings::SettingsDialog { prefs }
-                                        });
-                                        cx.subscribe::<crate::adapters::views::dialogs::settings::SettingsDialog, crate::adapters::views::dialogs::settings::SettingsDialogEvent>(&settings, |_this, event, cx| {
-                                            match event {
-                                                crate::adapters::views::dialogs::settings::SettingsDialogEvent::Saved(prefs) => {
-                                                    cx.set_global(crate::gui::PreferencesGlobal(prefs.clone()));
-                                                    if let Err(e) = cx.global::<crate::gui::PreferencesRepoGlobal>().0.save(&cx.global::<crate::gui::PreferencesGlobal>().0) {
+                            let prefs_repo = cx.global::<crate::gui::PreferencesRepoGlobal>().0.clone();
+                            cx.spawn(async move |_, cx| {
+                                let rx = SettingsDialog::open(cx);
+                                use crossbeam::channel::RecvTimeoutError;
+                                loop {
+                                    match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                                        Ok(evt) => {
+                                            if let crate::adapters::views::dialogs::settings::SettingsDialogEvent::Saved(prefs) = evt {
+                                                let _ = cx.update_global::<crate::gui::PreferencesGlobal, _>(|g, app| {
+                                                    g.0 = prefs.clone();
+                                                    let current = app.global::<crate::gui::PreferencesGlobal>().0.clone();
+                                                    if let Err(e) = prefs_repo.save(&current) {
                                                         log::error!("Failed to save preferences: {}", e);
                                                     }
-                                                }
-                                                crate::adapters::views::dialogs::settings::SettingsDialogEvent::Canceled => {}
+                                                });
                                             }
-                                        }).detach();
-                                        cx.new(|cx| gpui_component::Root::new(settings, window, cx))
+                                            break;
+                                        }
+                                        Err(RecvTimeoutError::Timeout) => continue,
+                                        Err(RecvTimeoutError::Disconnected) => break,
                                     }
-                                );
+                                }
                             }).detach();
                         }
                         ArchiveVmEvent::RequestPassword { path } => {
