@@ -5,10 +5,12 @@ use crate::adapters::views::menu::{Menu, MenuIntent};
 use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
+use crate::adapters::views::dialogs::extract::ExtractDialog;
 use crate::adapters::views::dialogs::password::PasswordDialog;
 use crate::adapters::views::dialogs::create::CreateArchiveDialog;
 use crate::adapters::views::dialogs::settings::SettingsDialog;
 use crate::adapters::views::dialogs::add_files::AddFilesDialog;
+use crate::application::extract::ExtractEntriesUseCase;
 use crate::adapters::events::ArchiveVmEvent;
 use crate::domain::archive::*;
 use crate::domain::preferences::ThemeMode;
@@ -90,7 +92,35 @@ impl RootView {
                         }
                         ArchiveVmEvent::RequestShowExtract => {
                             let vm = archive_vm.read(cx);
-                            // Extract dialog will be opened as independent window via ExtractDialog::open()
+                            let entries = vm.selected_entries();
+                            let indices: Vec<u32> = vm.selection.iter().copied().collect();
+                            let handle = vm.archive.clone();
+                            let r = repo.clone();
+                            drop(vm);
+                            if !entries.is_empty() {
+                                cx.spawn(async move |_, cx| {
+                                    let rx = ExtractDialog::open(entries, cx);
+                                    use crossbeam::channel::RecvTimeoutError;
+                                    loop {
+                                        match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                                            Ok(evt) => {
+                                                match evt {
+                                                    crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, .. } => {
+                                                        if let Some(ref h) = handle {
+                                                            let uc = ExtractEntriesUseCase::new(r.clone());
+                                                            let _ = uc.execute(h, &indices, &destination);
+                                                        }
+                                                    }
+                                                    _ => {}
+                                                }
+                                                break;
+                                            }
+                                            Err(RecvTimeoutError::Timeout) => continue,
+                                            Err(RecvTimeoutError::Disconnected) => break,
+                                        }
+                                    }
+                                }).detach();
+                            }
                         }
                         ArchiveVmEvent::RequestShowCreate => {
                             cx.spawn(async move |_, cx: &mut AsyncApp| {

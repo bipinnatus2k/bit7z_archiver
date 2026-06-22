@@ -1,7 +1,11 @@
 use crate::domain::archive::{ArchiveEntry, OverwriteMode};
 use crate::theme::Theme;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use std::sync::{Arc, Mutex};
+
+type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
 
 pub struct ExtractDialog {
     pub entries: Vec<ArchiveEntry>,
@@ -11,6 +15,7 @@ pub struct ExtractDialog {
     pub overwrite_mode: OverwriteMode,
     pub show_overwrite_dropdown: bool,
     pub keep_broken: bool,
+    result_tx: Option<Sender<ExtractDialogEvent>>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +32,7 @@ pub enum ExtractDialogEvent {
 impl EventEmitter<ExtractDialogEvent> for ExtractDialog {}
 
 impl ExtractDialog {
-    pub fn new(entries: Vec<ArchiveEntry>) -> Self {
+    fn new(entries: Vec<ArchiveEntry>, result_tx: Sender<ExtractDialogEvent>) -> Self {
         let count = entries.len();
         Self {
             entries,
@@ -37,7 +42,43 @@ impl ExtractDialog {
             overwrite_mode: OverwriteMode::Ask,
             show_overwrite_dropdown: false,
             keep_broken: false,
+            result_tx: Some(result_tx),
         }
+    }
+
+    pub fn open(entries: Vec<ArchiveEntry>, cx: &mut AsyncApp) -> Receiver<ExtractDialogEvent> {
+        let (tx, rx) = unbounded::<ExtractDialogEvent>();
+        let tx: SharedSender<ExtractDialogEvent> = Arc::new(Mutex::new(Some(tx)));
+        let event_tx = tx.clone();
+        cx.spawn(async move |cx| {
+            let _ = cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(100.), px(100.)),
+                        size(px(560.), px(400.)),
+                    ))),
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let tx_lock = tx.lock().unwrap().take().unwrap();
+                    let dialog = cx.new(|cx| ExtractDialog::new(entries, tx_lock));
+                    let event_sender = event_tx.clone();
+                    cx.subscribe::<ExtractDialog, ExtractDialogEvent>(&dialog, {
+                        move |_, event: &ExtractDialogEvent, _cx| {
+                            if let Ok(guard) = event_sender.lock() {
+                                if let Some(ref sender) = *guard {
+                                    let _ = sender.send(event.clone());
+                                }
+                            }
+                        }
+                    }).detach();
+                    cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
+                },
+            );
+        }).detach();
+        rx
     }
 }
 
