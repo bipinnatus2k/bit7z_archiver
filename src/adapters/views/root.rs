@@ -104,9 +104,9 @@ impl RootView {
                             if !entries.is_empty() {
                                 cx.spawn(async move |_, cx| {
                                     let rx = ExtractDialog::open(entries, cx);
-                                    use crossbeam::channel::RecvTimeoutError;
+                                    use crossbeam::channel::TryRecvError;
                                     loop {
-                                        match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                                        match rx.try_recv() {
                                             Ok(evt) => {
                                                 match evt {
                                                     crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, .. } => {
@@ -119,8 +119,10 @@ impl RootView {
                                                 }
                                                 break;
                                             }
-                                            Err(RecvTimeoutError::Timeout) => continue,
-                                            Err(RecvTimeoutError::Disconnected) => break,
+                                            Err(TryRecvError::Empty) => {
+                                                cx.background_spawn(std::future::ready(())).await;
+                                            }
+                                            Err(TryRecvError::Disconnected) => break,
                                         }
                                     }
                                 }).detach();
@@ -163,9 +165,9 @@ impl RootView {
                             let prefs_repo = cx.global::<crate::gui::PreferencesRepoGlobal>().0.clone();
                             cx.spawn(async move |_, cx| {
                                 let rx = SettingsDialog::open(cx);
-                                use crossbeam::channel::RecvTimeoutError;
+                                use crossbeam::channel::TryRecvError;
                                 loop {
-                                    match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                                    match rx.try_recv() {
                                         Ok(evt) => {
                                             if let crate::adapters::views::dialogs::settings::SettingsDialogEvent::Saved(prefs) = evt {
                                                 let _ = cx.update_global::<crate::gui::PreferencesGlobal, _>(|g, app| {
@@ -178,8 +180,10 @@ impl RootView {
                                             }
                                             break;
                                         }
-                                        Err(RecvTimeoutError::Timeout) => continue,
-                                        Err(RecvTimeoutError::Disconnected) => break,
+                                        Err(TryRecvError::Empty) => {
+                                            cx.background_spawn(std::future::ready(())).await;
+                                        }
+                                        Err(TryRecvError::Disconnected) => break,
                                     }
                                 }
                             }).detach();
@@ -484,9 +488,9 @@ impl Render for RootView {
             let archive_vm = self.archive_vm.clone();
             cx.spawn(async move |this, cx| {
                 let rx = PasswordDialog::open(path, cx);
-                use crossbeam::channel::RecvTimeoutError;
+                use crossbeam::channel::TryRecvError;
                 loop {
-                    match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    match rx.try_recv() {
                         Ok(result) => {
                             use crate::adapters::views::dialogs::password::PasswordResult;
                             match result {
@@ -500,8 +504,10 @@ impl Render for RootView {
                             let _ = this.update(cx, |_, cx| cx.notify());
                             break;
                         }
-                        Err(RecvTimeoutError::Timeout) => continue,
-                        Err(RecvTimeoutError::Disconnected) => break,
+                        Err(TryRecvError::Empty) => {
+                            cx.background_spawn(std::future::ready(())).await;
+                        }
+                        Err(TryRecvError::Disconnected) => break,
                     }
                 }
             }).detach();
