@@ -1,9 +1,13 @@
 use crate::domain::archive::ArchiveFormat;
 use crate::domain::preferences::*;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::setting::{Settings, SettingPage, SettingGroup, SettingItem, SettingField};
+use std::sync::{Arc, Mutex};
+
+type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
 
 pub struct SettingsDialog {
     pub prefs: Preferences,
@@ -21,6 +25,40 @@ impl SettingsDialog {
     pub fn new(cx: &mut Context<Self>) -> Entity<Self> {
         let prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
         cx.new(|_cx| Self { prefs })
+    }
+
+    /// Open as independent window. Returns receiver for dialog events.
+    pub fn open(cx: &mut AsyncApp) -> Receiver<SettingsDialogEvent> {
+        let (tx, rx) = unbounded::<SettingsDialogEvent>();
+        let event_tx: SharedSender<SettingsDialogEvent> = Arc::new(Mutex::new(Some(tx)));
+        let et = event_tx.clone();
+        cx.spawn(async move |cx| {
+            let _ = cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(150.), px(150.)),
+                        size(px(480.), px(500.)),
+                    ))),
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
+                    let dialog = cx.new(|_cx| SettingsDialog { prefs });
+                    let et = et.clone();
+                    cx.subscribe::<SettingsDialog, SettingsDialogEvent>(&dialog, move |_, evt: &SettingsDialogEvent, _| {
+                        if let Ok(guard) = et.lock() {
+                            if let Some(ref sender) = *guard {
+                                let _ = sender.send(evt.clone());
+                            }
+                        }
+                    }).detach();
+                    cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
+                },
+            );
+        }).detach();
+        rx
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::domain::archive::*;
 use crate::domain::preferences::Preferences;
 use crate::theme::Theme;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -9,6 +10,9 @@ use gpui_component::input::{Input, InputState};
 use gpui_component::select::{Select, SelectItem, SelectState, SearchableVec};
 use gpui_component::Disableable;
 use gpui_component::IndexPath;
+use std::sync::{Arc, Mutex};
+
+type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
 
 pub struct AddFilesDialog {
     pub format: ArchiveFormat,
@@ -205,6 +209,45 @@ impl AddFilesDialog {
             method: EncryptionMethod::Aes256,
             encrypt_filenames: self.encrypt_filenames && self.format.supports_encrypted_filenames(),
         })
+    }
+
+    /// Open as independent window. Returns receiver for dialog events.
+    pub fn open(
+        cx: &mut AsyncApp,
+        format: ArchiveFormat,
+        archive: Option<ArchiveHandle>,
+        repo: Option<Arc<dyn crate::domain::repository::ArchiveRepository>>,
+        is_solid: bool,
+    ) -> Receiver<AddFilesDialogEvent> {
+        let (tx, rx) = unbounded::<AddFilesDialogEvent>();
+        let event_tx: SharedSender<AddFilesDialogEvent> = Arc::new(Mutex::new(Some(tx)));
+        let et = event_tx.clone();
+        cx.spawn(async move |cx| {
+            let _ = cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(100.), px(100.)),
+                        size(px(560.), px(600.)),
+                    ))),
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let dialog = cx.new(|cx| AddFilesDialog::new(cx, format, archive, repo, is_solid));
+                    let et = et.clone();
+                    cx.subscribe::<AddFilesDialog, AddFilesDialogEvent>(&dialog, move |_, evt: &AddFilesDialogEvent, _| {
+                        if let Ok(guard) = et.lock() {
+                            if let Some(ref sender) = *guard {
+                                let _ = sender.send(evt.clone());
+                            }
+                        }
+                    }).detach();
+                    cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
+                },
+            );
+        }).detach();
+        rx
     }
 }
 

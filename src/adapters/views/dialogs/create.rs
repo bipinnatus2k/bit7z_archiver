@@ -1,9 +1,13 @@
 use crate::domain::archive::*;
 use crate::domain::preferences::Preferences;
 use crate::theme::Theme;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::input::{Input, InputState};
+use std::sync::{Arc, Mutex};
+
+type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
 
 pub struct CreateArchiveDialog {
     pub file_list: Vec<CreateFileItem>,
@@ -204,6 +208,39 @@ impl CreateArchiveDialog {
                         }).collect::<Vec<_>>())
                 )
             })
+    }
+
+    /// Open as independent window. Returns receiver for dialog events.
+    pub fn open(cx: &mut AsyncApp, files: Vec<CreateFileItem>) -> Receiver<CreateDialogEvent> {
+        let (tx, rx) = unbounded::<CreateDialogEvent>();
+        let event_tx: SharedSender<CreateDialogEvent> = Arc::new(Mutex::new(Some(tx)));
+        let et = event_tx.clone();
+        cx.spawn(async move |cx| {
+            let _ = cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(100.), px(100.)),
+                        size(px(560.), px(600.)),
+                    ))),
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let dialog = cx.new(|cx| CreateArchiveDialog::new(cx, files));
+                    let et = et.clone();
+                    cx.subscribe::<CreateArchiveDialog, CreateDialogEvent>(&dialog, move |_, evt: &CreateDialogEvent, _| {
+                        if let Ok(guard) = et.lock() {
+                            if let Some(ref sender) = *guard {
+                                let _ = sender.send(evt.clone());
+                            }
+                        }
+                    }).detach();
+                    cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
+                },
+            );
+        }).detach();
+        rx
     }
 }
 
