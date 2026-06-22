@@ -1,3 +1,4 @@
+use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus, KeyModifiers};
 use crate::adapters::view_models::archive_vm::ArchiveViewModel;
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
@@ -5,6 +6,7 @@ use crate::adapters::views::menu::{Menu, MenuIntent};
 use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
+use crate::adapters::views::root_controller::RootController;
 use crate::adapters::views::dialogs::extract::ExtractDialog;
 use crate::adapters::views::dialogs::password::PasswordDialog;
 use crate::adapters::views::dialogs::create::CreateArchiveDialog;
@@ -36,6 +38,8 @@ pub struct RootView {
     status_bar: Entity<StatusBar>,
     pending_password_path: Option<String>,
     repo: Arc<dyn ArchiveRepository>,
+    state: ArchiveState,
+    controller: RootController,
 }
 
 impl RootView {
@@ -485,13 +489,35 @@ impl RootView {
 
             // Settings dialog subscription is handled in the dialog creation code
 
+            let controller_repo = repo.clone();
             Self {
                 menu, toolbar, archive_vm,
                 archive_browser, entry_list, preview_panel, status_bar,
                 pending_password_path: None,
                 repo,
+                state: ArchiveState::new(),
+                controller: RootController::new(controller_repo),
             }
         })
+    }
+
+    fn sync_children(&mut self, cx: &mut Context<Self>) {
+        let entries = self.state.displayed_entries().to_vec();
+        let selection = self.state.selection.clone();
+        let status = self.state.status.clone();
+        let path = self.state.current_path.clone();
+        let is_ready = self.state.is_ready();
+        let has_sel = self.state.has_selection();
+        let single = self.state.selection.len() == 1;
+        let is_open = self.state.archive.is_some();
+        let subdirs = self.state.filtered_subdirs();
+        let status_text = self.state.status_text();
+
+        self.entry_list.update(cx, |c, _| c.set_state(entries, selection, status, path));
+        self.toolbar.update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
+        self.menu.update(cx, |c, _| c.set_state(is_open, has_sel, single));
+        self.archive_browser.update(cx, |c, _| c.set_state(subdirs, vec![]));
+        self.status_bar.update(cx, |c, _| c.set_status(&status_text));
     }
 }
 
