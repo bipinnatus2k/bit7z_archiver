@@ -40,7 +40,7 @@ pub struct RootView {
     preview_panel: Entity<PreviewPanel>,
     status_bar: Entity<StatusBar>,
     pending_password_path: Option<String>,
-    repo: Arc<dyn ArchiveRepository>,
+    // repo: Arc<dyn ArchiveRepository>,
     state: ArchiveState,
     controller: RootController,
 }
@@ -334,7 +334,7 @@ impl RootView {
                 menu, toolbar,
                 archive_browser, entry_list, preview_panel, status_bar,
                 pending_password_path: None,
-                repo,
+                // repo,
                 state: ArchiveState::new(),
                 controller: RootController::new(controller_repo),
             };
@@ -432,7 +432,7 @@ impl RootView {
                             this.state.status = ViewStatus::Ready;
                             this.sync_children(cx);
                             cx.notify();
-                        });
+                        }).expect("");
                     }
                     Err(_) => {}
                 }
