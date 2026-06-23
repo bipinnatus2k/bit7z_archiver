@@ -1,5 +1,4 @@
 use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus, KeyModifiers};
-use crate::adapters::view_models::archive_vm::ArchiveViewModel;
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
 use crate::adapters::views::menu::{Menu, MenuIntent};
@@ -13,7 +12,7 @@ use crate::adapters::views::dialogs::create::CreateArchiveDialog;
 use crate::adapters::views::dialogs::settings::SettingsDialog;
 use crate::adapters::views::dialogs::add_files::AddFilesDialog;
 use crate::application::extract::ExtractEntriesUseCase;
-use crate::adapters::events::{ArchiveVmEvent, ChecksumAlgorithm as EventChecksumAlgorithm};
+use crate::adapters::events::ArchiveVmEvent;
 use crate::adapters::views::dialogs::checksum::ChecksumDialog;
 use crate::adapters::views::dialogs::delete::DeleteDialog;
 use crate::adapters::views::dialogs::test::TestDialog;
@@ -21,7 +20,7 @@ use crate::adapters::views::dialogs::test::TestDialog;
 impl EventEmitter<ArchiveVmEvent> for RootView {}
 use crate::domain::archive::*;
 use crate::domain::preferences::ThemeMode;
-use crate::domain::repository::ArchiveRepository;
+use crate::domain::repository::{ArchiveError, ArchiveRepository};
 use crate::gui::IpcReceiver;
 use crate::ipc::GuiCommand;
 use crate::theme::Theme;
@@ -36,7 +35,6 @@ use gpui_component::Root;
 pub struct RootView {
     menu: Entity<Menu>,
     toolbar: Entity<Toolbar>,
-    archive_vm: Entity<ArchiveViewModel>,
     archive_browser: Entity<ArchiveBrowser>,
     entry_list: Entity<ArchiveFileList>,
     preview_panel: Entity<PreviewPanel>,
@@ -51,7 +49,6 @@ impl RootView {
     pub fn new(window: &mut Window, cx: &mut App, open_path: Option<String>, open_password: Option<String>) -> Entity<Self> {
         cx.new(|cx| {
             let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
-            let archive_vm = cx.new(|cx| ArchiveViewModel::new(cx));
 
             let menu = cx.new(|_| Menu::new());
             let toolbar = cx.new(|_| Toolbar::new());
@@ -61,231 +58,21 @@ impl RootView {
             let status_bar = cx.new(|_| StatusBar::new());
 
             // Auto-open archive if provided (CLI handoff)
-            if let Some(path) = open_path {
-                let vm = archive_vm.clone();
+            let deferred_open = open_path.map(|path| {
                 let pw = open_password.clone();
-                vm.update(cx, |vm, cx| {
-                    vm.open_archive(Path::new(&path), pw, cx);
-                });
-            }
-
-            cx.subscribe::<ArchiveViewModel, ArchiveVmEvent>(&archive_vm, {
-                let archive_vm = archive_vm.clone();
-                let repo = repo.clone();
-                move |this: &mut RootView, _src, event: &ArchiveVmEvent, cx| {
-                    match event {
-                        ArchiveVmEvent::SelectionChanged(Some((handle, index))) => {
-                            let h = handle.clone();
-                            let idx = *index;
-                            this.preview_panel.update(cx, |panel, _| panel.set_loading());
-                            cx.notify();
-                            let repo = repo.clone();
-                            let preview_panel = this.preview_panel.clone();
-                            cx.spawn(async move |this, cx| {
-                                let use_case = crate::application::preview::PreviewEntryUseCase::new(repo);
-                                match use_case.execute(&h, idx, 1_048_576) {
-                                    Ok(data) => {
-                                        preview_panel.update(cx, |panel, _| panel.set_data(Some(data)));
-                                    }
-                                    Err(_) => {
-                                        preview_panel.update(cx, |panel, _| panel.set_data(None));
-                                    }
-                                }
-                                let _ = this.update(cx, |_, cx| cx.notify());
-                            }).detach();
-                        }
-                        ArchiveVmEvent::SelectionChanged(None) => {
-                            this.preview_panel.update(cx, |panel, _| panel.set_data(None));
-                            this.entry_list.update(cx, |_, cx| cx.notify());
-                            cx.notify();
-                        }
-                        ArchiveVmEvent::RequestShowExtract => {
-                            let entries = this.state.selected_entries();
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                            let handle = this.state.archive.clone();
-                            let r = this.controller.repo();
-                            if !entries.is_empty() {
-                                cx.spawn(async move |_, cx| {
-                                    let rx = ExtractDialog::open(entries, cx);
-                                    use crossbeam::channel::TryRecvError;
-                                    loop {
-                                        match rx.try_recv() {
-                                            Ok(evt) => {
-                                                match evt {
-                                                    crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, .. } => {
-                                                        if let Some(ref h) = handle {
-                                                            let uc = ExtractEntriesUseCase::new(r.clone());
-                                                            let _ = uc.execute(h, &indices, &destination);
-                                                        }
-                                                    }
-                                                    _ => {}
-                                                }
-                                                break;
-                                            }
-                                            Err(TryRecvError::Empty) => {
-                                                cx.background_spawn(std::future::ready(())).await;
-                                            }
-                                            Err(TryRecvError::Disconnected) => break,
-                                        }
-                                    }
-                                }).detach();
-                            }
-                        }
-                        ArchiveVmEvent::RequestShowCreate => {
-                            cx.spawn(async move |_, cx| {
-                                CreateArchiveDialog::open(cx, vec![]);
-                            }).detach();
-                        }
-                        ArchiveVmEvent::RequestTest => {
-                            if let Some(ref archive) = this.state.archive {
-                                let handle = archive.clone();
-                                let repo = this.controller.repo();
-                                std::thread::spawn(move || {
-                                    match repo.test(&handle) {
-                                        Ok(result) => {
-                                            log::info!("Test completed: {}/{} passed", result.passed, result.total);
-                                        }
-                                        Err(e) => {
-                                            log::error!("Test failed: {}", e);
-                                        }
-                                    }
-                                });
-                            }
-                        }
-                        ArchiveVmEvent::RequestShowAdd => {
-                            let format = ArchiveFormat::SevenZip;
-                            let is_solid = this.state.properties.as_ref().map(|p| p.is_solid).unwrap_or(false);
-                            let archive_handle = this.state.archive.clone();
-                            cx.spawn(async move |_, cx| {
-                                AddFilesDialog::open(cx, format, archive_handle, None, is_solid);
-                            }).detach();
-                        }
-                        ArchiveVmEvent::RequestShowSettings => {
-                            let prefs_repo = cx.global::<crate::gui::PreferencesRepoGlobal>().0.clone();
-                            cx.spawn(async move |_, cx| {
-                                let rx = SettingsDialog::open(cx);
-                                use crossbeam::channel::TryRecvError;
-                                loop {
-                                    match rx.try_recv() {
-                                        Ok(evt) => {
-                                            if let crate::adapters::views::dialogs::settings::SettingsDialogEvent::Saved(prefs) = evt {
-                                                let _ = cx.update_global::<crate::gui::PreferencesGlobal, _>(|g, app| {
-                                                    g.0 = prefs.clone();
-                                                    let current = app.global::<crate::gui::PreferencesGlobal>().0.clone();
-                                                    if let Err(e) = prefs_repo.save(&current) {
-                                                        log::error!("Failed to save preferences: {}", e);
-                                                    }
-                                                });
-                                            }
-                                            break;
-                                        }
-                                        Err(TryRecvError::Empty) => {
-                                            cx.background_spawn(std::future::ready(())).await;
-                                        }
-                                        Err(TryRecvError::Disconnected) => break,
-                                    }
-                                }
-                            }).detach();
-                        }
-                        ArchiveVmEvent::RequestPassword { path } => {
-                            this.pending_password_path = Some(path.clone());
-                            cx.notify();
-                        }
-                        ArchiveVmEvent::RequestDelete => {
-                            if !this.state.selection.is_empty() {
-                                let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                                if let Some(ref h) = this.state.archive {
-                                    let repo = this.controller.repo();
-                                    let handle = h.clone();
-                                    cx.spawn(async move |_, cx| {
-                                        crate::adapters::views::dialogs::delete::DeleteDialog::open(cx, indices, handle, repo);
-                                    }).detach();
-                                }
-                            }
-                        }
-                        ArchiveVmEvent::RequestAddFiles => {
-                            cx.emit(ArchiveVmEvent::RequestShowAdd);
-                        }
-                        ArchiveVmEvent::RequestTestEntries { selected_only } => {
-                            if let Some(ref h) = this.state.archive {
-                                let repo = this.controller.repo();
-                                let handle = h.clone();
-                                cx.spawn(async move |_, cx| {
-                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, handle, repo);
-                                }).detach();
-                            }
-                        }
-                        ArchiveVmEvent::RequestRename { index, new_name } => {
-                            let repo = this.controller.repo();
-                            let mut handle = this.state.archive.clone();
-                            let idx = *index;
-                            let name = new_name.clone();
-                            cx.background_spawn(async move {
-                                if let Some(ref mut h) = handle {
-                                    let uc = crate::application::rename::RenameEntryUseCase::new(repo);
-                                    let _ = uc.execute(h, idx, &name);
-                                }
-                            }).detach();
-                        }
-                        ArchiveVmEvent::RequestNewFolder => {
-                            cx.emit(ArchiveVmEvent::RequestNewFolder);
-                        }
-                        ArchiveVmEvent::RequestNewFile => {
-                            cx.emit(ArchiveVmEvent::RequestNewFile);
-                        }
-                        ArchiveVmEvent::RequestOpenEntry => {
-                            let repo = this.controller.repo();
-                            if let Some(ref h) = this.state.archive {
-                                let idx = this.state.first_selected_index();
-                                let handle = h.clone();
-                                cx.background_spawn(async move {
-                                    if let Some(idx_val) = idx {
-                                        let uc = crate::application::open_entry::OpenEntryUseCase::new(repo);
-                                        let _ = uc.execute(&handle, idx_val);
-                                    }
-                                }).detach();
-                            }
-                        }
-                        ArchiveVmEvent::RequestViewEntry => {
-                            // Preview is handled directly by SelectionChanged handler
-                        }
-                        ArchiveVmEvent::RequestEditEntry => {
-                            let repo = this.controller.repo();
-                            if let Some(ref h) = this.state.archive {
-                                let mut handle = h.clone();
-                                cx.background_spawn(async move {
-                                    let _ = crate::application::new_file::new_file_and_add(repo, &mut handle, "new_file.txt", None);
-                                }).detach();
-                            }
-                        }
-                        ArchiveVmEvent::RequestProperties => {
-                            cx.emit(ArchiveVmEvent::RequestProperties);
-                        }
-                        ArchiveVmEvent::RequestChecksum { algorithm } => {
-                            if let Some(ref h) = this.state.archive {
-                                let repo = this.controller.repo();
-                                let handle = h.clone();
-                                let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                                cx.spawn(async move |_, cx| {
-                                    crate::adapters::views::dialogs::checksum::ChecksumDialog::open_with_entries(cx, handle, indices, repo);
-                                }).detach();
-                            }
-                        }
-                        ArchiveVmEvent::RefreshListing => {
-                            cx.notify();
-                        }
-                    }
+                let p = path;
+                move |this: &mut RootView, cx: &mut Context<RootView>| {
+                    this.handle_open_archive(std::path::Path::new(&p), pw, cx);
                 }
-            }).detach();
+            });
 
             // Toolbar intent subscription
             cx.subscribe::<Toolbar, ToolbarIntent>(&toolbar, {
-                let avm = archive_vm.clone();
                 move |this: &mut RootView, _emitter, intent: &ToolbarIntent, cx| {
                     match intent {
                         ToolbarIntent::OpenArchive => {
                             if let Some(path) = crate::adapters::platform::pick_archive_file() {
-                                avm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
+                                this.handle_open_archive(&path, None, cx);
                             }
                         }
                         ToolbarIntent::CreateArchive => { cx.emit(ArchiveVmEvent::RequestShowCreate); }
@@ -312,12 +99,11 @@ impl RootView {
 
             // Menu intent subscription
             cx.subscribe::<Menu, MenuIntent>(&menu, {
-                let avm = archive_vm.clone();
                 move |this: &mut RootView, _emitter, intent: &MenuIntent, cx| {
                     match intent {
                         MenuIntent::OpenArchive => {
                             if let Some(path) = crate::adapters::platform::pick_archive_file() {
-                                avm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
+                                this.handle_open_archive(&path, None, cx);
                             }
                         }
                         MenuIntent::CreateArchive => { cx.emit(ArchiveVmEvent::RequestShowCreate); }
@@ -379,7 +165,6 @@ impl RootView {
 
             // Browser intent subscription
             cx.subscribe::<ArchiveBrowser, BrowserIntent>(&archive_browser, {
-                let avm = archive_vm.clone();
                 move |this: &mut RootView, _emitter, intent: &BrowserIntent, cx| {
                     match intent {
                         BrowserIntent::NavigateInto(dir) => {
@@ -392,7 +177,7 @@ impl RootView {
                             this.sync_children(cx);
                         }
                         BrowserIntent::OpenRecentFile(path) => {
-                            avm.update(cx, |vm, cx| vm.open_archive(std::path::Path::new(path), None, cx));
+                            this.handle_open_archive(std::path::Path::new(path), None, cx);
                         }
                     }
                 }
@@ -400,7 +185,6 @@ impl RootView {
 
             // FileList intent subscription — uses ArchiveState for pure state ops
             cx.subscribe::<ArchiveFileList, FileListIntent>(&entry_list, {
-                let archive_vm = archive_vm.clone();
                 move |this: &mut RootView, _emitter, intent: &FileListIntent, cx| {
                     match intent {
                         FileListIntent::RowClicked(row, mods) => {
@@ -500,7 +284,6 @@ impl RootView {
 
             // Poll IPC commands using a dedicated background thread with std::thread::sleep
             // GPUI does not use tokio, so we cannot use tokio::time::sleep anywhere.
-            let archive_vm_ipc = archive_vm.clone();
             let (ipc_cmd_tx, ipc_cmd_rx) = unbounded::<GuiCommand>();
             let ipc_receiver_arc = cx.global::<IpcReceiver>().0.clone();
 
@@ -522,14 +305,16 @@ impl RootView {
                 .ok();
 
             // Main thread processes commands forwarded from background task
-            cx.spawn(async move |_, cx| {
+            cx.spawn(async move |this, cx| {
                 loop {
                     while let Ok(cmd) = ipc_cmd_rx.try_recv() {
                         match cmd {
                             GuiCommand::Open { path, password } => {
                                 log::info!("IPC open: {} (password: {:?})", path, password.is_some());
-                                archive_vm_ipc.update(cx, |vm, cx| {
-                                    vm.open_archive(std::path::Path::new(&path), password, cx);
+                                let p = std::path::PathBuf::from(&path);
+                                let pw = password.clone();
+                                this.update(cx, |this, cx| {
+                                    this.handle_open_archive(&p, pw, cx);
                                 });
                             }
                             GuiCommand::Activate => {
@@ -545,14 +330,18 @@ impl RootView {
             // Settings dialog subscription is handled in the dialog creation code
 
             let controller_repo = repo.clone();
-            Self {
-                menu, toolbar, archive_vm,
+            let mut root = Self {
+                menu, toolbar,
                 archive_browser, entry_list, preview_panel, status_bar,
                 pending_password_path: None,
                 repo,
                 state: ArchiveState::new(),
                 controller: RootController::new(controller_repo),
+            };
+            if let Some(cb) = deferred_open {
+                cb(&mut root, cx);
             }
+            root
         })
     }
 
@@ -573,6 +362,58 @@ impl RootView {
         self.menu.update(cx, |c, _| c.set_state(is_open, has_sel, single));
         self.archive_browser.update(cx, |c, _| c.set_state(subdirs, vec![]));
         self.status_bar.update(cx, |c, _| c.set_status(&status_text));
+    }
+
+    fn handle_open_archive(&mut self, path: &Path, password: Option<String>, cx: &mut Context<Self>) {
+        self.state.status = ViewStatus::Loading;
+        self.sync_children(cx);
+        cx.emit(ArchiveVmEvent::SelectionChanged(None));
+
+        let repo = self.controller.repo();
+        let path_buf = path.to_path_buf();
+        let path_string = path.to_string_lossy().to_string();
+        let use_case = crate::application::open::OpenArchiveUseCase::new(repo);
+        let pw = password.map(|s| crate::domain::archive::Password::new(s));
+        let pw_clone = pw.clone();
+
+        let bg_task = cx.background_spawn(async move {
+            use_case.execute(&path_buf, pw.as_ref())
+        });
+
+        cx.spawn(async move |this, cx| {
+            let result = bg_task.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(output) => {
+                        this.state.archive = Some(output.handle);
+                        this.state.properties = Some(output.properties);
+                        this.state.archive_password = pw_clone;
+                        this.state.current_path = String::new();
+                        this.state.path_history.clear();
+                        this.state.directory_cache.clear();
+                        let mut prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
+                        prefs.archive.add_recent(path_string);
+                        cx.set_global(crate::gui::PreferencesGlobal(prefs));
+                        if let Err(e) = cx.global::<crate::gui::PreferencesRepoGlobal>().0.save(&cx.global::<crate::gui::PreferencesGlobal>().0) {
+                            log::warn!("Failed to persist preferences: {}", e);
+                        }
+                        this.load_current_directory(cx);
+                    }
+                    Err(e) => {
+                        match e {
+                            ArchiveError::EncryptedArchiveRequiresPassword => {
+                                this.state.status = ViewStatus::Empty;
+                                cx.emit(ArchiveVmEvent::RequestPassword { path: path_string });
+                            }
+                            _ => {
+                                this.state.status = ViewStatus::Error(e.to_string());
+                            }
+                        }
+                        cx.notify();
+                    }
+                }
+            });
+        }).detach();
     }
 
     fn load_current_directory(&mut self, cx: &mut Context<Self>) {
@@ -605,7 +446,6 @@ impl Render for RootView {
         // Open password dialog as independent window if pending
         if let Some(path) = self.pending_password_path.take() {
             let p = path.clone();
-            let archive_vm = self.archive_vm.clone();
             cx.spawn(async move |this, cx| {
                 let rx = PasswordDialog::open(path, cx);
                 use crossbeam::channel::TryRecvError;
@@ -615,8 +455,9 @@ impl Render for RootView {
                             use crate::adapters::views::dialogs::password::PasswordResult;
                             match result {
                                 PasswordResult::Submitted(pw) => {
-                                    archive_vm.update(cx, |vm, cx| {
-                                        vm.open_archive(std::path::Path::new(&p), Some(pw), cx);
+                                    let p_buf = std::path::PathBuf::from(&p);
+                                    this.update(cx, |this, cx| {
+                                        this.handle_open_archive(&p_buf, Some(pw), cx);
                                     });
                                 }
                                 PasswordResult::Canceled => {}
@@ -646,7 +487,7 @@ impl Render for RootView {
                     }
                     "o" if cmd && !shift => {
                         if let Some(path) = crate::adapters::platform::pick_archive_file() {
-                            this.archive_vm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
+                            this.handle_open_archive(&path, None, cx);
                         }
                     }
                     "n" if cmd && shift => {
