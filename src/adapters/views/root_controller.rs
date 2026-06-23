@@ -27,6 +27,10 @@ impl RootController {
         Self { repo }
     }
 
+    pub fn repo(&self) -> Arc<dyn ArchiveRepository> {
+        self.repo.clone()
+    }
+
     pub fn open_archive(
         &self,
         path: &Path,

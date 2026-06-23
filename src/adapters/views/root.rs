@@ -299,10 +299,12 @@ impl RootView {
                             archive_vm.update(cx, |vm, cx| vm.show_properties(cx));
                         }
                         MenuIntent::SelectAll => {
-                            archive_vm.update(cx, |vm, cx| vm.select_all(cx));
+                            this.state.select_all();
+                            this.sync_children(cx);
                         }
                         MenuIntent::InvertSelection => {
-                            archive_vm.update(cx, |vm, cx| vm.invert_selection(cx));
+                            this.state.invert_selection();
+                            this.sync_children(cx);
                         }
                         MenuIntent::DeleteSelected => {
                             archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
@@ -333,35 +335,72 @@ impl RootView {
             // Browser intent subscription
             cx.subscribe::<ArchiveBrowser, BrowserIntent>(&archive_browser, {
                 let archive_vm = archive_vm.clone();
-                move |_this: &mut RootView, _emitter, intent: &BrowserIntent, cx| {
+                move |this: &mut RootView, _emitter, intent: &BrowserIntent, cx| {
                     match intent {
                         BrowserIntent::NavigateInto(dir) => {
-                            archive_vm.update(cx, |vm, cx| vm.navigate_into(dir, cx));
+                            this.state.navigate_into(dir);
+                            this.sync_children(cx);
+                            this.load_current_directory(cx);
+                        }
+                        BrowserIntent::SetFilter(text) => {
+                            this.state.set_filter(text);
+                            this.sync_children(cx);
                         }
                         BrowserIntent::OpenRecentFile(path) => {
                             archive_vm.update(cx, |vm, cx| vm.open_archive(std::path::Path::new(path), None, cx));
-                        }
-                        BrowserIntent::SetFilter(text) => {
-                            archive_vm.update(cx, |vm, cx| vm.set_filter(text, cx));
                         }
                     }
                 }
             }).detach();
 
-            // FileList intent subscription
+            // FileList intent subscription — uses ArchiveState for pure state ops
             cx.subscribe::<ArchiveFileList, FileListIntent>(&entry_list, {
                 let archive_vm = archive_vm.clone();
-                move |_this: &mut RootView, _emitter, intent: &FileListIntent, cx| {
+                move |this: &mut RootView, _emitter, intent: &FileListIntent, cx| {
                     match intent {
                         FileListIntent::RowClicked(row, mods) => {
-                            archive_vm.update(cx, |vm, cx| vm.handle_level_click(*row, mods, cx));
+                            let km = KeyModifiers { shift: mods.shift, control: mods.control, platform: mods.platform };
+                            this.state.update_selection(*row, km);
+                            this.sync_children(cx);
+                            // Trigger preview
+                            if let Some(idx) = this.state.first_selected_index() {
+                                if let Some(ref archive) = this.state.archive {
+                                    let repo = this.controller.repo();
+                                    let panel = this.preview_panel.clone();
+                                    let h = archive.clone();
+                                    cx.spawn(async move |this, cx| {
+                                        panel.update(cx, |p, _| p.set_loading());
+                                        let uc = crate::application::preview::PreviewEntryUseCase::new(repo);
+                                        match uc.execute(&h, idx, 1_048_576) {
+                                            Ok(data) => { panel.update(cx, |p, _| p.set_data(Some(data))); }
+                                            Err(_) => { panel.update(cx, |p, _| p.set_data(None)); }
+                                        }
+                                        let _ = this.update(cx, |_, cx| cx.notify());
+                                    }).detach();
+                                }
+                            }
                         }
                         FileListIntent::SortByColumn(col, asc) => {
-                            archive_vm.update(cx, |vm, cx| vm.apply_sort(*col, *asc));
+                            this.state.apply_sort(*col, *asc);
+                            this.sync_children(cx);
                         }
                         FileListIntent::NavigateUp => {
-                            archive_vm.update(cx, |vm, cx| vm.navigate_up(cx));
+                            this.state.navigate_up();
+                            this.sync_children(cx);
+                            this.load_current_directory(cx);
                         }
+                        FileListIntent::SelectAll => {
+                            this.state.select_all();
+                            this.sync_children(cx);
+                        }
+                        FileListIntent::ClearSelection => {
+                            this.state.clear_selection();
+                            this.sync_children(cx);
+                        }
+                        FileListIntent::Refresh => {
+                            archive_vm.update(cx, |vm, cx| vm.refresh(cx));
+                        }
+                        // Complex ops still delegate to archive_vm
                         FileListIntent::OpenEntry => {
                             archive_vm.update(cx, |vm, cx| vm.open_entry(cx));
                         }
@@ -385,15 +424,6 @@ impl RootView {
                         }
                         FileListIntent::Checksum(algo) => {
                             archive_vm.update(cx, |vm, cx| vm.request_checksum(cx, *algo));
-                        }
-                        FileListIntent::SelectAll => {
-                            archive_vm.update(cx, |vm, cx| vm.select_all(cx));
-                        }
-                        FileListIntent::ClearSelection => {
-                            archive_vm.update(cx, |vm, cx| vm.clear_selection(cx));
-                        }
-                        FileListIntent::Refresh => {
-                            archive_vm.update(cx, |vm, cx| vm.refresh(cx));
                         }
                         FileListIntent::ShowProperties => {
                             archive_vm.update(cx, |vm, cx| vm.show_properties(cx));
@@ -477,6 +507,30 @@ impl RootView {
         self.menu.update(cx, |c, _| c.set_state(is_open, has_sel, single));
         self.archive_browser.update(cx, |c, _| c.set_state(subdirs, vec![]));
         self.status_bar.update(cx, |c, _| c.set_status(&status_text));
+    }
+
+    fn load_current_directory(&mut self, cx: &mut Context<Self>) {
+        let handle = self.state.archive.clone();
+        let path = self.state.current_path.clone();
+        let controller = self.controller.repo();
+        let entry_list = self.entry_list.clone();
+
+        cx.spawn(async move |this, cx| {
+            if let Some(ref h) = handle {
+                match controller.list_directory(h, &path) {
+                    Ok(entries) => {
+                        this.update(cx, |this, cx| {
+                            this.state.directory_cache.insert(path.clone(), entries);
+                            this.state.navigate_root();  // re-apply filter
+                            this.state.status = ViewStatus::Ready;
+                            this.sync_children(cx);
+                            cx.notify();
+                        });
+                    }
+                    Err(_) => {}
+                }
+            }
+        }).detach();
     }
 }
 
