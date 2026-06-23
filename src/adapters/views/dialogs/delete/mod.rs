@@ -4,7 +4,7 @@ use crate::application::delete::DeleteEntriesUseCase;
 use crate::application::progress::progress_channel;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
-use crossbeam::channel::{unbounded, Receiver};
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::*;
 use std::sync::Arc;
 use view::{DeleteDialogView, DeletePhase, DeleteViewIntent};
@@ -20,7 +20,7 @@ pub struct DeleteDialog {
     indices: Vec<u32>,
     handle: ArchiveHandle,
     repo: Arc<dyn ArchiveRepository>,
-    result_tx: Option<crossbeam::Sender<DeleteResult>>,
+    result_tx: Option<Sender<DeleteResult>>,
 }
 
 impl DeleteDialog {
@@ -46,8 +46,9 @@ impl DeleteDialog {
                 },
                 move |window, cx| {
                     let view = cx.new(|_cx| DeleteDialogView::new(count));
+                    let view_handle = view.clone();
                     let container = cx.new(|cx| Self { view, indices, handle, repo, result_tx: Some(tx) });
-                    cx.subscribe::<DeleteDialogView, DeleteViewIntent>(&view, {
+                    cx.subscribe::<DeleteDialogView, DeleteViewIntent>(&view_handle, {
                         let container = container.clone();
                         move |_, intent, cx| {
                             container.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -64,7 +65,7 @@ impl DeleteDialog {
         match intent {
             DeleteViewIntent::Confirm => {
                 self.view.update(cx, |v, _| v.set_processing(0, self.indices.len() as u64, "Deleting entries..."));
-                cx.notify();
+
                 let indices = self.indices.clone();
                 let mut handle = self.handle.clone();
                 let repo = self.repo.clone();
@@ -82,7 +83,7 @@ impl DeleteDialog {
                     loop {
                         if let Ok(update) = rx.try_recv() {
                             view.update(cx, |v, _| v.set_processing(update.items_done, update.items_total, &update.current_file.unwrap_or_default()));
-                            cx.notify();
+
                             if update.items_done >= update.items_total || update.error.is_some() {
                                 break;
                             }
@@ -90,7 +91,7 @@ impl DeleteDialog {
                         cx.background_spawn(std::future::ready(())).await;
                     }
                     view.update(cx, |v, _| v.set_complete());
-                    cx.notify();
+
                     if let Some(tx) = result_tx {
                         let _ = tx.send(DeleteResult::Success);
                     }

@@ -3,6 +3,7 @@ use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::h_flex;
+use gpui_component::scroll::ScrollableElement;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TestViewIntent {
@@ -55,9 +56,10 @@ impl Render for TestDialogView {
                         .child(div().flex_1())
                         .child(h_flex().justify_end().gap_2()
                             .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, cx| cx.emit(TestViewIntent::Cancel))))
+                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(TestViewIntent::Cancel))))
                             .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Start Test")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, cx| cx.emit(TestViewIntent::Start)))))
+                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(TestViewIntent::Start)))))
+                        .into_any_element()
                 }
                 TestPhase::Processing { current, total, file } => {
                     let pct = if *total > 0 { (*current as f64 / *total as f64 * 100.0) as u32 } else { 0 };
@@ -68,29 +70,25 @@ impl Render for TestDialogView {
                             .child(div().flex_1().h(px(20.)).bg(theme.surface).rounded_md().overflow_hidden()
                                 .child(div().h_full().bg(theme.primary).rounded_md().w(px(pct as f32 * 4.0))))
                             .child(div().text_sm().child(format!("{}/{}", current, total))))
+                        .into_any_element()
                 }
                 TestPhase::Complete { passed, failed } => {
                     let total = passed + failed.len();
-                    div().flex().flex_col().gap_3().overflow_y_scroll()
-                        .child(match failed.len() {
-                            0 => div().font_weight(FontWeight::BOLD).text_lg().child("All Tests Passed").into_any_element(),
-                            _ => div().font_weight(FontWeight::BOLD).text_lg().text_color(theme.error).child(format!("{}/{} Failed", failed.len(), total)).into_any_element(),
-                        })
-                        .child(div().text_sm().child(match failed.len() {
-                            0 => format!("All {} entr{} passed integrity check.", total, if total == 1 { "y" } else { "ies" }),
-                            n => format!("{} passed, {} failed.", passed, n),
-                        }))
+                    div().flex().flex_col().gap_3().overflow_y_scrollbar()
+                        .child(div().font_weight(FontWeight::BOLD).text_lg().child(if failed.len() == 0 { "All Tests Passed".to_string() } else { format!("{}/{} Failed", failed.len(), total) }))
+                        .child(div().text_sm().child(if failed.len() == 0 { format!("All {} entr{} passed integrity check.", total, if total == 1 { "y" } else { "ies" }) } else { format!("{} passed, {} failed.", passed, failed.len()) }))
                         .children(failed.iter().map(|f| {
                             div().flex().flex_row().gap_2().px_2().py_1().text_sm()
-                                .child(div().text_color(theme.danger).child("\u{2716}"))
+                                .child(div().text_color(theme.error).child("\u{2716}"))
                                 .child(div().child(format!("{}", f.entry_path)))
-                                .child(div().text_color(theme.muted).child(&f.error))
+                                .child(div().text_color(theme.muted).child(f.error.clone()))
                                 .into_any_element()
                         }))
                         .child(div().flex_1())
                         .child(h_flex().justify_end()
                             .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Close")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, cx| cx.emit(TestViewIntent::Close)))))
+                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(TestViewIntent::Close)))))
+                        .into_any_element()
                 }
                 TestPhase::Error(msg) => {
                     div().flex().flex_col().gap_3()
@@ -98,7 +96,8 @@ impl Render for TestDialogView {
                         .child(div().text_sm().child(msg.clone()))
                         .child(h_flex().justify_end()
                             .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Close")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, cx| cx.emit(TestViewIntent::Close)))))
+                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(TestViewIntent::Close)))))
+                        .into_any_element()
                 }
             })
     }

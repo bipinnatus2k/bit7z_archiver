@@ -13,7 +13,12 @@ use crate::adapters::views::dialogs::create::CreateArchiveDialog;
 use crate::adapters::views::dialogs::settings::SettingsDialog;
 use crate::adapters::views::dialogs::add_files::AddFilesDialog;
 use crate::application::extract::ExtractEntriesUseCase;
-use crate::adapters::events::ArchiveVmEvent;
+use crate::adapters::events::{ArchiveVmEvent, ChecksumAlgorithm as EventChecksumAlgorithm};
+use crate::adapters::views::dialogs::checksum::ChecksumDialog;
+use crate::adapters::views::dialogs::delete::DeleteDialog;
+use crate::adapters::views::dialogs::test::TestDialog;
+
+impl EventEmitter<ArchiveVmEvent> for RootView {}
 use crate::domain::archive::*;
 use crate::domain::preferences::ThemeMode;
 use crate::domain::repository::ArchiveRepository;
@@ -95,12 +100,10 @@ impl RootView {
                             cx.notify();
                         }
                         ArchiveVmEvent::RequestShowExtract => {
-                            let vm = archive_vm.read(cx);
-                            let entries = vm.selected_entries();
-                            let indices: Vec<u32> = vm.selection.iter().copied().collect();
-                            let handle = vm.archive.clone();
-                            let r = repo.clone();
-                            drop(vm);
+                            let entries = this.state.selected_entries();
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let handle = this.state.archive.clone();
+                            let r = this.controller.repo();
                             if !entries.is_empty() {
                                 cx.spawn(async move |_, cx| {
                                     let rx = ExtractDialog::open(entries, cx);
@@ -134,11 +137,9 @@ impl RootView {
                             }).detach();
                         }
                         ArchiveVmEvent::RequestTest => {
-                            let vm = archive_vm.read(cx);
-                            if let Some(ref archive) = vm.archive {
+                            if let Some(ref archive) = this.state.archive {
                                 let handle = archive.clone();
-                                let repo = repo.clone();
-                                drop(vm);
+                                let repo = this.controller.repo();
                                 std::thread::spawn(move || {
                                     match repo.test(&handle) {
                                         Ok(result) => {
@@ -152,11 +153,9 @@ impl RootView {
                             }
                         }
                         ArchiveVmEvent::RequestShowAdd => {
-                            let vm = archive_vm.read(cx);
                             let format = ArchiveFormat::SevenZip;
-                            let is_solid = vm.properties.as_ref().map(|p| p.is_solid).unwrap_or(false);
-                            let archive_handle = vm.archive.clone();
-                            drop(vm);
+                            let is_solid = this.state.properties.as_ref().map(|p| p.is_solid).unwrap_or(false);
+                            let archive_handle = this.state.archive.clone();
                             cx.spawn(async move |_, cx| {
                                 AddFilesDialog::open(cx, format, archive_handle, None, is_solid);
                             }).detach();
@@ -193,41 +192,84 @@ impl RootView {
                             cx.notify();
                         }
                         ArchiveVmEvent::RequestDelete => {
-                            archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
+                            if !this.state.selection.is_empty() {
+                                let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                                if let Some(ref h) = this.state.archive {
+                                    let repo = this.controller.repo();
+                                    let handle = h.clone();
+                                    cx.spawn(async move |_, cx| {
+                                        crate::adapters::views::dialogs::delete::DeleteDialog::open(cx, indices, handle, repo);
+                                    }).detach();
+                                }
+                            }
                         }
                         ArchiveVmEvent::RequestAddFiles => {
-                            archive_vm.update(cx, |vm, cx| vm.add_files(cx));
+                            cx.emit(ArchiveVmEvent::RequestShowAdd);
                         }
                         ArchiveVmEvent::RequestTestEntries { selected_only } => {
-                            if *selected_only {
-                                archive_vm.update(cx, |vm, cx| vm.test_selected(cx));
-                            } else {
-                                archive_vm.update(cx, |vm, cx| vm.test_all(cx));
+                            if let Some(ref h) = this.state.archive {
+                                let repo = this.controller.repo();
+                                let handle = h.clone();
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, handle, repo);
+                                }).detach();
                             }
                         }
                         ArchiveVmEvent::RequestRename { index, new_name } => {
-                            archive_vm.update(cx, |vm, cx| vm.rename_entry(*index, new_name, cx));
+                            let repo = this.controller.repo();
+                            let mut handle = this.state.archive.clone();
+                            let idx = *index;
+                            let name = new_name.clone();
+                            cx.background_spawn(async move {
+                                if let Some(ref mut h) = handle {
+                                    let uc = crate::application::rename::RenameEntryUseCase::new(repo);
+                                    let _ = uc.execute(h, idx, &name);
+                                }
+                            }).detach();
                         }
                         ArchiveVmEvent::RequestNewFolder => {
-                            archive_vm.update(cx, |vm, cx| vm.request_new_folder(cx));
+                            cx.emit(ArchiveVmEvent::RequestNewFolder);
                         }
                         ArchiveVmEvent::RequestNewFile => {
-                            archive_vm.update(cx, |vm, cx| vm.request_new_file(cx));
+                            cx.emit(ArchiveVmEvent::RequestNewFile);
                         }
                         ArchiveVmEvent::RequestOpenEntry => {
-                            archive_vm.update(cx, |vm, cx| vm.open_entry(cx));
+                            let repo = this.controller.repo();
+                            if let Some(ref h) = this.state.archive {
+                                let idx = this.state.first_selected_index();
+                                let handle = h.clone();
+                                cx.background_spawn(async move {
+                                    if let Some(idx_val) = idx {
+                                        let uc = crate::application::open_entry::OpenEntryUseCase::new(repo);
+                                        let _ = uc.execute(&handle, idx_val);
+                                    }
+                                }).detach();
+                            }
                         }
                         ArchiveVmEvent::RequestViewEntry => {
-                            archive_vm.update(cx, |vm, cx| vm.preview_entry(cx));
+                            // Preview is handled directly by SelectionChanged handler
                         }
                         ArchiveVmEvent::RequestEditEntry => {
-                            archive_vm.update(cx, |vm, cx| vm.edit_entry(cx));
+                            let repo = this.controller.repo();
+                            if let Some(ref h) = this.state.archive {
+                                let mut handle = h.clone();
+                                cx.background_spawn(async move {
+                                    let _ = crate::application::new_file::new_file_and_add(repo, &mut handle, "new_file.txt", None);
+                                }).detach();
+                            }
                         }
                         ArchiveVmEvent::RequestProperties => {
-                            archive_vm.update(cx, |vm, cx| vm.show_properties(cx));
+                            cx.emit(ArchiveVmEvent::RequestProperties);
                         }
                         ArchiveVmEvent::RequestChecksum { algorithm } => {
-                            archive_vm.update(cx, |vm, cx| vm.request_checksum(cx, *algorithm));
+                            if let Some(ref h) = this.state.archive {
+                                let repo = this.controller.repo();
+                                let handle = h.clone();
+                                let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::checksum::ChecksumDialog::open_with_entries(cx, handle, indices, repo);
+                                }).detach();
+                            }
                         }
                         ArchiveVmEvent::RefreshListing => {
                             cx.notify();
@@ -238,103 +280,106 @@ impl RootView {
 
             // Toolbar intent subscription
             cx.subscribe::<Toolbar, ToolbarIntent>(&toolbar, {
-                let archive_vm = archive_vm.clone();
-                let repo = repo.clone();
+                let avm = archive_vm.clone();
                 move |this: &mut RootView, _emitter, intent: &ToolbarIntent, cx| {
                     match intent {
                         ToolbarIntent::OpenArchive => {
                             if let Some(path) = crate::adapters::platform::pick_archive_file() {
-                                archive_vm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
+                                avm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
                             }
                         }
-                        ToolbarIntent::CreateArchive => {
-                            archive_vm.update(cx, |vm, cx| vm.request_create(cx));
-                        }
-                        ToolbarIntent::AddFiles => {
-                            archive_vm.update(cx, |vm, cx| vm.request_add_files(cx));
-                        }
-                        ToolbarIntent::ExtractSelected => {
-                            archive_vm.update(cx, |vm, cx| vm.request_extract(cx));
-                        }
+                        ToolbarIntent::CreateArchive => { cx.emit(ArchiveVmEvent::RequestShowCreate); }
+                        ToolbarIntent::AddFiles => { cx.emit(ArchiveVmEvent::RequestShowAdd); }
+                        ToolbarIntent::ExtractSelected => { cx.emit(ArchiveVmEvent::RequestShowExtract); }
                         ToolbarIntent::TestArchive => {
-                            archive_vm.update(cx, |vm, cx| vm.request_test(cx));
+                            let handle = this.state.archive.clone();
+                            let repo = this.controller.repo();
+                            cx.spawn(async move |_, cx| {
+                                if let Some(h) = handle {
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, repo);
+                                }
+                            }).detach();
                         }
                         ToolbarIntent::CloseArchive => {
-                            archive_vm.update(cx, |vm, cx| vm.close(cx));
+                            if let Some(h) = this.state.archive.take() { this.controller.close_archive(h); }
+                            this.state = ArchiveState::new();
+                            this.sync_children(cx);
                         }
-                        ToolbarIntent::ShowSettings => {
-                            archive_vm.update(cx, |vm, cx| vm.request_show_settings(cx));
-                        }
+                        ToolbarIntent::ShowSettings => { cx.emit(ArchiveVmEvent::RequestShowSettings); }
                     }
                 }
             }).detach();
 
             // Menu intent subscription
             cx.subscribe::<Menu, MenuIntent>(&menu, {
-                let archive_vm = archive_vm.clone();
-                let repo = repo.clone();
+                let avm = archive_vm.clone();
                 move |this: &mut RootView, _emitter, intent: &MenuIntent, cx| {
                     match intent {
                         MenuIntent::OpenArchive => {
                             if let Some(path) = crate::adapters::platform::pick_archive_file() {
-                                archive_vm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
+                                avm.update(cx, |vm, cx| vm.open_archive(&path, None, cx));
                             }
                         }
-                        MenuIntent::CreateArchive => {
-                            archive_vm.update(cx, |vm, cx| vm.request_create(cx));
-                        }
-                        MenuIntent::AddFiles => {
-                            archive_vm.update(cx, |vm, cx| vm.request_add_files(cx));
-                        }
+                        MenuIntent::CreateArchive => { cx.emit(ArchiveVmEvent::RequestShowCreate); }
+                        MenuIntent::AddFiles => { cx.emit(ArchiveVmEvent::RequestShowAdd); }
                         MenuIntent::TestSelected => {
-                            archive_vm.update(cx, |vm, cx| vm.test_selected(cx));
+                            let handle = this.state.archive.clone();
+                            let repo = this.controller.repo();
+                            cx.spawn(async move |_, cx| {
+                                if let Some(h) = handle {
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, repo);
+                                }
+                            }).detach();
                         }
                         MenuIntent::TestAll => {
-                            archive_vm.update(cx, |vm, cx| vm.test_all(cx));
+                            let handle = this.state.archive.clone();
+                            let repo = this.controller.repo();
+                            cx.spawn(async move |_, cx| {
+                                if let Some(h) = handle {
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, repo);
+                                }
+                            }).detach();
                         }
                         MenuIntent::CloseArchive => {
-                            archive_vm.update(cx, |vm, cx| vm.close(cx));
-                        }
-                        MenuIntent::ShowProperties => {
-                            archive_vm.update(cx, |vm, cx| vm.show_properties(cx));
-                        }
-                        MenuIntent::SelectAll => {
-                            this.state.select_all();
+                            if let Some(h) = this.state.archive.take() { this.controller.close_archive(h); }
+                            this.state = ArchiveState::new();
                             this.sync_children(cx);
                         }
-                        MenuIntent::InvertSelection => {
-                            this.state.invert_selection();
-                            this.sync_children(cx);
-                        }
+                        MenuIntent::ShowProperties => { cx.emit(ArchiveVmEvent::RequestProperties); }
+                        MenuIntent::SelectAll => { this.state.select_all(); this.sync_children(cx); }
+                        MenuIntent::InvertSelection => { this.state.invert_selection(); this.sync_children(cx); }
                         MenuIntent::DeleteSelected => {
-                            archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
+                            if !this.state.selection.is_empty() {
+                                if let Some(ref h) = this.state.archive {
+                                    let repo = this.controller.repo(); let handle = h.clone(); let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                                    cx.spawn(async move |_, cx| { crate::adapters::views::dialogs::delete::DeleteDialog::open(cx, indices, handle, repo); }).detach();
+                                }
+                            }
                         }
                         MenuIntent::RenameSelected => {
-                            archive_vm.update(cx, |vm, cx| {
-                                if let Some(idx) = vm.first_selected_index() {
-                                    cx.emit(crate::adapters::events::ArchiveVmEvent::RequestRename {
-                                        index: idx,
-                                        new_name: String::new(),
-                                    });
+                            if let Some(idx) = this.state.first_selected_index() {
+                                cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
+                            }
+                        }
+                        MenuIntent::Checksum(_algo) => {
+                            let handle = this.state.archive.clone();
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let repo = this.controller.repo();
+                            cx.spawn(async move |_, cx| {
+                                if let Some(h) = handle {
+                                    crate::adapters::views::dialogs::checksum::ChecksumDialog::open_with_entries(cx, h, indices, repo);
                                 }
-                            });
+                            }).detach();
                         }
-                        MenuIntent::Checksum(algo) => {
-                            archive_vm.update(cx, |vm, cx| vm.request_checksum(cx, *algo));
-                        }
-                        MenuIntent::ShowSettings => {
-                            archive_vm.update(cx, |vm, cx| vm.request_show_settings(cx));
-                        }
-                        MenuIntent::About => {
-                            log::info!("bit7z Archiver {}", env!("CARGO_PKG_VERSION"));
-                        }
+                        MenuIntent::ShowSettings => { cx.emit(ArchiveVmEvent::RequestShowSettings); }
+                        MenuIntent::About => { log::info!("bit7z Archiver {}", env!("CARGO_PKG_VERSION")); }
                     }
                 }
             }).detach();
 
             // Browser intent subscription
             cx.subscribe::<ArchiveBrowser, BrowserIntent>(&archive_browser, {
-                let archive_vm = archive_vm.clone();
+                let avm = archive_vm.clone();
                 move |this: &mut RootView, _emitter, intent: &BrowserIntent, cx| {
                     match intent {
                         BrowserIntent::NavigateInto(dir) => {
@@ -347,7 +392,7 @@ impl RootView {
                             this.sync_children(cx);
                         }
                         BrowserIntent::OpenRecentFile(path) => {
-                            archive_vm.update(cx, |vm, cx| vm.open_archive(std::path::Path::new(path), None, cx));
+                            avm.update(cx, |vm, cx| vm.open_archive(std::path::Path::new(path), None, cx));
                         }
                     }
                 }
@@ -398,35 +443,56 @@ impl RootView {
                             this.sync_children(cx);
                         }
                         FileListIntent::Refresh => {
-                            archive_vm.update(cx, |vm, cx| vm.refresh(cx));
+                            if this.state.archive.is_some() {
+                                let key = this.state.current_path.clone();
+                                this.state.directory_cache.remove(&key);
+                            }
                         }
-                        // Complex ops still delegate to archive_vm
                         FileListIntent::OpenEntry => {
-                            archive_vm.update(cx, |vm, cx| vm.open_entry(cx));
+                            if let Some(ref h) = this.state.archive {
+                                let idx = this.state.first_selected_index();
+                                let repo = this.controller.repo();
+                                let handle = h.clone();
+                                cx.background_spawn(async move {
+                                    if let Some(idx_val) = idx {
+                                        let uc = crate::application::open_entry::OpenEntryUseCase::new(repo);
+                                        let _ = uc.execute(&handle, idx_val);
+                                    }
+                                }).detach();
+                            }
                         }
                         FileListIntent::PreviewEntry => {
-                            archive_vm.update(cx, |vm, cx| vm.preview_entry(cx));
+                            // Handled by SelectionChanged -> inline preview load
                         }
                         FileListIntent::ExtractSelected => {
-                            archive_vm.update(cx, |vm, cx| vm.request_extract(cx));
+                            cx.emit(ArchiveVmEvent::RequestShowExtract);
                         }
                         FileListIntent::RenameEntry(idx) => {
-                            archive_vm.update(cx, |vm, cx| {
-                                let idx = if *idx == 0 { vm.first_selected_index().unwrap_or(0) } else { *idx };
-                                cx.emit(crate::adapters::events::ArchiveVmEvent::RequestRename {
-                                    index: idx,
-                                    new_name: String::new(),
-                                });
-                            });
+                            let actual_idx = if *idx == 0 { this.state.first_selected_index().unwrap_or(0) } else { *idx };
+                            cx.emit(ArchiveVmEvent::RequestRename { index: actual_idx, new_name: String::new() });
                         }
                         FileListIntent::DeleteSelected => {
-                            archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
+                            let handle = this.state.archive.clone();
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            if !indices.is_empty() {
+                                let repo = this.controller.repo();
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::delete::DeleteDialog::open(cx, indices, handle.unwrap(), repo);
+                                }).detach();
+                            }
                         }
-                        FileListIntent::Checksum(algo) => {
-                            archive_vm.update(cx, |vm, cx| vm.request_checksum(cx, *algo));
+                        FileListIntent::Checksum(_algo) => {
+                            let handle = this.state.archive.clone();
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            if !indices.is_empty() {
+                                let repo = this.controller.repo();
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::checksum::ChecksumDialog::open_with_entries(cx, handle.unwrap(), indices, repo);
+                                }).detach();
+                            }
                         }
                         FileListIntent::ShowProperties => {
-                            archive_vm.update(cx, |vm, cx| vm.show_properties(cx));
+                            cx.emit(ArchiveVmEvent::RequestProperties);
                         }
                     }
                 }
@@ -575,7 +641,8 @@ impl Render for RootView {
                 let shift = modifiers.shift;
                 match key.as_str() {
                     "a" if cmd && !shift => {
-                        this.archive_vm.update(cx, |vm, cx| vm.select_all(cx));
+                        this.state.select_all();
+                        this.sync_children(cx);
                     }
                     "o" if cmd && !shift => {
                         if let Some(path) = crate::adapters::platform::pick_archive_file() {
@@ -583,41 +650,73 @@ impl Render for RootView {
                         }
                     }
                     "n" if cmd && shift => {
-                        this.archive_vm.update(cx, |vm, cx| vm.request_new_folder(cx));
+                        cx.emit(ArchiveVmEvent::RequestNewFolder);
                     }
                     "n" if cmd => {
-                        this.archive_vm.update(cx, |vm, cx| vm.request_create(cx));
+                        cx.emit(ArchiveVmEvent::RequestShowCreate);
                     }
                     "e" if cmd => {
-                        this.archive_vm.update(cx, |vm, cx| vm.request_extract(cx));
+                        cx.emit(ArchiveVmEvent::RequestShowExtract);
                     }
                     "t" if cmd => {
-                        this.archive_vm.update(cx, |vm, cx| vm.request_test(cx));
+                        let handle = this.state.archive.clone();
+                        let repo = this.controller.repo();
+                        cx.spawn(async move |_, cx| {
+                            if let Some(h) = handle {
+                                crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, repo);
+                            }
+                        }).detach();
                     }
                     "v" if cmd => {
-                        this.archive_vm.update(cx, |vm, cx| vm.preview_entry(cx));
+                        // Preview handled by selection change
                     }
                     "f5" => {
-                        this.archive_vm.update(cx, |vm, cx| vm.refresh(cx));
+                        if this.state.archive.is_some() {
+                            let key = this.state.current_path.clone();
+                            this.state.directory_cache.remove(&key);
+                        }
                     }
                     "f4" => {
-                        this.archive_vm.update(cx, |vm, cx| vm.edit_entry(cx));
+                        if let Some(ref h) = this.state.archive {
+                            let repo = this.controller.repo();
+                            let mut handle = h.clone();
+                            cx.background_spawn(async move {
+                                let _ = crate::application::new_file::new_file_and_add(repo, &mut handle, "new_file.txt", None);
+                            }).detach();
+                        }
                     }
                     "f2" => {
-                        this.archive_vm.update(cx, |vm, cx| {
-                            if let Some(idx) = vm.first_selected_index() {
-                                cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
-                            }
-                        });
+                        if let Some(idx) = this.state.first_selected_index() {
+                            cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
+                        }
                     }
                     "enter" if modifiers.alt => {
-                        this.archive_vm.update(cx, |vm, cx| vm.show_properties(cx));
+                        cx.emit(ArchiveVmEvent::RequestProperties);
                     }
                     "enter" => {
-                        this.archive_vm.update(cx, |vm, cx| vm.open_entry(cx));
+                        if let Some(ref h) = this.state.archive {
+                            let idx = this.state.first_selected_index();
+                            let repo = this.controller.repo();
+                            let handle = h.clone();
+                            cx.background_spawn(async move {
+                                if let Some(idx_val) = idx {
+                                    let uc = crate::application::open_entry::OpenEntryUseCase::new(repo);
+                                    let _ = uc.execute(&handle, idx_val);
+                                }
+                            }).detach();
+                        }
                     }
                     "Backspace" | "Delete" => {
-                        this.archive_vm.update(cx, |vm, cx| vm.delete_selected(cx));
+                        let handle = this.state.archive.clone();
+                        let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                        if !indices.is_empty() {
+                            let repo = this.controller.repo();
+                            cx.spawn(async move |_, cx| {
+                                if let Some(h) = handle {
+                                    crate::adapters::views::dialogs::delete::DeleteDialog::open(cx, indices, h, repo);
+                                }
+                            }).detach();
+                        }
                     }
                     "Escape" => {}
                     _ => {}

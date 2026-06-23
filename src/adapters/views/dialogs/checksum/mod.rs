@@ -1,38 +1,39 @@
 mod view;
 
+use crate::application::checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
 use crate::application::progress::{progress_channel, CrossbeamNotifier};
-use crate::application::test::TestEntriesUseCase;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use crossbeam::channel::{unbounded, Receiver, Sender};
-use crate::application::progress::ProgressUpdate;
 use gpui::*;
 use std::path::Path;
 use std::sync::Arc;
-use view::{TestDialogView, TestPhase, TestViewIntent};
+use view::{ChecksumDialogView, ChecksumPhase, ChecksumViewIntent};
 
-pub enum TestResultEvent {
-    Completed(TestResult),
+pub enum ChecksumResultEvent {
+    Completed,
     Canceled,
 }
 
-pub struct TestDialog {
-    view: Entity<TestDialogView>,
+pub struct ChecksumDialog {
+    view: Entity<ChecksumDialogView>,
     handle: Option<ArchiveHandle>,
     path: Option<std::path::PathBuf>,
     password: Option<Password>,
+    indices: Vec<u32>,
     repo: Arc<dyn ArchiveRepository>,
-    result_tx: Option<Sender<TestResultEvent>>,
+    result_tx: Option<Sender<ChecksumResultEvent>>,
 }
 
-impl TestDialog {
+impl ChecksumDialog {
     pub fn open_with_entries(
         cx: &mut AsyncApp,
         handle: ArchiveHandle,
+        indices: Vec<u32>,
         repo: Arc<dyn ArchiveRepository>,
-    ) -> Receiver<TestResultEvent> {
-        let (tx, rx) = unbounded::<TestResultEvent>();
-        let count = repo.get_properties(&handle).map(|p| p.items_count).unwrap_or(0) as usize;
+    ) -> Receiver<ChecksumResultEvent> {
+        let (tx, rx) = unbounded::<ChecksumResultEvent>();
+        let count = indices.len();
         let opts = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(200.), px(200.)), size(px(560.), px(480.))))),
             window_background: WindowBackgroundAppearance::Opaque,
@@ -41,11 +42,11 @@ impl TestDialog {
         };
         cx.spawn(async move |cx| {
             let _ = cx.open_window(opts, move |window, cx| {
-                let view = cx.new(|_cx| TestDialogView::new(count));
+                let view = cx.new(|_cx| ChecksumDialogView::new(count));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password: None, repo, result_tx: Some(tx) });
+                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password: None, indices, repo, result_tx: Some(tx) });
                 let c_sub = c.clone();
-                cx.subscribe::<TestDialogView, TestViewIntent>(&view_handle, move |_emitter: Entity<TestDialogView>, intent: &TestViewIntent, cx: &mut App| {
+                cx.subscribe::<ChecksumDialogView, ChecksumViewIntent>(&view_handle, move |_emitter: Entity<ChecksumDialogView>, intent: &ChecksumViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
                 }).detach();
                 cx.new(|cx| gpui_component::Root::new(c, window, cx))
@@ -59,11 +60,12 @@ impl TestDialog {
         path: std::path::PathBuf,
         password: Option<Password>,
         repo: Arc<dyn ArchiveRepository>,
-    ) -> Receiver<TestResultEvent> {
-        let count = repo.open(&path, password.as_ref())
-            .and_then(|h| { let n = repo.get_properties(&h).map(|p| p.items_count).unwrap_or(0); repo.close(h); Ok(n) })
-            .unwrap_or(0) as usize;
-        let (tx, rx) = unbounded::<TestResultEvent>();
+    ) -> Receiver<ChecksumResultEvent> {
+        let (handle, count) = repo.open(&path, password.as_ref())
+            .and_then(|h| { let n = repo.get_properties(&h).map(|p| p.items_count); Ok((h, n.unwrap_or(0) as usize)) })
+            .unwrap_or_else(|_| (ArchiveHandle::new_reader(), 0));
+        let all_indices: Vec<u32> = (0..count as u32).collect();
+        let (tx, rx) = unbounded::<ChecksumResultEvent>();
         let opts = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(200.), px(200.)), size(px(560.), px(480.))))),
             window_background: WindowBackgroundAppearance::Opaque,
@@ -72,11 +74,11 @@ impl TestDialog {
         };
         cx.spawn(async move |cx| {
             let _ = cx.open_window(opts, move |window, cx| {
-                let view = cx.new(|_cx| TestDialogView::new(count));
+                let view = cx.new(|_cx| ChecksumDialogView::new(count));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: None, path: Some(path.to_path_buf()), password, repo, result_tx: Some(tx) });
+                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password, indices: all_indices, repo, result_tx: Some(tx) });
                 let c_sub = c.clone();
-                cx.subscribe::<TestDialogView, TestViewIntent>(&view_handle, move |_emitter: Entity<TestDialogView>, intent: &TestViewIntent, cx: &mut App| {
+                cx.subscribe::<ChecksumDialogView, ChecksumViewIntent>(&view_handle, move |_emitter: Entity<ChecksumDialogView>, intent: &ChecksumViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
                 }).detach();
                 cx.new(|cx| gpui_component::Root::new(c, window, cx))
@@ -85,47 +87,42 @@ impl TestDialog {
         rx
     }
 
-    fn handle_intent(&mut self, intent: TestViewIntent, cx: &mut Context<Self>) {
+    fn handle_intent(&mut self, intent: ChecksumViewIntent, cx: &mut Context<Self>) {
         match intent {
-            TestViewIntent::Start => {
-                self.view.update(cx, |v, _| v.set_processing(0, 1, "Starting..."));
+            ChecksumViewIntent::Start => {
+                self.view.update(cx, |v, _| v.set_processing(0, self.indices.len() as u64, "Starting...", vec![]));
 
                 let view = self.view.clone();
                 let repo = self.repo.clone();
                 let result_tx = self.result_tx.take();
                 let (progress_tx, progress_rx) = progress_channel();
-                let (result_tx2, result_rx2) = unbounded::<Result<TestResult, ArchiveError>>();
-                let handle = self.handle.clone();
-                let path = self.path.clone();
-                let password = self.password.clone();
+                let (result_tx2, result_rx2) = unbounded::<Result<(), ArchiveError>>();
+                let handle = self.handle.clone().unwrap();
+                let indices = self.indices.clone();
+
+                let algos = vec![
+                    ChecksumAlgorithm::Crc32,
+                    ChecksumAlgorithm::Md5,
+                    ChecksumAlgorithm::Sha1,
+                    ChecksumAlgorithm::Sha256,
+                ];
 
                 cx.background_spawn(async move {
                     repo.set_progress_notifier(Box::new(CrossbeamNotifier(progress_tx)));
-                    let h = match handle {
-                        Some(h) => h,
-                        None => path.and_then(|p| repo.open(&p, password.as_ref()).ok()).unwrap_or(ArchiveHandle::new_reader()),
-                    };
-                    let uc = TestEntriesUseCase::new(repo.clone());
-                    let result = uc.execute(&h, None, None);
-                    repo.close(h);
-                    let _ = result_tx2.send(result);
+                    let uc = CalculateChecksumUseCase::new(repo.clone());
+                    let _ = uc.execute(&handle, &indices, &algos);
+                    let _ = result_tx2.send(Ok(()));
                 }).detach();
 
                 cx.spawn(async move |_, cx| {
+                    let mut results: Vec<(String, u64, String)> = Vec::new();
                     loop {
                         while let Ok(update) = progress_rx.try_recv() {
-                            view.update(cx, |v, _| v.set_processing(update.items_done, update.items_total, &update.current_file.unwrap_or_default()));
+                            view.update(cx, |v, _| v.set_processing(update.items_done, update.items_total, &update.current_file.unwrap_or_default(), results.clone()));
 
                         }
-                        if let Ok(result) = result_rx2.try_recv() {
-                            match result {
-                                Ok(tr) => {
-                                    view.update(cx, |v, _| v.set_complete(tr.passed, tr.failed));
-                                }
-                                Err(e) => {
-                                    view.update(cx, |v, _| v.set_error(&e.to_string()));
-                                }
-                            }
+                        if let Ok(_) = result_rx2.try_recv() {
+                            view.update(cx, |v, _| v.set_complete(results));
 
                             break;
                         }
@@ -133,16 +130,17 @@ impl TestDialog {
                     }
                 }).detach();
             }
-            TestViewIntent::Cancel | TestViewIntent::Close => {
+            ChecksumViewIntent::Cancel | ChecksumViewIntent::Close => {
                 if let Some(tx) = self.result_tx.take() {
-                    let _ = tx.send(TestResultEvent::Canceled);
+                    let _ = tx.send(ChecksumResultEvent::Canceled);
                 }
             }
+            _ => {}
         }
     }
 }
 
-impl Render for TestDialog {
+impl Render for ChecksumDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.view.clone()
     }

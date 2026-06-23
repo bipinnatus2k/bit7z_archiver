@@ -54,9 +54,9 @@ impl Render for DeleteDialogView {
                         .child(div().text_sm().text_color(theme.muted).child("This action cannot be undone."))
                         .child(h_flex().justify_end().gap_2()
                             .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, cx| cx.emit(DeleteViewIntent::Cancel))))
-                            .child(div().px_3().py_1().rounded_md().bg(theme.danger).cursor_pointer().child("Delete")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, cx| cx.emit(DeleteViewIntent::Confirm)))))
+                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(DeleteViewIntent::Cancel))))
+                            .child(div().px_3().py_1().rounded_md().bg(theme.error).cursor_pointer().child("Delete")
+                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(DeleteViewIntent::Confirm)))))
                 }
                 DeletePhase::Processing { current, total, message } => {
                     let pct = if *total > 0 { (*current as f64 / *total as f64 * 100.0) as u32 } else { 0 };
@@ -74,7 +74,7 @@ impl Render for DeleteDialogView {
                         .child(div().text_sm().child("Selected entries have been deleted."))
                         .child(h_flex().justify_end()
                             .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Close")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, cx| cx.emit(DeleteViewIntent::Close)))))
+                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(DeleteViewIntent::Close)))))
                 }
                 DeletePhase::Error(msg) => {
                     div().flex().flex_col().gap_3()
@@ -82,7 +82,7 @@ impl Render for DeleteDialogView {
                         .child(div().text_sm().child(msg.clone()))
                         .child(h_flex().justify_end()
                             .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Close")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, cx| cx.emit(DeleteViewIntent::Close)))))
+                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(DeleteViewIntent::Close)))))
                 }
             })
     }
