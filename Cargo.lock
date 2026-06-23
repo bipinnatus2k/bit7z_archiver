@@ -897,7 +897,6 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "tracing",
- "tracing-subscriber",
  "windows-sys 0.59.0",
  "winreg 0.52.0",
  "zbus 4.4.0",
