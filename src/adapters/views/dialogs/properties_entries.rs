@@ -1,7 +1,9 @@
 use crate::domain::archive::ArchiveEntry;
 use crate::theme::Theme;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use std::sync::{Arc, Mutex};
 
 pub struct PropertiesEntriesDialog {
     pub entries: Vec<ArchiveEntry>,
@@ -21,6 +23,28 @@ impl PropertiesEntriesDialog {
             entries,
             show_entry_list: false,
         }
+    }
+
+    pub fn open(entries: Vec<ArchiveEntry>, cx: &mut AsyncApp) {
+        let (tx, _rx) = unbounded::<PropertiesEntriesEvent>();
+        let tx: Arc<Mutex<Option<Sender<PropertiesEntriesEvent>>>> = Arc::new(Mutex::new(Some(tx)));
+        cx.spawn(async move |cx| {
+            let _ = cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(200.), px(200.)),
+                        size(px(480.), px(500.)),
+                    ))),
+                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let dialog = cx.new(|cx| PropertiesEntriesDialog::new(entries));
+                    cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
+                },
+            );
+        }).detach();
     }
 }
 

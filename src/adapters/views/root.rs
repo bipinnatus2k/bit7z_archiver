@@ -131,7 +131,18 @@ impl RootView {
                             this.state = ArchiveState::new();
                             this.sync_children(cx);
                         }
-                        MenuIntent::ShowProperties => { cx.emit(ArchiveVmEvent::RequestProperties); }
+                        MenuIntent::ShowProperties => {
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
+                                .get(&this.state.current_path)
+                                .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
+                                .unwrap_or_default();
+                            if !entries.is_empty() {
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::properties_entries::PropertiesEntriesDialog::open(entries, cx);
+                                }).detach();
+                            }
+                        }
                         MenuIntent::SelectAll => { this.state.select_all(); this.sync_children(cx); }
                         MenuIntent::InvertSelection => { this.state.invert_selection(); this.sync_children(cx); }
                         MenuIntent::DeleteSelected => {
@@ -290,7 +301,16 @@ impl RootView {
                             }
                         }
                         FileListIntent::ShowProperties => {
-                            cx.emit(ArchiveVmEvent::RequestProperties);
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
+                                .get(&this.state.current_path)
+                                .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
+                                .unwrap_or_default();
+                            if !entries.is_empty() {
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::properties_entries::PropertiesEntriesDialog::open(entries, cx);
+                                }).detach();
+                            }
                         }
                     }
                 }
@@ -546,7 +566,16 @@ impl Render for RootView {
                         }
                     }
                     "enter" if modifiers.alt => {
-                        cx.emit(ArchiveVmEvent::RequestProperties);
+                        let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                        let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
+                            .get(&this.state.current_path)
+                            .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
+                            .unwrap_or_default();
+                        if !entries.is_empty() {
+                            cx.spawn(async move |_, cx| {
+                                crate::adapters::views::dialogs::properties_entries::PropertiesEntriesDialog::open(entries, cx);
+                            }).detach();
+                        }
                     }
                     "enter" => {
                         if let Some(ref h) = this.state.archive {
