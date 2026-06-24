@@ -95,9 +95,7 @@ impl TestEntriesUseCase {
                     Err(_) => break,
                 }
             }
-            if files.is_empty() {
-                expanded.push(index);
-            } else {
+            if !files.is_empty() {
                 expanded.extend(files);
             }
         }
