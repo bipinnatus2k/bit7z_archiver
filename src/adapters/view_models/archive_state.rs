@@ -163,7 +163,7 @@ impl ArchiveState {
         self.selection_anchor = None;
     }
 
-    fn reapply_filter_and_sort(&mut self) {
+    pub(crate) fn reapply_filter_and_sort(&mut self) {
         let snapshot = self.directory_cache.get(&self.current_path).cloned().unwrap_or_default();
         self.apply_filter_and_sort(&snapshot);
     }

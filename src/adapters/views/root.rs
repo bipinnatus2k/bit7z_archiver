@@ -234,15 +234,29 @@ impl RootView {
                         }
                         FileListIntent::OpenEntry => {
                             if let Some(ref h) = this.state.archive {
-                                let idx = this.state.first_selected_index();
-                                let repo = this.controller.repo();
-                                let handle = h.clone();
-                                cx.background_spawn(async move {
-                                    if let Some(idx_val) = idx {
-                                        let uc = crate::application::open_entry::OpenEntryUseCase::new(repo);
-                                        let _ = uc.execute(&handle, idx_val);
+                                if let Some(idx) = this.state.first_selected_index() {
+                                    let is_dir = this.state.displayed_entries()
+                                        .iter()
+                                        .find(|e| e.original_index == idx)
+                                        .map_or(false, |e| e.is_directory);
+                                    if is_dir {
+                                        let name = this.state.displayed_entries()
+                                            .iter()
+                                            .find(|e| e.original_index == idx)
+                                            .map(|e| e.display_name.clone())
+                                            .unwrap();
+                                        this.state.navigate_into(&name);
+                                        this.sync_children(cx);
+                                        this.load_current_directory(cx);
+                                    } else {
+                                        let repo = this.controller.repo();
+                                        let handle = h.clone();
+                                        cx.background_spawn(async move {
+                                            let uc = crate::application::open_entry::OpenEntryUseCase::new(repo);
+                                            let _ = uc.execute(&handle, idx);
+                                        }).detach();
                                     }
-                                }).detach();
+                                }
                             }
                         }
                         FileListIntent::PreviewEntry => {
@@ -252,7 +266,7 @@ impl RootView {
                             cx.emit(ArchiveVmEvent::RequestShowExtract);
                         }
                         FileListIntent::RenameEntry(idx) => {
-                            let actual_idx = if *idx == 0 { this.state.first_selected_index().unwrap_or(0) } else { *idx };
+                            let actual_idx = idx.unwrap_or_else(|| this.state.first_selected_index().unwrap_or(0));
                             cx.emit(ArchiveVmEvent::RequestRename { index: actual_idx, new_name: String::new() });
                         }
                         FileListIntent::DeleteSelected => {
@@ -294,7 +308,7 @@ impl RootView {
                     loop {
                         let cmd = ipc_receiver_arc.lock()
                             .ok()
-                            .and_then(|rx| rx.recv().ok());
+                            .and_then(|rx| rx.try_recv().ok());
                         if let Some(cmd) = cmd {
                             let _ = ipc_cmd_tx.send(cmd);
                         } else {
@@ -428,7 +442,7 @@ impl RootView {
                     Ok(entries) => {
                         this.update(cx, |this, cx| {
                             this.state.directory_cache.insert(path.clone(), entries);
-                            this.state.navigate_root();  // re-apply filter
+                            this.state.reapply_filter_and_sort();
                             this.state.status = ViewStatus::Ready;
                             this.sync_children(cx);
                             cx.notify();
@@ -458,7 +472,7 @@ impl Render for RootView {
                                     let p_buf = std::path::PathBuf::from(&p);
                                     this.update(cx, |this, cx| {
                                         this.handle_open_archive(&p_buf, Some(pw), cx);
-                                    });
+                                    }).expect("TODO: panic message");
                                 }
                                 PasswordResult::Canceled => {}
                             }
@@ -536,15 +550,29 @@ impl Render for RootView {
                     }
                     "enter" => {
                         if let Some(ref h) = this.state.archive {
-                            let idx = this.state.first_selected_index();
-                            let repo = this.controller.repo();
-                            let handle = h.clone();
-                            cx.background_spawn(async move {
-                                if let Some(idx_val) = idx {
-                                    let uc = crate::application::open_entry::OpenEntryUseCase::new(repo);
-                                    let _ = uc.execute(&handle, idx_val);
+                            if let Some(idx) = this.state.first_selected_index() {
+                                let is_dir = this.state.displayed_entries()
+                                    .iter()
+                                    .find(|e| e.original_index == idx)
+                                    .map_or(false, |e| e.is_directory);
+                                if is_dir {
+                                    let name = this.state.displayed_entries()
+                                        .iter()
+                                        .find(|e| e.original_index == idx)
+                                        .map(|e| e.display_name.clone())
+                                        .unwrap();
+                                    this.state.navigate_into(&name);
+                                    this.sync_children(cx);
+                                    this.load_current_directory(cx);
+                                } else {
+                                    let repo = this.controller.repo();
+                                    let handle = h.clone();
+                                    cx.background_spawn(async move {
+                                        let uc = crate::application::open_entry::OpenEntryUseCase::new(repo);
+                                        let _ = uc.execute(&handle, idx);
+                                    }).detach();
                                 }
-                            }).detach();
+                            }
                         }
                     }
                     "Backspace" | "Delete" => {

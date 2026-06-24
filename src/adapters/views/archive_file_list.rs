@@ -16,7 +16,7 @@ pub enum FileListIntent {
     OpenEntry,
     PreviewEntry,
     ExtractSelected,
-    RenameEntry(u32),
+    RenameEntry(Option<u32>),
     DeleteSelected,
     Checksum(ChecksumAlgorithm),
     SelectAll,
@@ -28,7 +28,6 @@ pub enum FileListIntent {
 impl EventEmitter<FileListIntent> for ArchiveFileList {}
 
 struct FileListTableDelegate {
-    entries: Vec<LevelEntry>,
     file_list: gpui::WeakEntity<ArchiveFileList>,
 }
 
@@ -37,17 +36,11 @@ where F: FnOnce(&ArchiveFileList) -> R {
     fl.upgrade().map(|fl| f(&fl.read(cx)))
 }
 
-impl FileListTableDelegate {
-    fn sync(&mut self, fl: &ArchiveFileList) {
-        self.entries = fl.entries.clone();
-    }
-}
-
 impl TableDelegate for FileListTableDelegate {
     fn columns_count(&self, _cx: &App) -> usize { 5 }
 
-    fn rows_count(&self, _cx: &App) -> usize {
-        self.entries.len()
+    fn rows_count(&self, cx: &App) -> usize {
+        read_fl(&self.file_list, cx, |fl| fl.entries.len()).unwrap_or(0)
     }
 
     fn column(&self, col_ix: usize, _cx: &App) -> TableColumn {
@@ -75,6 +68,7 @@ impl TableDelegate for FileListTableDelegate {
         let theme = cx.global::<Theme>();
 
         let fl_left = self.file_list.clone();
+        let fl_dbl = self.file_list.clone();
         let fl_right = self.file_list.clone();
         div().id(("row", row_ix))
             .cursor_pointer()
@@ -83,6 +77,9 @@ impl TableDelegate for FileListTableDelegate {
             .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _: &mut Window, cx: &mut App| {
                 if let Some(fl) = fl_left.upgrade() {
                     fl.update(cx, |_, cx| cx.emit(FileListIntent::RowClicked(row_ix, event.modifiers.clone())));
+                    if event.click_count >= 2 {
+                        fl.update(cx, |_, cx| cx.emit(FileListIntent::OpenEntry));
+                    }
                 }
             })
             .on_mouse_down(MouseButton::Right, move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
@@ -137,7 +134,6 @@ pub struct ArchiveFileList {
 impl ArchiveFileList {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let delegate = FileListTableDelegate {
-            entries: vec![],
             file_list: cx.entity().downgrade(),
         };
         let table_state = cx.new(|cx| {
@@ -228,7 +224,7 @@ impl Render for ArchiveFileList {
                                 if single_selection {
                                     let h4 = h.clone();
                                     m = m.item(PopupMenuItem::new("Rename").on_click(move |_, _, cx| {
-                                        h4.update(cx, |_, cx| cx.emit(FileListIntent::RenameEntry(0)));
+                                        h4.update(cx, |_, cx| cx.emit(FileListIntent::RenameEntry(None)));
                                     }));
                                 }
                                 let h5 = h.clone();
