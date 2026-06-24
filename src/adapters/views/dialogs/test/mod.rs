@@ -24,16 +24,21 @@ pub struct TestDialog {
     repo: Arc<dyn ArchiveRepository>,
     result_tx: Option<Sender<TestResultEvent>>,
     total_items: u64,
+    indices: Option<Vec<u32>>,
 }
 
 impl TestDialog {
     pub fn open_with_entries(
         cx: &mut AsyncApp,
         handle: ArchiveHandle,
+        indices: Option<Vec<u32>>,
         repo: Arc<dyn ArchiveRepository>,
     ) -> Receiver<TestResultEvent> {
         let (tx, rx) = unbounded::<TestResultEvent>();
-        let count = repo.get_properties(&handle).map(|p| p.items_count).unwrap_or(0) as usize;
+        let total = indices.as_ref().map_or_else(
+            || repo.get_properties(&handle).map(|p| p.items_count as usize).unwrap_or(0),
+            |v| v.len(),
+        );
         let opts = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(200.), px(200.)), size(px(560.), px(480.))))),
             window_background: WindowBackgroundAppearance::Opaque,
@@ -42,9 +47,9 @@ impl TestDialog {
         };
         cx.spawn(async move |cx| {
             let _ = cx.open_window(opts, move |window, cx| {
-                let view = cx.new(|_cx| TestDialogView::new(count));
+                let view = cx.new(|_cx| TestDialogView::new(total));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password: None, repo, result_tx: Some(tx), total_items: count as u64 });
+                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password: None, repo, result_tx: Some(tx), total_items: total as u64, indices });
                 let c_sub = c.clone();
                 cx.subscribe::<TestDialogView, TestViewIntent>(&view_handle, move |_emitter: Entity<TestDialogView>, intent: &TestViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -75,7 +80,7 @@ impl TestDialog {
             let _ = cx.open_window(opts, move |window, cx| {
                 let view = cx.new(|_cx| TestDialogView::new(count));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: None, path: Some(path.to_path_buf()), password, repo, result_tx: Some(tx), total_items: count as u64 });
+                let c = cx.new(|cx| Self { view, handle: None, path: Some(path.to_path_buf()), password, repo, result_tx: Some(tx), total_items: count as u64, indices: None });
                 let c_sub = c.clone();
                 cx.subscribe::<TestDialogView, TestViewIntent>(&view_handle, move |_emitter: Entity<TestDialogView>, intent: &TestViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -102,6 +107,7 @@ impl TestDialog {
                 let handle = self.handle.clone();
                 let path = self.path.clone();
                 let password = self.password.clone();
+                let indices = self.indices.clone();
 
                 cx.background_spawn(async move {
                     let dialog_owns_handle = handle.is_none();
@@ -110,7 +116,7 @@ impl TestDialog {
                         None => path.and_then(|p| repo.open(&p, password.as_ref()).ok()).unwrap_or(ArchiveHandle::new_reader()),
                     };
                     let uc = TestEntriesUseCase::new(repo.clone());
-                    let result = uc.execute(&h, None, Some(progress_tx));
+                    let result = uc.execute(&h, indices.as_deref(), Some(progress_tx));
                     if dialog_owns_handle {
                         repo.close(h);
                     }

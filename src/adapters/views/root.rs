@@ -106,7 +106,7 @@ impl RootView {
                             let repo = this.controller.repo();
                             cx.spawn(async move |_, cx| {
                                 if let Some(h) = handle {
-                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, repo);
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, None, repo);
                                 }
                             }).detach();
                         }
@@ -148,11 +148,12 @@ impl RootView {
                             }
                         }
                         MenuIntent::TestSelected => {
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
                             let handle = this.state.archive.clone();
                             let repo = this.controller.repo();
                             cx.spawn(async move |_, cx| {
                                 if let Some(h) = handle {
-                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, repo);
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, Some(indices), repo);
                                 }
                             }).detach();
                         }
@@ -161,7 +162,7 @@ impl RootView {
                             let repo = this.controller.repo();
                             cx.spawn(async move |_, cx| {
                                 if let Some(h) = handle {
-                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, repo);
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, None, repo);
                                 }
                             }).detach();
                         }
@@ -601,7 +602,7 @@ impl Render for RootView {
                         let repo = this.controller.repo();
                         cx.spawn(async move |_, cx| {
                             if let Some(h) = handle {
-                                crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, repo);
+                                crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, None, repo);
                             }
                         }).detach();
                     }
