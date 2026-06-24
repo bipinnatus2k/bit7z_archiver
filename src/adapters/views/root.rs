@@ -102,11 +102,16 @@ impl RootView {
                             }
                         }
                         ToolbarIntent::TestArchive => {
+                            let indices = if this.state.selection.is_empty() {
+                                None
+                            } else {
+                                Some(this.state.selection.iter().copied().collect::<Vec<u32>>())
+                            };
                             let handle = this.state.archive.clone();
                             let repo = this.controller.repo();
                             cx.spawn(async move |_, cx| {
                                 if let Some(h) = handle {
-                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, None, repo);
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, indices, repo);
                                 }
                             }).detach();
                         }
