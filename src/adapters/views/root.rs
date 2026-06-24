@@ -75,9 +75,32 @@ impl RootView {
                                 this.handle_open_archive(&path, None, cx);
                             }
                         }
-                        ToolbarIntent::CreateArchive => { cx.emit(ArchiveVmEvent::RequestShowCreate); }
-                        ToolbarIntent::AddFiles => { cx.emit(ArchiveVmEvent::RequestShowAdd); }
-                        ToolbarIntent::ExtractSelected => { cx.emit(ArchiveVmEvent::RequestShowExtract); }
+                        ToolbarIntent::CreateArchive => {
+                            cx.spawn(async move |_, cx| {
+                                crate::adapters::views::dialogs::create::CreateArchiveDialog::open(cx, vec![]);
+                            }).detach();
+                        }
+                        ToolbarIntent::AddFiles => {
+                            if let Some(ref handle) = this.state.archive {
+                                let repo = this.controller.repo();
+                                let h = handle.clone();
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::add_files::AddFilesDialog::open(cx, crate::domain::archive::ArchiveFormat::SevenZip, Some(h), Some(repo), false);
+                                }).detach();
+                            }
+                        }
+                        ToolbarIntent::ExtractSelected => {
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
+                                .get(&this.state.current_path)
+                                .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
+                                .unwrap_or_default();
+                            if !entries.is_empty() {
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
+                                }).detach();
+                            }
+                        }
                         ToolbarIntent::TestArchive => {
                             let handle = this.state.archive.clone();
                             let repo = this.controller.repo();
@@ -92,7 +115,11 @@ impl RootView {
                             this.state = ArchiveState::new();
                             this.sync_children(cx);
                         }
-                        ToolbarIntent::ShowSettings => { cx.emit(ArchiveVmEvent::RequestShowSettings); }
+                        ToolbarIntent::ShowSettings => {
+                            cx.spawn(async move |_, cx| {
+                                crate::adapters::views::dialogs::settings::SettingsDialog::open(cx);
+                            }).detach();
+                        }
                     }
                 }
             }).detach();
@@ -106,8 +133,20 @@ impl RootView {
                                 this.handle_open_archive(&path, None, cx);
                             }
                         }
-                        MenuIntent::CreateArchive => { cx.emit(ArchiveVmEvent::RequestShowCreate); }
-                        MenuIntent::AddFiles => { cx.emit(ArchiveVmEvent::RequestShowAdd); }
+                        MenuIntent::CreateArchive => {
+                            cx.spawn(async move |_, cx| {
+                                crate::adapters::views::dialogs::create::CreateArchiveDialog::open(cx, vec![]);
+                            }).detach();
+                        }
+                        MenuIntent::AddFiles => {
+                            if let Some(ref handle) = this.state.archive {
+                                let repo = this.controller.repo();
+                                let h = handle.clone();
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::add_files::AddFilesDialog::open(cx, crate::domain::archive::ArchiveFormat::SevenZip, Some(h), Some(repo), false);
+                                }).detach();
+                            }
+                        }
                         MenuIntent::TestSelected => {
                             let handle = this.state.archive.clone();
                             let repo = this.controller.repo();
@@ -168,7 +207,11 @@ impl RootView {
                                 }
                             }).detach();
                         }
-                        MenuIntent::ShowSettings => { cx.emit(ArchiveVmEvent::RequestShowSettings); }
+                        MenuIntent::ShowSettings => {
+                            cx.spawn(async move |_, cx| {
+                                crate::adapters::views::dialogs::settings::SettingsDialog::open(cx);
+                            }).detach();
+                        }
                         MenuIntent::About => { log::info!("bit7z Archiver {}", env!("CARGO_PKG_VERSION")); }
                     }
                 }
@@ -274,7 +317,16 @@ impl RootView {
                             // Handled by SelectionChanged -> inline preview load
                         }
                         FileListIntent::ExtractSelected => {
-                            cx.emit(ArchiveVmEvent::RequestShowExtract);
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
+                                .get(&this.state.current_path)
+                                .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
+                                .unwrap_or_default();
+                            if !entries.is_empty() {
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
+                                }).detach();
+                            }
                         }
                         FileListIntent::RenameEntry(idx) => {
                             let actual_idx = idx.unwrap_or_else(|| this.state.first_selected_index().unwrap_or(0));
@@ -528,10 +580,21 @@ impl Render for RootView {
                         cx.emit(ArchiveVmEvent::RequestNewFolder);
                     }
                     "n" if cmd => {
-                        cx.emit(ArchiveVmEvent::RequestShowCreate);
+                        cx.spawn(async move |_, cx| {
+                            crate::adapters::views::dialogs::create::CreateArchiveDialog::open(cx, vec![]);
+                        }).detach();
                     }
                     "e" if cmd => {
-                        cx.emit(ArchiveVmEvent::RequestShowExtract);
+                        let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                        let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
+                            .get(&this.state.current_path)
+                            .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
+                            .unwrap_or_default();
+                        if !entries.is_empty() {
+                            cx.spawn(async move |_, cx| {
+                                crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
+                            }).detach();
+                        }
                     }
                     "t" if cmd => {
                         let handle = this.state.archive.clone();
