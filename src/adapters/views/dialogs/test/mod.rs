@@ -23,6 +23,7 @@ pub struct TestDialog {
     password: Option<Password>,
     repo: Arc<dyn ArchiveRepository>,
     result_tx: Option<Sender<TestResultEvent>>,
+    total_items: u64,
 }
 
 impl TestDialog {
@@ -43,7 +44,7 @@ impl TestDialog {
             let _ = cx.open_window(opts, move |window, cx| {
                 let view = cx.new(|_cx| TestDialogView::new(count));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password: None, repo, result_tx: Some(tx) });
+                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password: None, repo, result_tx: Some(tx), total_items: count as u64 });
                 let c_sub = c.clone();
                 cx.subscribe::<TestDialogView, TestViewIntent>(&view_handle, move |_emitter: Entity<TestDialogView>, intent: &TestViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -74,7 +75,7 @@ impl TestDialog {
             let _ = cx.open_window(opts, move |window, cx| {
                 let view = cx.new(|_cx| TestDialogView::new(count));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: None, path: Some(path.to_path_buf()), password, repo, result_tx: Some(tx) });
+                let c = cx.new(|cx| Self { view, handle: None, path: Some(path.to_path_buf()), password, repo, result_tx: Some(tx), total_items: count as u64 });
                 let c_sub = c.clone();
                 cx.subscribe::<TestDialogView, TestViewIntent>(&view_handle, move |_emitter: Entity<TestDialogView>, intent: &TestViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -88,7 +89,10 @@ impl TestDialog {
     fn handle_intent(&mut self, intent: TestViewIntent, cx: &mut Context<Self>) {
         match intent {
             TestViewIntent::Start => {
-                self.view.update(cx, |v, _| v.set_processing(0, 1, "Starting..."));
+                self.view.update(cx, |v, cx| {
+                    v.set_processing(0, self.total_items, "Starting...");
+                    cx.notify();
+                });
 
                 let view = self.view.clone();
                 let repo = self.repo.clone();
@@ -116,19 +120,26 @@ impl TestDialog {
                 cx.spawn(async move |_, cx| {
                     loop {
                         while let Ok(update) = progress_rx.try_recv() {
-                            view.update(cx, |v, _| v.set_processing(update.items_done, update.items_total, &update.current_file.unwrap_or_default()));
-
+                            view.update(cx, |v, cx| {
+                                v.set_processing(update.items_done, update.items_total, &update.current_file.unwrap_or_default());
+                                cx.notify();
+                            });
                         }
                         if let Ok(result) = result_rx2.try_recv() {
                             match result {
                                 Ok(tr) => {
-                                    view.update(cx, |v, _| v.set_complete(tr.passed, tr.failed));
+                                    view.update(cx, |v, cx| {
+                                        v.set_complete(tr.passed, tr.failed);
+                                        cx.notify();
+                                    });
                                 }
                                 Err(e) => {
-                                    view.update(cx, |v, _| v.set_error(&e.to_string()));
+                                    view.update(cx, |v, cx| {
+                                        v.set_error(&e.to_string());
+                                        cx.notify();
+                                    });
                                 }
                             }
-
                             break;
                         }
                         cx.background_spawn(std::future::ready(())).await;
