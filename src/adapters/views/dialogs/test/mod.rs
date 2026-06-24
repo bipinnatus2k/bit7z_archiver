@@ -36,7 +36,7 @@ impl TestDialog {
     ) -> Receiver<TestResultEvent> {
         let (tx, rx) = unbounded::<TestResultEvent>();
         let total = indices.as_ref().map_or_else(
-            || repo.get_properties(&handle).map(|p| p.items_count as usize).unwrap_or(0),
+            || repo.get_properties(&handle).map(|p| p.files_count as usize).unwrap_or(0),
             |v| v.len(),
         );
         let opts = WindowOptions {
@@ -67,7 +67,7 @@ impl TestDialog {
         repo: Arc<dyn ArchiveRepository>,
     ) -> Receiver<TestResultEvent> {
         let count = repo.open(&path, password.as_ref())
-            .and_then(|h| { let n = repo.get_properties(&h).map(|p| p.items_count).unwrap_or(0); repo.close(h); Ok(n) })
+            .and_then(|h| { let n = repo.get_properties(&h).map(|p| p.files_count).unwrap_or(0); repo.close(h); Ok(n) })
             .unwrap_or(0) as usize;
         let (tx, rx) = unbounded::<TestResultEvent>();
         let opts = WindowOptions {
