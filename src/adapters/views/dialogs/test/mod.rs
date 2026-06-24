@@ -100,13 +100,16 @@ impl TestDialog {
                 let password = self.password.clone();
 
                 cx.background_spawn(async move {
+                    let dialog_owns_handle = handle.is_none();
                     let h = match handle {
                         Some(h) => h,
                         None => path.and_then(|p| repo.open(&p, password.as_ref()).ok()).unwrap_or(ArchiveHandle::new_reader()),
                     };
                     let uc = TestEntriesUseCase::new(repo.clone());
                     let result = uc.execute(&h, None, Some(progress_tx));
-                    repo.close(h);
+                    if dialog_owns_handle {
+                        repo.close(h);
+                    }
                     let _ = result_tx2.send(result);
                 }).detach();
 
