@@ -329,6 +329,17 @@ impl RootView {
                                 }).detach();
                             }
                         }
+                        FileListIntent::TestSelected => {
+                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let handle = this.state.archive.clone();
+                            let repo = this.controller.repo();
+                            if let Some(ref h) = handle {
+                                let h_clone = h.clone();
+                                cx.spawn(async move |_, cx| {
+                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h_clone, Some(indices), repo);
+                                }).detach();
+                            }
+                        }
                         FileListIntent::RenameEntry(idx) => {
                             let actual_idx = idx.unwrap_or_else(|| this.state.first_selected_index().unwrap_or(0));
                             cx.emit(ArchiveVmEvent::RequestRename { index: actual_idx, new_name: String::new() });

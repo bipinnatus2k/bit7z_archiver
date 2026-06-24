@@ -16,6 +16,7 @@ pub enum FileListIntent {
     OpenEntry,
     PreviewEntry,
     ExtractSelected,
+    TestSelected,
     RenameEntry(Option<u32>),
     DeleteSelected,
     Checksum(ChecksumAlgorithm),
@@ -219,6 +220,10 @@ impl Render for ArchiveFileList {
                                 let h3 = h.clone();
                                 m = m.item(PopupMenuItem::new("Extract...").on_click(move |_, _, cx| {
                                     h3.update(cx, |_, cx| cx.emit(FileListIntent::ExtractSelected));
+                                }));
+                                let h_test = h.clone();
+                                m = m.item(PopupMenuItem::new("Test...").on_click(move |_, _, cx| {
+                                    h_test.update(cx, |_, cx| cx.emit(FileListIntent::TestSelected));
                                 }));
                                 m = m.separator();
                                 if single_selection {
