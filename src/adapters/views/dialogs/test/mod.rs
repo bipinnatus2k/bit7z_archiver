@@ -11,6 +11,49 @@ use std::path::Path;
 use std::sync::Arc;
 use view::{TestDialogView, TestPhase, TestViewIntent};
 
+fn count_files_recursive(
+    repo: &Arc<dyn ArchiveRepository>,
+    archive: &ArchiveHandle,
+    dir_path: &str,
+) -> usize {
+    let path = if dir_path.ends_with('/') {
+        dir_path.to_string()
+    } else {
+        format!("{}/", dir_path)
+    };
+    let mut count = 0;
+    if let Ok(children) = repo.list_directory(archive, &path) {
+        for child in &children {
+            if child.is_directory {
+                count += count_files_recursive(repo, archive, &child.path);
+            } else {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+fn count_expanded(
+    repo: &Arc<dyn ArchiveRepository>,
+    archive: &ArchiveHandle,
+    indices: &[u32],
+) -> usize {
+    let mut count = 0;
+    for &idx in indices {
+        if let Ok(page) = repo.list_page(archive, idx as usize, 1) {
+            if let Some(entry) = page.items.first() {
+                if entry.is_directory {
+                    count += count_files_recursive(repo, archive, &entry.path);
+                    continue;
+                }
+            }
+        }
+        count += 1;
+    }
+    count
+}
+
 pub enum TestResultEvent {
     Completed(TestResult),
     Canceled,
@@ -37,7 +80,7 @@ impl TestDialog {
         let (tx, rx) = unbounded::<TestResultEvent>();
         let total = indices.as_ref().map_or_else(
             || repo.get_properties(&handle).map(|p| p.files_count as usize).unwrap_or(0),
-            |v| v.len(),
+            |v| count_expanded(&repo, &handle, v),
         );
         let opts = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(200.), px(200.)), size(px(560.), px(480.))))),
