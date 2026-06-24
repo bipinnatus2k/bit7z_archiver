@@ -45,9 +45,13 @@ impl TestEntriesUseCase {
             None => (0..count as u32).collect(),
         };
 
-        // Flatten directories: expand directory entries into their child file indices.
+        // Flatten directories: when testing all entries (indices is None),
+        // expand directory entries into their child file indices so every
+        // file in the archive is tested. When testing specific indices,
+        // use them as-is (directories auto-pass).
         let mut expanded: Vec<u32> = Vec::new();
         let mut total_bytes: u64 = 0;
+        let expand_dirs = indices.is_none();
         for &index in &idx_list {
             let page = match self.repo.list_page(archive, index as usize, 1) {
                 Ok(p) => p,
@@ -63,6 +67,13 @@ impl TestEntriesUseCase {
             let entry = &page.items[0];
             if !entry.is_directory {
                 total_bytes += entry.size;
+                expanded.push(index);
+                continue;
+            }
+
+            if !expand_dirs {
+                // When testing specific selections, include the directory
+                // entry itself (it will auto-pass in the main loop).
                 expanded.push(index);
                 continue;
             }
