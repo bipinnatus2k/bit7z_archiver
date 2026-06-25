@@ -5,7 +5,7 @@ use crate::theme::Theme;
 use gpui::*;
 use gpui::prelude::FluentBuilder as _;
 use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
-use gpui_component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
+use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};
 use humansize::{format_size, BINARY};
 
@@ -67,10 +67,100 @@ impl TableDelegate for FileListTableDelegate {
             };
             if ascending { ord } else { ord.reverse() }
         });
-        // Notify parent so ArchiveState stays in sync.
         if let Some(fl) = self.file_list.upgrade() {
             fl.update(_cx, |_, cx| cx.emit(FileListIntent::SortByColumn(col_ix as u32, ascending)));
         }
+    }
+
+    fn context_menu(
+        &mut self,
+        _row_ix: usize,
+        menu: PopupMenu,
+        _window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> PopupMenu {
+        let fl = match self.file_list.upgrade() {
+            Some(f) => f,
+            None => return menu,
+        };
+        let has_selection = fl.read(cx).selection.len() > 0;
+        let single_selection = fl.read(cx).selection.len() == 1;
+        let ready = fl.read(cx).is_ready;
+
+        let mut m = menu;
+        if has_selection {
+            let h1 = fl.clone();
+            m = m.item(PopupMenuItem::new("Open").on_click(move |_, _, cx| {
+                h1.update(cx, |_, cx| cx.emit(FileListIntent::OpenEntry));
+            }));
+            if single_selection {
+                let h2 = fl.clone();
+                m = m.item(PopupMenuItem::new("Preview").on_click(move |_, _, cx| {
+                    h2.update(cx, |_, cx| cx.emit(FileListIntent::PreviewEntry));
+                }));
+            }
+            let h3 = fl.clone();
+            m = m.item(PopupMenuItem::new("Extract...").on_click(move |_, _, cx| {
+                h3.update(cx, |_, cx| cx.emit(FileListIntent::ExtractSelected));
+            }));
+            let h_test = fl.clone();
+            m = m.item(PopupMenuItem::new("Test...").on_click(move |_, _, cx| {
+                h_test.update(cx, |_, cx| cx.emit(FileListIntent::TestSelected));
+            }));
+            m = m.separator();
+            if single_selection {
+                let h4 = fl.clone();
+                m = m.item(PopupMenuItem::new("Rename").on_click(move |_, _, cx| {
+                    h4.update(cx, |_, cx| cx.emit(FileListIntent::RenameEntry(None)));
+                }));
+            }
+            let h5 = fl.clone();
+            m = m.item(PopupMenuItem::new("Delete").on_click(move |_, _, cx| {
+                h5.update(cx, |_, cx| cx.emit(FileListIntent::DeleteSelected));
+            }));
+            m = m.separator();
+            let h_crc32 = fl.clone();
+            m = m.item(PopupMenuItem::new("CRC32").on_click(move |_, _, cx| {
+                h_crc32.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Crc32)));
+            }));
+            let h_md5 = fl.clone();
+            m = m.item(PopupMenuItem::new("MD5").on_click(move |_, _, cx| {
+                h_md5.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Md5)));
+            }));
+            let h_sha1 = fl.clone();
+            m = m.item(PopupMenuItem::new("SHA1").on_click(move |_, _, cx| {
+                h_sha1.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Sha1)));
+            }));
+            let h_sha256 = fl.clone();
+            m = m.item(PopupMenuItem::new("SHA256").on_click(move |_, _, cx| {
+                h_sha256.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Sha256)));
+            }));
+        }
+        m = m.separator();
+        let h6 = fl.clone();
+        m = m.item(PopupMenuItem::new("Select All").on_click(move |_, _, cx| {
+            h6.update(cx, |_, cx| cx.emit(FileListIntent::SelectAll));
+        }));
+        if has_selection {
+            let h7 = fl.clone();
+            m = m.item(PopupMenuItem::new("Clear Selection").on_click(move |_, _, cx| {
+                h7.update(cx, |_, cx| cx.emit(FileListIntent::ClearSelection));
+            }));
+        }
+        m = m.separator();
+        if ready {
+            let h8 = fl.clone();
+            m = m.item(PopupMenuItem::new("Refresh").on_click(move |_, _, cx| {
+                h8.update(cx, |_, cx| cx.emit(FileListIntent::Refresh));
+            }));
+        }
+        if single_selection {
+            let h9 = fl.clone();
+            m = m.item(PopupMenuItem::new("Properties").on_click(move |_, _, cx| {
+                h9.update(cx, |_, cx| cx.emit(FileListIntent::ShowProperties));
+            }));
+        }
+        m
     }
 
     fn render_td(&mut self, row_ix: usize, col_ix: usize, _window: &mut Window, _cx: &mut Context<TableState<Self>>) -> impl IntoElement {
@@ -134,6 +224,7 @@ impl ArchiveFileList {
         let table_state = cx.new(|cx| {
             TableState::new(delegate, window, cx)
                 .row_selectable(true)
+                .col_selectable(true)
                 .cell_selectable(false)
         });
 
@@ -146,7 +237,6 @@ impl ArchiveFileList {
                     cx.emit(FileListIntent::RowClicked(*row_ix));
                     cx.emit(FileListIntent::OpenEntry);
                 }
-                TableEvent::RightClickedRow(_) => {}
                 TableEvent::ClearSelection => {
                     cx.emit(FileListIntent::ClearSelection);
                 }
@@ -210,93 +300,9 @@ impl Render for ArchiveFileList {
                     );
 
                 let table_entity = self.table_state.clone();
-                let has_selection = !self.selection.is_empty();
-                let single_selection = self.selection.len() == 1;
-                let ready = self.is_ready;
-                let h = self_handle.clone();
-
                 container.child(
                     div().flex_1().child(DataTable::new(&table_entity))
                         .id("entry-table-area")
-                        .context_menu(move |menu, window, cx| {
-                            let mut m = menu;
-                            if has_selection {
-                                let h1 = h.clone();
-                                m = m.item(PopupMenuItem::new("Open").on_click(move |_, _, cx| {
-                                    h1.update(cx, |_, cx| cx.emit(FileListIntent::OpenEntry));
-                                }));
-                                if single_selection {
-                                    let h2 = h.clone();
-                                    m = m.item(PopupMenuItem::new("Preview").on_click(move |_, _, cx| {
-                                        h2.update(cx, |_, cx| cx.emit(FileListIntent::PreviewEntry));
-                                    }));
-                                }
-                                let h3 = h.clone();
-                                m = m.item(PopupMenuItem::new("Extract...").on_click(move |_, _, cx| {
-                                    h3.update(cx, |_, cx| cx.emit(FileListIntent::ExtractSelected));
-                                }));
-                                let h_test = h.clone();
-                                m = m.item(PopupMenuItem::new("Test...").on_click(move |_, _, cx| {
-                                    h_test.update(cx, |_, cx| cx.emit(FileListIntent::TestSelected));
-                                }));
-                                m = m.separator();
-                                if single_selection {
-                                    let h4 = h.clone();
-                                    m = m.item(PopupMenuItem::new("Rename").on_click(move |_, _, cx| {
-                                        h4.update(cx, |_, cx| cx.emit(FileListIntent::RenameEntry(None)));
-                                    }));
-                                }
-                                let h5 = h.clone();
-                                m = m.item(PopupMenuItem::new("Delete").on_click(move |_, _, cx| {
-                                    h5.update(cx, |_, cx| cx.emit(FileListIntent::DeleteSelected));
-                                }));
-                                m = m.separator();
-                                let h_ck = h.clone();
-                                m = m.submenu("Checksum", window, cx, move |menu, _, _| {
-                                    let h_crc32 = h_ck.clone();
-                                    let h_md5 = h_ck.clone();
-                                    let h_sha1 = h_ck.clone();
-                                    let h_sha256 = h_ck.clone();
-                                    menu.item(PopupMenuItem::new("CRC32").on_click(move |_, _, cx| {
-                                        h_crc32.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Crc32)));
-                                    }))
-                                    .item(PopupMenuItem::new("MD5").on_click(move |_, _, cx| {
-                                        h_md5.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Md5)));
-                                    }))
-                                    .item(PopupMenuItem::new("SHA1").on_click(move |_, _, cx| {
-                                        h_sha1.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Sha1)));
-                                    }))
-                                    .item(PopupMenuItem::new("SHA256").on_click(move |_, _, cx| {
-                                        h_sha256.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Sha256)));
-                                    }))
-                                });
-                            }
-                            m = m.separator();
-                            let h6 = h.clone();
-                            m = m.item(PopupMenuItem::new("Select All").on_click(move |_, _, cx| {
-                                h6.update(cx, |_, cx| cx.emit(FileListIntent::SelectAll));
-                            }));
-                            if has_selection {
-                                let h7 = h.clone();
-                                m = m.item(PopupMenuItem::new("Clear Selection").on_click(move |_, _, cx| {
-                                    h7.update(cx, |_, cx| cx.emit(FileListIntent::ClearSelection));
-                                }));
-                            }
-                            m = m.separator();
-                            if ready {
-                                let h8 = h.clone();
-                                m = m.item(PopupMenuItem::new("Refresh").on_click(move |_, _, cx| {
-                                    h8.update(cx, |_, cx| cx.emit(FileListIntent::Refresh));
-                                }));
-                            }
-                            if single_selection {
-                                let h9 = h.clone();
-                                m = m.item(PopupMenuItem::new("Properties").on_click(move |_, _, cx| {
-                                    h9.update(cx, |_, cx| cx.emit(FileListIntent::ShowProperties));
-                                }));
-                            }
-                            m
-                        })
                 )
             }
         }
