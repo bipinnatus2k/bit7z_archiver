@@ -247,9 +247,9 @@ impl RootView {
             cx.subscribe::<ArchiveFileList, FileListIntent>(&entry_list, {
                 move |this: &mut RootView, _emitter, intent: &FileListIntent, cx| {
                     match intent {
-                        FileListIntent::RowClicked(row, mods) => {
-                            let km = KeyModifiers { shift: mods.shift, control: mods.control, platform: mods.platform };
-                            this.state.update_selection(*row, km);
+                        FileListIntent::RowClicked(row) => {
+                            // let km = KeyModifiers { shift: mods.shift, control: mods.control, platform: mods.platform };
+                            // this.state.update_selection(*row);
                             this.sync_children(cx);
                             // Trigger preview
                             if let Some(idx) = this.state.first_selected_index() {
@@ -460,7 +460,7 @@ impl RootView {
         let subdirs = self.state.filtered_subdirs();
         let status_text = self.state.status_text();
 
-        self.entry_list.update(cx, |c, _| c.set_state(entries, selection, status, path));
+        self.entry_list.update(cx, |c, cx| c.set_state(entries, selection, status, path, cx));
         self.toolbar.update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
         self.menu.update(cx, |c, _| c.set_state(is_open, has_sel, single));
         self.archive_browser.update(cx, |c, _| c.set_state(subdirs, vec![]));

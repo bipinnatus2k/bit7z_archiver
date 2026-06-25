@@ -4,13 +4,14 @@ use crate::adapters::views::components::state_view::{empty_view, error_view, loa
 use crate::theme::Theme;
 use gpui::*;
 use gpui::prelude::FluentBuilder as _;
-use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
-use gpui_component::table::{Column as TableColumn, ColumnSort, DataTable, TableDelegate, TableState};
+use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
+use gpui_component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
+use gpui_component::table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};
 use humansize::{format_size, BINARY};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileListIntent {
-    RowClicked(usize, gpui::Modifiers),
+    RowClicked(usize),
     SortByColumn(u32, bool),
     NavigateUp,
     OpenEntry,
@@ -29,91 +30,75 @@ pub enum FileListIntent {
 impl EventEmitter<FileListIntent> for ArchiveFileList {}
 
 struct FileListTableDelegate {
+    entries: Vec<LevelEntry>,
+    columns: Vec<Column>,
     file_list: gpui::WeakEntity<ArchiveFileList>,
 }
 
-fn read_fl<F, R>(fl: &gpui::WeakEntity<ArchiveFileList>, cx: &App, f: F) -> Option<R>
-where F: FnOnce(&ArchiveFileList) -> R {
-    fl.upgrade().map(|fl| f(&fl.read(cx)))
-}
-
 impl TableDelegate for FileListTableDelegate {
-    fn columns_count(&self, _cx: &App) -> usize { 5 }
-
-    fn rows_count(&self, cx: &App) -> usize {
-        read_fl(&self.file_list, cx, |fl| fl.entries.len()).unwrap_or(0)
+    fn columns_count(&self, _: &App) -> usize {
+        self.columns.len()
     }
 
-    fn column(&self, col_ix: usize, _cx: &App) -> TableColumn {
-        match col_ix {
-            0 => TableColumn::new("name", "Name").width(px(300.)).sortable(),
-            1 => TableColumn::new("size", "Size").width(px(80.)).sortable(),
-            2 => TableColumn::new("packed", "Packed").width(px(80.)).sortable(),
-            3 => TableColumn::new("ratio", "Ratio").width(px(80.)).sortable(),
-            4 => TableColumn::new("date", "Date").width(px(140.)).sortable(),
-            _ => unreachable!(),
-        }
+    fn rows_count(&self, _: &App) -> usize {
+        self.entries.len()
     }
 
-    fn perform_sort(&mut self, col_ix: usize, sort: ColumnSort, _window: &mut Window, cx: &mut Context<TableState<Self>>) {
+    fn column(&self, col_ix: usize, _: &App) -> Column {
+        self.columns[col_ix].clone()
+    }
+
+    fn perform_sort(&mut self, col_ix: usize, sort: ColumnSort, _window: &mut Window, _cx: &mut Context<TableState<Self>>) {
         if sort == ColumnSort::Default { return; }
+        let ascending = sort == ColumnSort::Ascending;
+        let key = self.columns[col_ix].key.clone();
+        self.entries.sort_by(|a, b| {
+            let ord = match key.as_str() {
+                "name" => a.display_name.cmp(&b.display_name),
+                "size" => a.size.cmp(&b.size),
+                "packed" => a.compressed_size.cmp(&b.compressed_size),
+                "ratio" => {
+                    let ra = if a.size == 0 { 0.0 } else { 1.0 - a.compressed_size as f64 / a.size as f64 };
+                    let rb = if b.size == 0 { 0.0 } else { 1.0 - b.compressed_size as f64 / b.size as f64 };
+                    ra.partial_cmp(&rb).unwrap_or(std::cmp::Ordering::Equal)
+                }
+                "date" => a.modified.cmp(&b.modified),
+                _ => std::cmp::Ordering::Equal,
+            };
+            if ascending { ord } else { ord.reverse() }
+        });
+        // Notify parent so ArchiveState stays in sync.
         if let Some(fl) = self.file_list.upgrade() {
-            fl.update(cx, |_, cx| cx.emit(FileListIntent::SortByColumn(col_ix as u32, sort == ColumnSort::Ascending)));
+            fl.update(_cx, |_, cx| cx.emit(FileListIntent::SortByColumn(col_ix as u32, ascending)));
         }
     }
 
-    fn render_tr(&mut self, row_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> Stateful<Div> {
-        let selected = read_fl(&self.file_list, cx, |fl| {
-            fl.entries.get(row_ix).map(|e| fl.selection.contains(&e.original_index))
-        }).flatten().unwrap_or(false);
-        let theme = cx.global::<Theme>();
-
-        let fl_left = self.file_list.clone();
-        let fl_dbl = self.file_list.clone();
-        let fl_right = self.file_list.clone();
-        div().id(("row", row_ix))
-            .cursor_pointer()
-            .when(selected, |d| d.bg(theme.selection))
-            .when(!selected && row_ix % 2 == 0, |d| d.bg(theme.surface))
-            .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-                if let Some(fl) = fl_left.upgrade() {
-                    fl.update(cx, |_, cx| cx.emit(FileListIntent::RowClicked(row_ix, event.modifiers.clone())));
-                    if event.click_count >= 2 {
-                        fl.update(cx, |_, cx| cx.emit(FileListIntent::OpenEntry));
-                    }
-                }
-            })
-            .on_mouse_down(MouseButton::Right, move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-                if let Some(fl) = fl_right.upgrade() {
-                    fl.update(cx, |_, cx| cx.emit(FileListIntent::RowClicked(row_ix, Default::default())));
-                }
-            })
-    }
-
-    fn render_td(&mut self, row_ix: usize, col_ix: usize, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
-        let entry = read_fl(&self.file_list, cx, |fl| fl.entries.get(row_ix).cloned()).flatten();
-
-        match col_ix {
-            0 => {
-                if let Some(e) = entry {
-                    let text = if e.is_directory {
-                        "\u{1f4c1} ".to_string() + &e.display_name
-                    } else {
-                        "\u{1f4c4} ".to_string() + &e.display_name
-                    };
-                    div().px_2().child(text)
-                } else { div() }
+    fn render_td(&mut self, row_ix: usize, col_ix: usize, _window: &mut Window, _cx: &mut Context<TableState<Self>>) -> impl IntoElement {
+        let entry = match self.entries.get(row_ix) {
+            Some(e) => e,
+            None => return div(),
+        };
+        match self.columns[col_ix].key.as_str() {
+            "name" => {
+                let text = if entry.is_directory {
+                    format!("\u{1f4c1} {}", entry.display_name)
+                } else {
+                    format!("\u{1f4c4} {}", entry.display_name)
+                };
+                div().px_2().child(text)
             }
-            1 => div().px_2().child(entry.map(|e| format_size(e.size, BINARY)).unwrap_or_default()),
-            2 => div().px_2().child(entry.map(|e| format_size(e.compressed_size, BINARY)).unwrap_or_default()),
-            3 => {
-                let ratio = entry.map(|e| if e.size == 0 { "0%".to_string() } else {
-                    format!("{:.0}%", (1.0 - (e.compressed_size as f64 / e.size as f64)) * 100.)
-                }).unwrap_or_default();
+            "size" => div().px_2().child(format_size(entry.size, BINARY)),
+            "packed" => div().px_2().child(format_size(entry.compressed_size, BINARY)),
+            "ratio" => {
+                let ratio = if entry.size == 0 {
+                    "0%".to_string()
+                } else {
+                    format!("{:.0}%", (1.0 - (entry.compressed_size as f64 / entry.size as f64)) * 100.)
+                };
                 div().px_2().child(ratio)
             }
-            4 => {
-                let date = entry.and_then(|e| e.modified)
+            "date" => {
+                let date = entry.modified
                     .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
                     .unwrap_or_default();
                 div().px_2().child(date)
@@ -134,23 +119,53 @@ pub struct ArchiveFileList {
 
 impl ArchiveFileList {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let columns = vec![
+            Column::new("name", "Name").width(300.).sortable(),
+            Column::new("size", "Size").width(80.).sortable(),
+            Column::new("packed", "Packed").width(80.).sortable(),
+            Column::new("ratio", "Ratio").width(80.).sortable(),
+            Column::new("date", "Date").width(140.).sortable(),
+        ];
         let delegate = FileListTableDelegate {
+            entries: vec![],
+            columns,
             file_list: cx.entity().downgrade(),
         };
         let table_state = cx.new(|cx| {
             TableState::new(delegate, window, cx)
-                .row_selectable(false)
+                .row_selectable(true)
                 .cell_selectable(false)
         });
+
+        cx.subscribe_in(&table_state, window, |_view, _table, event, _window, cx| {
+            match event {
+                TableEvent::SelectRow(row_ix) => {
+                    cx.emit(FileListIntent::RowClicked(*row_ix));
+                }
+                TableEvent::DoubleClickedRow(row_ix) => {
+                    cx.emit(FileListIntent::RowClicked(*row_ix));
+                    cx.emit(FileListIntent::OpenEntry);
+                }
+                TableEvent::RightClickedRow(_) => {}
+                TableEvent::ClearSelection => {
+                    cx.emit(FileListIntent::ClearSelection);
+                }
+                _ => {}
+            }
+        }).detach();
+
         Self { entries: vec![], selection: std::collections::HashSet::new(), status: ViewStatus::Empty, current_path: String::new(), is_ready: false, table_state }
     }
 
-    pub fn set_state(&mut self, entries: Vec<LevelEntry>, selection: std::collections::HashSet<u32>, status: ViewStatus, current_path: String) {
-        self.entries = entries;
+    pub fn set_state(&mut self, entries: Vec<LevelEntry>, selection: std::collections::HashSet<u32>, status: ViewStatus, current_path: String, cx: &mut Context<Self>) {
+        self.entries = entries.clone();
         self.selection = selection;
         self.status = status;
         self.current_path = current_path;
         self.is_ready = self.status == ViewStatus::Ready;
+        self.table_state.update(cx, |state, _| {
+            state.delegate_mut().entries = entries;
+        });
     }
 }
 
@@ -174,26 +189,25 @@ impl Render for ArchiveFileList {
                 base.child(error_view(cx, msg))
             }
             ViewStatus::Ready => {
-                let is_root = self.current_path.is_empty();
                 let path_str = self.current_path.trim_end_matches('/').to_string();
                 let self_handle = cx.entity();
 
                 let mut container = base;
-                if !is_root {
-                    let h = self_handle.clone();
-                    container = container
-                        .child(
-                            div().flex().flex_row().gap_1().px_2().py_1()
-                                .bg(theme.surface)
-                                .child(
-                                    div().cursor_pointer().child(" \u{2190} ")
-                                        .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-                                            h.update(cx, |_, cx| cx.emit(FileListIntent::NavigateUp));
-                                        })
-                                )
-                                .child(format!(" \u{1f4c2} {}", path_str))
-                        );
-                }
+                let h = self_handle.clone();
+                container = container
+                    .child(
+                        Breadcrumb::new()
+                            .bg(theme.surface)
+                            .child(
+                                BreadcrumbItem::new(" \u{2190} ")
+                                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                        h.update(cx, |_, cx| cx.emit(FileListIntent::NavigateUp));
+                                    })
+                            )
+                            .child(
+                                BreadcrumbItem::new(path_str)
+                            )
+                    );
 
                 let table_entity = self.table_state.clone();
                 let has_selection = !self.selection.is_empty();
@@ -202,7 +216,7 @@ impl Render for ArchiveFileList {
                 let h = self_handle.clone();
 
                 container.child(
-                    div().flex_1().child(DataTable::new(&table_entity).stripe(false).bordered(false))
+                    div().flex_1().child(DataTable::new(&table_entity))
                         .id("entry-table-area")
                         .context_menu(move |menu, window, cx| {
                             let mut m = menu;
