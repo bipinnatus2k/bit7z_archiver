@@ -188,7 +188,11 @@ impl RootView {
                                 }).detach();
                             }
                         }
-                        MenuIntent::SelectAll => { this.state.select_all(); this.sync_children(cx); }
+                        MenuIntent::SelectAll => {
+                            this.state.select_all();
+                            this.entry_list.update(cx, |c, cx| c.select_all_entries(cx));
+                            this.sync_children(cx);
+                        }
                         MenuIntent::InvertSelection => { this.state.invert_selection(); this.sync_children(cx); }
                         MenuIntent::DeleteSelected => {
                             if !this.state.selection.is_empty() {
@@ -247,15 +251,17 @@ impl RootView {
             cx.subscribe::<ArchiveFileList, FileListIntent>(&entry_list, {
                 move |this: &mut RootView, _emitter, intent: &FileListIntent, cx| {
                     match intent {
-                        FileListIntent::RowClicked(row) => {
-                            this.state.update_selection(*row);
+                        FileListIntent::SelectionChanged(indices) => {
+                            this.state.selection = indices.iter().copied().collect();
+                            this.state.selection_anchor = None;
                             this.sync_children(cx);
-                            // Trigger preview
-                            if let Some(idx) = this.state.first_selected_index() {
+                            // Trigger preview for the first selected entry
+                            if let Some(idx) = indices.first() {
                                 if let Some(ref archive) = this.state.archive {
                                     let repo = this.controller.repo();
                                     let panel = this.preview_panel.clone();
                                     let h = archive.clone();
+                                    let idx = *idx;
                                     cx.spawn(async move |this, cx| {
                                         panel.update(cx, |p, _| p.set_loading());
                                         let uc = crate::application::preview::PreviewEntryUseCase::new(repo);
@@ -279,10 +285,12 @@ impl RootView {
                         }
                         FileListIntent::SelectAll => {
                             this.state.select_all();
+                            this.entry_list.update(cx, |c, cx| c.select_all_entries(cx));
                             this.sync_children(cx);
                         }
                         FileListIntent::ClearSelection => {
                             this.state.clear_selection();
+                            this.entry_list.update(cx, |c, cx| c.clear_selection(cx));
                             this.sync_children(cx);
                         }
                         FileListIntent::Refresh => {
@@ -459,7 +467,7 @@ impl RootView {
         let subdirs = self.state.filtered_subdirs();
         let status_text = self.state.status_text();
 
-        self.entry_list.update(cx, |c, cx| c.set_state(entries, selection, status, path, cx));
+        self.entry_list.update(cx, |c, cx| c.set_state(entries, status, path, cx));
         self.toolbar.update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
         self.menu.update(cx, |c, _| c.set_state(is_open, has_sel, single));
         self.archive_browser.update(cx, |c, _| c.set_state(subdirs, vec![]));
@@ -585,6 +593,7 @@ impl Render for RootView {
                 match key.as_str() {
                     "a" if cmd && !shift => {
                         this.state.select_all();
+                        this.entry_list.update(cx, |c, cx| c.select_all_entries(cx));
                         this.sync_children(cx);
                     }
                     "o" if cmd && !shift => {

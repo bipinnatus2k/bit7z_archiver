@@ -1,17 +1,17 @@
 use crate::adapters::events::ChecksumAlgorithm;
 use crate::adapters::view_models::archive_state::{LevelEntry, ViewStatus};
 use crate::adapters::views::components::state_view::{empty_view, error_view, loading_view};
+use crate::adapters::views::ext_table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};
 use crate::theme::Theme;
 use gpui::*;
 use gpui::prelude::FluentBuilder as _;
 use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
-use gpui_component::table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};
 use humansize::{format_size, BINARY};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileListIntent {
-    RowClicked(usize),
+    SelectionChanged(Vec<u32>),
     SortByColumn(u32, bool),
     NavigateUp,
     OpenEntry,
@@ -224,32 +224,61 @@ impl ArchiveFileList {
         let table_state = cx.new(|cx| {
             TableState::new(delegate, window, cx)
                 .row_selectable(true)
+                .multi_select(true)
                 .col_selectable(true)
                 .cell_selectable(false)
         });
 
-        cx.subscribe_in(&table_state, window, |_view, _table, event, _window, cx| {
+        cx.subscribe_in(&table_state, window, |view, _table, event, _window, cx| {
             match event {
-                TableEvent::SelectRow(row_ix) => {
-                    cx.emit(FileListIntent::RowClicked(*row_ix));
+                TableEvent::SelectRow(_row_ix) => {
+                    let indices: Vec<u32> = view.table_state.read(cx).selected_rows().iter()
+                        .filter_map(|&row| view.entries.get(row))
+                        .map(|e| e.original_index)
+                        .collect();
+                    view.selection = indices.iter().copied().collect();
+                    cx.emit(FileListIntent::SelectionChanged(indices));
                 }
                 TableEvent::DoubleClickedRow(row_ix) => {
-                    cx.emit(FileListIntent::RowClicked(*row_ix));
+                    let indices: Vec<u32> = view.table_state.read(cx).selected_rows().iter()
+                        .filter_map(|&row| view.entries.get(row))
+                        .map(|e| e.original_index)
+                        .collect();
+                    view.selection = indices.iter().copied().collect();
+                    cx.emit(FileListIntent::SelectionChanged(indices));
                     cx.emit(FileListIntent::OpenEntry);
                 }
                 TableEvent::ClearSelection => {
-                    cx.emit(FileListIntent::ClearSelection);
+                    view.selection.clear();
+                    cx.emit(FileListIntent::SelectionChanged(vec![]));
                 }
                 _ => {}
             }
         }).detach();
 
+
+
         Self { entries: vec![], selection: std::collections::HashSet::new(), status: ViewStatus::Empty, current_path: String::new(), is_ready: false, table_state }
     }
 
-    pub fn set_state(&mut self, entries: Vec<LevelEntry>, selection: std::collections::HashSet<u32>, status: ViewStatus, current_path: String, cx: &mut Context<Self>) {
+    pub fn select_all_entries(&mut self, cx: &mut Context<Self>) {
+        let rows: std::collections::HashSet<usize> = (0..self.entries.len()).collect();
+        self.selection = self.entries.iter().map(|e| e.original_index).collect();
+        self.table_state.update(cx, |state, cx| {
+            state.set_selected_rows(rows, cx);
+        });
+    }
+
+    pub fn clear_selection(&mut self, cx: &mut Context<Self>) {
+        self.selection.clear();
+        self.table_state.update(cx, |state, cx| {
+            state.set_selected_rows(std::collections::HashSet::new(), cx);
+            state.clear_selection(cx);
+        });
+    }
+
+    pub fn set_state(&mut self, entries: Vec<LevelEntry>, status: ViewStatus, current_path: String, cx: &mut Context<Self>) {
         self.entries = entries.clone();
-        self.selection = selection;
         self.status = status;
         self.current_path = current_path;
         self.is_ready = self.status == ViewStatus::Ready;

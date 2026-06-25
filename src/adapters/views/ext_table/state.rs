@@ -1,4 +1,4 @@
-use std::{ops::Range, rc::Rc, time::Duration};
+use std::{collections::HashSet, ops::Range, rc::Rc, time::Duration};
 
 use gpui_component::{
     ActiveTheme, ElementExt, Icon, IconName, StyleSized as _, StyledExt, VirtualListScrollHandle,
@@ -226,6 +226,9 @@ pub struct TableState<D: TableDelegate> {
     pub horizontal_scroll_handle: VirtualListScrollHandle,
 
     selected_row: Option<usize>,
+    selected_rows: HashSet<usize>,
+    selection_anchor: Option<usize>,
+    multi_select: bool,
     selection_mode: SelectionMode,
     right_clicked_row: Option<usize>,
     right_clicked_cell: Option<(usize, usize)>,
@@ -258,6 +261,9 @@ where
             vertical_scroll_handle: UniformListScrollHandle::new(),
             selection_mode: SelectionMode::Row,
             selected_row: None,
+            selected_rows: HashSet::new(),
+            selection_anchor: None,
+            multi_select: false,
             right_clicked_row: None,
             right_clicked_cell: None,
             selected_col: None,
@@ -320,6 +326,31 @@ where
     /// Set to enable/disable row selectable, default true
     pub fn row_selectable(mut self, row_selectable: bool) -> Self {
         self.row_selectable = row_selectable;
+        self
+    }
+
+    /// Returns the set of selected row indices (multi-selection).
+    pub fn selected_rows(&self) -> &HashSet<usize> {
+        &self.selected_rows
+    }
+
+    /// Replace the selected rows set with the given indices.
+    ///
+    /// The `selection_anchor` is set to `None`; callers may update it separately.
+    pub fn set_selected_rows(&mut self, rows: HashSet<usize>, cx: &mut Context<Self>) {
+        self.selected_rows = rows;
+        self.selection_anchor = None;
+        cx.notify();
+    }
+
+    /// Enable multi-row selection via Ctrl+Click and Shift+Click.
+    ///
+    /// When enabled:
+    /// - Ctrl+Click toggles a row in/out of the selection set.
+    /// - Shift+Click extends the selection from the anchor row.
+    /// - Single-click clears the multi-selection and selects only the clicked row.
+    pub fn multi_select(mut self, multi_select: bool) -> Self {
+        self.multi_select = multi_select;
         self
     }
 
@@ -393,6 +424,9 @@ where
     }
 
     /// Sets the selected row to the given index.
+    ///
+    /// When multi-select is enabled, this replaces the selection set with a
+    /// single row — used by keyboard navigation and programmatic selection.
     pub fn set_selected_row(&mut self, row_ix: usize, cx: &mut Context<Self>) {
         let is_down = match self.selected_row {
             Some(selected_row) => row_ix > selected_row,
@@ -402,6 +436,9 @@ where
         cx.stop_propagation();
         self.selection_mode = SelectionMode::Row;
         self.right_clicked_row = None;
+        self.selected_rows.clear();
+        self.selected_rows.insert(row_ix);
+        self.selection_anchor = Some(row_ix);
         self.selected_row = Some(row_ix);
         if let Some(row_ix) = self.selected_row {
             self.vertical_scroll_handle.scroll_to_item(
@@ -495,6 +532,8 @@ where
     pub fn clear_selection(&mut self, cx: &mut Context<Self>) {
         self.selection_mode = SelectionMode::Row;
         self.selected_row = None;
+        self.selected_rows.clear();
+        self.selection_anchor = None;
         self.selected_col = None;
         self.selected_cell = None;
         cx.emit(TableEvent::ClearSelection);
@@ -666,7 +705,50 @@ where
             return;
         }
 
-        self.set_selected_row(row_ix, cx);
+        if self.multi_select {
+            let mods = e.modifiers();
+            let ctrl = mods.control || mods.platform;
+            let shift = mods.shift;
+
+            if ctrl {
+                // Toggle the clicked row in the selection set.
+                if !self.selected_rows.remove(&row_ix) {
+                    self.selected_rows.insert(row_ix);
+                }
+                self.selection_anchor = Some(row_ix);
+            } else if shift {
+                // Range-select from anchor to the clicked row.
+                let anchor = self.selection_anchor.unwrap_or(row_ix);
+                let min = anchor.min(row_ix);
+                let max = anchor.max(row_ix);
+                for i in min..=max {
+                    if i < self.delegate.rows_count(cx) {
+                        self.selected_rows.insert(i);
+                    }
+                }
+            } else {
+                // Single click: clear multi-selection, select only this row.
+                self.selected_rows.clear();
+                self.selected_rows.insert(row_ix);
+                self.selection_anchor = Some(row_ix);
+            }
+
+            self.selection_mode = SelectionMode::Row;
+            self.right_clicked_row = None;
+            self.selected_row = Some(row_ix);
+            if let Some(ix) = self.selected_row {
+                let is_down = ix > row_ix;
+                self.vertical_scroll_handle.scroll_to_item(
+                    ix,
+                    if is_down { ScrollStrategy::Bottom } else { ScrollStrategy::Top },
+                );
+            }
+            cx.emit(TableEvent::SelectRow(row_ix));
+            cx.emit(TableEvent::RightClickedRow(None));
+            cx.notify();
+        } else {
+            self.set_selected_row(row_ix, cx);
+        }
 
         if e.click_count() == 2 {
             cx.emit(TableEvent::DoubleClickedRow(row_ix));
@@ -1720,7 +1802,7 @@ where
     ) -> Stateful<Div> {
         let horizontal_scroll_handle = self.horizontal_scroll_handle.clone();
         let is_stripe_row = self.options.stripe && row_ix % 2 != 0;
-        let is_selected = self.selected_row == Some(row_ix);
+        let is_selected = self.selected_row == Some(row_ix) || self.selected_rows.contains(&row_ix);
         let view = cx.entity().clone();
         let row_height = self.options.size.table_row_height();
 

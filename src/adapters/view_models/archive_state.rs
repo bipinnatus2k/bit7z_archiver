@@ -39,7 +39,7 @@ pub struct ArchiveState {
     pub level_entries: Vec<LevelEntry>,
     pub current_path: String,
     pub path_history: Vec<String>,
-    selection_anchor: Option<u32>,
+    pub selection_anchor: Option<u32>,
     pub archive_password: Option<Password>,
 }
 
