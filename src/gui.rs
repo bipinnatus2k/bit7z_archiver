@@ -40,6 +40,7 @@ pub fn run_gui() {
 pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<String>) {
     gpui_platform::application().with_assets(Assets).run(move |cx: &mut App| {
         gpui_component::init(cx);
+        crate::adapters::views::ext_table::init(cx);
         let prefs_repo = crate::adapters::preferences_json::JsonPreferencesRepository::new();
         let prefs = prefs_repo.load().unwrap_or_default();
 
