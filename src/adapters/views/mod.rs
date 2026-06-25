@@ -8,3 +8,4 @@ pub mod preview_panel;
 pub mod status_bar;
 pub mod dialogs;
 pub mod components;
+pub mod ext_table;
