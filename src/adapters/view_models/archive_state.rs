@@ -62,30 +62,11 @@ impl ArchiveState {
         }
     }
 
-    pub fn update_selection(&mut self, row: usize, mods: KeyModifiers) {
+    pub fn update_selection(&mut self, row: usize) {
         let index = self.level_entries.get(row).map(|e| e.original_index).unwrap_or(0);
-        if mods.shift {
-            let anchor = self.selection_anchor.unwrap_or(index);
-            let min = anchor.min(index);
-            let max = anchor.max(index);
-            self.selection.clear();
-            for i in min..=max {
-                if let Some(e) = self.level_entries.iter().find(|e| e.original_index == i) {
-                    self.selection.insert(e.original_index);
-                }
-            }
-        } else if mods.control || mods.platform {
-            if self.selection.contains(&index) {
-                self.selection.remove(&index);
-            } else {
-                self.selection.insert(index);
-            }
-            self.selection_anchor = Some(index);
-        } else {
-            self.selection.clear();
-            self.selection.insert(index);
-            self.selection_anchor = Some(index);
-        }
+        self.selection.clear();
+        self.selection.insert(index);
+        self.selection_anchor = Some(index);
     }
 
     pub fn select_all(&mut self) {

@@ -1,4 +1,4 @@
-use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus, KeyModifiers};
+use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus};
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
 use crate::adapters::views::menu::{Menu, MenuIntent};
@@ -248,8 +248,7 @@ impl RootView {
                 move |this: &mut RootView, _emitter, intent: &FileListIntent, cx| {
                     match intent {
                         FileListIntent::RowClicked(row) => {
-                            // let km = KeyModifiers { shift: mods.shift, control: mods.control, platform: mods.platform };
-                            // this.state.update_selection(*row);
+                            this.state.update_selection(*row);
                             this.sync_children(cx);
                             // Trigger preview
                             if let Some(idx) = this.state.first_selected_index() {
