@@ -1,3 +1,4 @@
+pub mod about;
 pub mod add_files;
 pub mod checksum;
 pub mod create;
