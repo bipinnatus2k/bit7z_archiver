@@ -18,9 +18,11 @@ pub fn ensure_fixtures() -> Vec<String> {
     let needed = vec![
         "basic.7z",
         "basic.zip",
+        "basic.tar",
         "corrupted.7z",
         "encrypted.7z",
         "empty.7z",
+        "multi_file.7z",
     ];
     needed
         .into_iter()
