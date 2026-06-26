@@ -138,6 +138,11 @@ impl ArchiveReader {
         Ok(result)
     }
 
+    /// Borrow the raw FFI handle.
+    pub fn raw_handle(&self) -> Handle {
+        self.raw
+    }
+
     /// Take ownership of the raw handle (prevents Drop from closing).
     pub fn into_raw(self) -> Handle {
         let h = self.raw;
@@ -547,6 +552,11 @@ impl Writer {
             )
         };
         if ret == 0 { Ok(()) } else { Err("add_items failed".into()) }
+    }
+
+    /// Borrow the raw FFI handle.
+    pub fn raw_handle(&self) -> Handle {
+        self.raw
     }
 
     /// Take ownership of the raw handle (prevents Drop from closing).
