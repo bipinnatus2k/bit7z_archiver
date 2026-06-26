@@ -1,3 +1,4 @@
+use std::path;
 use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus};
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
@@ -6,31 +7,17 @@ use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
 use crate::adapters::views::root_controller::RootController;
-use crate::adapters::views::dialogs::extract::ExtractDialog;
 use crate::adapters::views::dialogs::password::PasswordDialog;
-use crate::adapters::views::dialogs::create::CreateArchiveDialog;
-use crate::adapters::views::dialogs::settings::SettingsDialog;
-use crate::adapters::views::dialogs::add_files::AddFilesDialog;
-use crate::application::extract::ExtractEntriesUseCase;
 use crate::adapters::events::ArchiveVmEvent;
-use crate::adapters::views::dialogs::checksum::ChecksumDialog;
-use crate::adapters::views::dialogs::delete::DeleteDialog;
-use crate::adapters::views::dialogs::test::TestDialog;
 
 impl EventEmitter<ArchiveVmEvent> for RootView {}
-use crate::domain::archive::*;
-use crate::domain::preferences::ThemeMode;
-use crate::domain::repository::{ArchiveError, ArchiveRepository};
+use crate::domain::repository::{ArchiveError};
 use crate::gui::IpcReceiver;
 use crate::ipc::GuiCommand;
-use crate::theme::Theme;
 use crossbeam::channel::unbounded;
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use std::path::Path;
-use std::sync::Arc;
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
-use gpui_component::Root;
 
 pub struct RootView {
     menu: Entity<Menu>,
@@ -184,7 +171,7 @@ impl RootView {
                                 .unwrap_or_default();
                             if !entries.is_empty() {
                                 cx.spawn(async move |_, cx| {
-                                    crate::adapters::views::dialogs::properties_entries::PropertiesEntriesDialog::open(entries, cx);
+                                    crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
                                 }).detach();
                             }
                         }
@@ -222,7 +209,11 @@ impl RootView {
                                 crate::adapters::views::dialogs::settings::SettingsDialog::open(cx);
                             }).detach();
                         }
-                        MenuIntent::About => { log::info!("bit7z Archiver {}", env!("CARGO_PKG_VERSION")); }
+                        MenuIntent::About => {
+                            cx.spawn(async move |_, cx| {
+                                crate::adapters::views::dialogs::about::AboutDialog::open(cx);
+                            }).detach();
+                        }
                     }
                 }
             }).detach();
@@ -384,7 +375,7 @@ impl RootView {
                                 .unwrap_or_default();
                             if !entries.is_empty() {
                                 cx.spawn(async move |_, cx| {
-                                    crate::adapters::views::dialogs::properties_entries::PropertiesEntriesDialog::open(entries, cx);
+                                    crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
                                 }).detach();
                             }
                         }
@@ -661,7 +652,7 @@ impl Render for RootView {
                             .unwrap_or_default();
                         if !entries.is_empty() {
                             cx.spawn(async move |_, cx| {
-                                crate::adapters::views::dialogs::properties_entries::PropertiesEntriesDialog::open(entries, cx);
+                                crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
                             }).detach();
                         }
                     }
