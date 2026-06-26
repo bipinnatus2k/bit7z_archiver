@@ -2,6 +2,8 @@ use crate::domain::repository::ArchiveProperties;
 use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::description_list::{DescriptionList, DescriptionItem};
+use gpui_component::Sizable;
 
 pub struct PropertiesArchiveDialog {
     pub properties: Option<ArchiveProperties>,
@@ -41,14 +43,23 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-fn prop_row(label: &str, value: String, theme: &Theme) -> impl IntoElement {
-    div().flex().flex_row().gap_4().py_1p5()
-        .child(div().w(px(120.)).text_sm().text_color(theme.muted).child(label.to_string()))
-        .child(div().text_sm().child(value))
-}
-
 fn bool_yn(v: bool) -> &'static str {
     if v { "Yes" } else { "No" }
+}
+
+fn props_type_label(props: &ArchiveProperties) -> String {
+    let mut parts = Vec::new();
+    if props.is_solid {
+        parts.push("Solid");
+    }
+    if props.is_multi_volume {
+        parts.push("Multi-volume");
+    }
+    if parts.is_empty() {
+        "Archive".to_string()
+    } else {
+        parts.join(" ")
+    }
 }
 
 impl Render for PropertiesArchiveDialog {
@@ -58,26 +69,42 @@ impl Render for PropertiesArchiveDialog {
         div().flex().flex_col().gap_2().p_4().w(px(420.))
             .child(div().font_weight(FontWeight::BOLD).text_lg().child("Archive Properties"))
             .when_some(self.properties.as_ref(), |el, props| {
-                el.child(div().font_weight(FontWeight::MEDIUM).child("General"))
-                    .child(prop_row("Type:", props_type_label(props), &theme))
-                    .child(prop_row("Location:", self.archive_path.clone(), &theme))
-                    .child(prop_row("Size:", human_size(props.total_size), &theme))
-                    .child(prop_row("Packed:", human_size(props.packed_size), &theme))
-                    .child(prop_row("Ratio:", format!("{:.0}%", if props.total_size > 0 {
-                        (1.0 - props.packed_size as f64 / props.total_size as f64) * 100.0
-                    } else { 0.0 }), &theme))
-                    .child(prop_row("Files:", format!("{}", props.files_count), &theme))
-                    .child(prop_row("Folders:", format!("{}", props.folders_count), &theme))
+                el
+                    .child(div().font_weight(FontWeight::MEDIUM).child("General"))
+                    .child(
+                        DescriptionList::vertical()
+                            .bordered(false)
+                            .small()
+                            .children([
+                                DescriptionItem::new("Type").value(props_type_label(props)),
+                                DescriptionItem::new("Location").value(self.archive_path.clone()),
+                                DescriptionItem::new("Size").value(human_size(props.total_size)),
+                                DescriptionItem::new("Packed").value(human_size(props.packed_size)),
+                                DescriptionItem::new("Ratio")
+                                    .value(format!("{:.0}%", if props.total_size > 0 {
+                                        (1.0 - props.packed_size as f64 / props.total_size as f64) * 100.0
+                                    } else {
+                                        0.0
+                                    })),
+                                DescriptionItem::new("Files").value(format!("{}", props.files_count)),
+                                DescriptionItem::new("Folders").value(format!("{}", props.folders_count)),
+                            ])
+                    )
                     .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Advanced"))
-                    .child(prop_row("Solid:", bool_yn(props.is_solid).to_string(), &theme))
-                    .child(prop_row("Encrypted:", bool_yn(props.is_encrypted).to_string(), &theme))
-                    .child(prop_row("Encrypted names:", bool_yn(props.encrypted_names).to_string(), &theme))
-                    .child(prop_row("Multi-volume:", bool_yn(props.is_multi_volume).to_string(), &theme))
-                    .child(prop_row("Has comment:", bool_yn(props.has_comment).to_string(), &theme))
-                    .child(prop_row("Recovery record:", bool_yn(props.has_recovery_record).to_string(), &theme))
-                    .child(prop_row("Locked:", bool_yn(props.locked).to_string(), &theme))
-                    .when_some(props.dictionary_size, |el, sz| {
-                        el.child(prop_row("Dictionary:", human_size(sz), &theme))
+                    .child({
+                        let mut items = vec![
+                            DescriptionItem::new("Solid").value(bool_yn(props.is_solid)),
+                            DescriptionItem::new("Encrypted").value(bool_yn(props.is_encrypted)),
+                            DescriptionItem::new("Encrypted names").value(bool_yn(props.encrypted_names)),
+                            DescriptionItem::new("Multi-volume").value(bool_yn(props.is_multi_volume)),
+                            DescriptionItem::new("Has comment").value(bool_yn(props.has_comment)),
+                            DescriptionItem::new("Recovery record").value(bool_yn(props.has_recovery_record)),
+                            DescriptionItem::new("Locked").value(bool_yn(props.locked)),
+                        ];
+                        if let Some(sz) = props.dictionary_size {
+                            items.push(DescriptionItem::new("Dictionary").value(human_size(sz)));
+                        }
+                        DescriptionList::vertical().bordered(false).small().children(items)
                     })
             })
             .when(self.properties.is_none(), |el| {
@@ -89,15 +116,8 @@ impl Render for PropertiesArchiveDialog {
                         div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Close")
                             .on_mouse_down(MouseButton::Left, cx.listener(|_this, _e, _window, cx| {
                                 cx.emit(PropertiesArchiveEvent::Close);
-                            }))
-                    )
+                            })),
+                    ),
             )
     }
-}
-
-fn props_type_label(props: &ArchiveProperties) -> String {
-    let mut parts = Vec::new();
-    if props.is_solid { parts.push("Solid"); }
-    if props.is_multi_volume { parts.push("Multi-volume"); }
-    if parts.is_empty() { "Archive".to_string() } else { parts.join(" ") }
 }
