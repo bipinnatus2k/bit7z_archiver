@@ -263,3 +263,66 @@ impl TestEntriesUseCase {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+use super::*;
+use crate::domain::repository::test_utils::MockArchiveRepository;
+use std::sync::Arc;
+
+    #[test]
+    fn test_test_archive_all_passed() {
+        let result = TestResult { total: 5, passed: 5, failed: vec![] };
+        let mock = MockArchiveRepository::with_count(5).with_test_result(result);
+        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
+        let uc = TestArchiveUseCase::new(repo);
+        let handle = ArchiveHandle::new_reader();
+        let res = uc.execute(&handle).unwrap();
+        assert_eq!(res.total, 5);
+        assert_eq!(res.passed, 5);
+        assert!(res.failed.is_empty());
+    }
+
+    #[test]
+    fn test_test_archive_some_failed() {
+        let failures = vec![
+            TestFailure {
+                entry_path: "bad.txt".into(), error: "CRC mismatch".into(),
+                index: 1, path: "bad.txt".into(),
+                reason: TestFailureReason::CrcMismatch { expected: 0x1234, actual: 0x5678 },
+            },
+        ];
+        let result = TestResult { total: 3, passed: 2, failed: failures };
+        let mock = MockArchiveRepository::with_count(3).with_test_result(result);
+        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
+        let uc = TestArchiveUseCase::new(repo);
+        let handle = ArchiveHandle::new_reader();
+        let res = uc.execute(&handle).unwrap();
+        assert_eq!(res.total, 3);
+        assert_eq!(res.passed, 2);
+        assert_eq!(res.failed.len(), 1);
+    }
+
+    #[test]
+    fn test_test_archive_error_propagated() {
+        struct FailTest;
+        impl ArchiveRepository for FailTest {
+            fn open(&self, _: &std::path::Path, _: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn create(&self, _: &std::path::Path, _: ArchiveFormat, _: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn list_page(&self, _: &ArchiveHandle, _: usize, _: usize) -> Result<Page<ArchiveEntry>, ArchiveError> { Ok(Page::new(vec![], 0, Some(0))) }
+            fn get_properties(&self, _: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> { Ok(ArchiveProperties::default()) }
+            fn extract(&self, _: &ArchiveHandle, _: &[u32], _: &std::path::Path) -> Result<(), ArchiveError> { Ok(()) }
+            fn extract_to_buffer(&self, _: &ArchiveHandle, _: u32) -> Result<Vec<u8>, ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn add(&self, _: &mut ArchiveHandle, _: &[std::path::PathBuf], _: Option<&Password>) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn delete(&self, _: &mut ArchiveHandle, _: &[u32]) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn rename(&self, _: &mut ArchiveHandle, _: u32, _: &str) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn test(&self, _: &ArchiveHandle) -> Result<TestResult, ArchiveError> { Err(ArchiveError::Internal("test failed".into())) }
+            fn list_directory(&self, _: &ArchiveHandle, _: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> { Ok(vec![]) }
+            fn close(&self, _: ArchiveHandle) {}
+        }
+        let uc = TestArchiveUseCase::new(Arc::new(FailTest));
+        let handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&handle);
+        assert!(matches!(result, Err(ArchiveError::Internal(ref msg)) if msg == "test failed"));
+    }
+}

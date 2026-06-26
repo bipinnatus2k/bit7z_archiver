@@ -19,3 +19,41 @@ impl DeleteEntriesUseCase {
         self.repo.delete(archive, indices)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::repository::test_utils::MockArchiveRepository;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_delete_entries_success() {
+        let mock = MockArchiveRepository::with_count(5);
+        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
+        let uc = DeleteEntriesUseCase::new(repo);
+        let mut handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&mut handle, &[0, 2], None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_delete_entries_with_progress() {
+        let mock = MockArchiveRepository::with_count(5);
+        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
+        let uc = DeleteEntriesUseCase::new(repo);
+        let (tx, _rx) = crate::application::progress::progress_channel();
+        let mut handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&mut handle, &[1, 3], Some(tx));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_delete_nonexistent_indices_is_noop() {
+        let mock = MockArchiveRepository::with_count(3);
+        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
+        let uc = DeleteEntriesUseCase::new(repo);
+        let mut handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&mut handle, &[99, 100], None);
+        assert!(result.is_ok());
+    }
+}

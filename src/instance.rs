@@ -54,3 +54,61 @@ mod linux {
 
 #[cfg(target_os = "windows")] pub use win::*;
 #[cfg(target_os = "linux")] pub use linux::*;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_path_key_consistent() {
+        let p = Path::new(r"C:\test\archive.7z");
+        let k1 = path_key(p);
+        let k2 = path_key(p);
+        assert_eq!(k1, k2);
+        assert!(k1.starts_with("bit7z_"));
+    }
+
+    #[test]
+    fn test_path_key_different_for_different_paths() {
+        let k1 = path_key(Path::new(r"C:\a.7z"));
+        let k2 = path_key(Path::new(r"C:\b.7z"));
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn test_path_key_handles_unicode() {
+        let k = path_key(Path::new("\\server\\共享\\文件.7z"));
+        assert!(k.starts_with("bit7z_"));
+        assert_eq!(k.len(), 6 + 16);
+    }
+
+    #[test]
+    fn test_path_key_length() {
+        let k = path_key(Path::new("test.7z"));
+        assert_eq!(k.len(), 22); // "bit7z_" + 16 hex chars
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_acquire_release() {
+        let p = Path::new(r"C:\unlikely_to_exist_lock_test_12345.7z");
+        let lock = acquire(p);
+        // Should succeed — no other instance holds this key
+        assert!(lock.is_ok());
+        // Dropping releases the lock
+        drop(lock);
+        // Acquiring again should also succeed
+        let lock2 = acquire(p);
+        assert!(lock2.is_ok());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_acquire_twice_returns_already_open() {
+        let p = Path::new(r"C:\unlikely_to_exist_lock_test_67890.7z");
+        let _lock = acquire(p).expect("first acquire should succeed");
+        let second = acquire(p);
+        assert!(matches!(second, Err(InstanceError::AlreadyOpen)));
+    }
+}

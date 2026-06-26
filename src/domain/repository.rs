@@ -252,6 +252,29 @@ pub mod test_utils {
             Ok(())
         }
 
+        fn add_file_to_path(&self, _archive: &mut ArchiveHandle, file_path: &Path, archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
+            if file_path.exists() {
+                let name = file_path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "unknown".into());
+                let size = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
+                let mut entries_lock = self.entries.lock().unwrap();
+                let next_idx = entries_lock.len() as u32;
+                entries_lock.push(ArchiveEntry {
+                    name: name.clone(),
+                    path: archive_path.to_string(),
+                    size,
+                    compressed_size: size / 2,
+                    crc: Some(next_idx),
+                    original_index: next_idx,
+                    ..Default::default()
+                });
+                Ok(())
+            } else {
+                Err(ArchiveError::NotFound(file_path.to_string_lossy().to_string()))
+            }
+        }
+
         fn delete(&self, _archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError> {
             let mut entries = self.entries.lock().unwrap();
             let mut sorted: Vec<u32> = indices.to_vec();

@@ -69,3 +69,31 @@ impl OpenEntryUseCase {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::repository::test_utils::MockArchiveRepository;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_open_entry_directory_returns_error() {
+        let mock = MockArchiveRepository::new(vec![
+            ArchiveEntry { name: "mydir".into(), path: "mydir".into(), is_directory: true, original_index: 0, ..Default::default() },
+        ]);
+        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
+        let uc = OpenEntryUseCase::new(repo);
+        let handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&handle, 0);
+        assert!(matches!(result, Err(ArchiveError::Internal(ref msg)) if msg.contains("directory")));
+    }
+
+    #[test]
+    fn test_open_entry_not_found() {
+        let repo = MockArchiveRepository::arc_with_count(3);
+        let uc = OpenEntryUseCase::new(repo);
+        let handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&handle, 99);
+        assert!(matches!(result, Err(ArchiveError::NotFound(_))));
+    }
+}
