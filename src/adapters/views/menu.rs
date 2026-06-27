@@ -48,65 +48,8 @@ pub struct Menu {
 }
 
 impl Menu {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         let bar = AppMenuBar::new(cx);
-
-        macro_rules! bind_action {
-            ($action:ty, $intent:expr) => {
-                cx.on_action(
-                    std::any::TypeId::of::<$action>(),
-                    window,
-                    move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
-                        cx.emit($intent);
-                    },
-                );
-            };
-        }
-
-        bind_action!(OpenArchive, MenuIntent::OpenArchive);
-        bind_action!(CreateArchive, MenuIntent::CreateArchive);
-        bind_action!(AddFiles, MenuIntent::AddFiles);
-        bind_action!(TestSelected, MenuIntent::TestSelected);
-        bind_action!(TestAll, MenuIntent::TestAll);
-        bind_action!(CloseArchive, MenuIntent::CloseArchive);
-        bind_action!(ShowProperties, MenuIntent::ShowProperties);
-        bind_action!(SelectAll, MenuIntent::SelectAll);
-        bind_action!(InvertSelection, MenuIntent::InvertSelection);
-        bind_action!(DeleteSelected, MenuIntent::DeleteSelected);
-        bind_action!(RenameSelected, MenuIntent::RenameSelected);
-        bind_action!(ShowSettings, MenuIntent::ShowSettings);
-        bind_action!(About, MenuIntent::About);
-
-        // Checksum actions — each maps to Checksum(intent) with its algorithm
-        cx.on_action(
-            std::any::TypeId::of::<ChecksumCrc32>(),
-            window,
-            move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
-                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Crc32));
-            },
-        );
-        cx.on_action(
-            std::any::TypeId::of::<ChecksumMd5>(),
-            window,
-            move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
-                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Md5));
-            },
-        );
-        cx.on_action(
-            std::any::TypeId::of::<ChecksumSha1>(),
-            window,
-            move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
-                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha1));
-            },
-        );
-        cx.on_action(
-            std::any::TypeId::of::<ChecksumSha256>(),
-            window,
-            move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
-                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha256));
-            },
-        );
-
         let menu = Self { bar };
         menu.reload(cx);
         menu
@@ -191,8 +134,60 @@ impl Menu {
 }
 
 impl Render for Menu {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        TitleBar::new()
-            .child(div().flex().items_center().child(self.bar.clone()))
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .on_action(cx.listener(|_: &mut Menu, _: &OpenArchive, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::OpenArchive);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &CreateArchive, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::CreateArchive);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &AddFiles, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::AddFiles);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &TestSelected, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::TestSelected);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &TestAll, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::TestAll);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &CloseArchive, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::CloseArchive);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &ShowProperties, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::ShowProperties);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &SelectAll, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::SelectAll);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &InvertSelection, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::InvertSelection);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &DeleteSelected, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::DeleteSelected);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &RenameSelected, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::RenameSelected);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &ChecksumCrc32, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Crc32));
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &ChecksumMd5, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Md5));
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &ChecksumSha1, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha1));
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &ChecksumSha256, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha256));
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &ShowSettings, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::ShowSettings);
+            }))
+            .on_action(cx.listener(|_: &mut Menu, _: &About, _: &mut Window, cx: &mut Context<Menu>| {
+                cx.emit(MenuIntent::About);
+            }))
+            .child(TitleBar::new()
+                .child(div().flex().items_center().child(self.bar.clone())))
     }
 }

@@ -36,7 +36,7 @@ impl RootView {
         cx.new(|cx| {
             let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
 
-            let menu = cx.new(|cx| Menu::new(window, cx));
+            let menu = cx.new(|cx| Menu::new(cx));
             let toolbar = cx.new(|_| Toolbar::new());
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(window, cx));
