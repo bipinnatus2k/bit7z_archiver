@@ -2,9 +2,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::sidebar::{
-    Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem,
-};
+use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem};
 use gpui_component::{h_flex, v_flex, IconName, Sizable};
 use std::path::Path;
 
@@ -76,28 +74,30 @@ impl Render for ArchiveBrowser {
             .border_0()
             .header(
                 v_flex()
+                    .w_full()
                     .gap_3()
                     .child(
-                        SidebarHeader::new().child(
+                        SidebarHeader::new().w_full().child(
                             h_flex()
                                 .child(
                                     Button::new("collapse")
                                         .icon(IconName::FolderOpen)
-                                        .small()
+                                        // .small()
                                         .on_click({
                                             let this = self_handle.clone();
-                                            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                                this.update(cx, |this, cx| {
-                                                    this.toggle_collapsed(cx)
-                                                });
+                                            move |click_event: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                                if click_event.click_count() >= 2 {
+                                                    this.update(cx, |this, cx| {
+                                                        this.toggle_collapsed(cx)
+                                                    });
+                                                }
                                             }
                                         }),
                                 )
                                 .when(!collapsed, |this| this.gap_2().child("File Explorer")),
                         ),
                     )
-                    .child(Input::new(&self.input_state).rounded_2xl().bordered(false))
-                ,
+                    .when(!collapsed,|this| this.w_full().child(Input::new(&self.input_state).rounded_2xl().bordered(false))),
             )
             .child(
                 SidebarGroup::new("Folders").child(SidebarMenu::new().children(
@@ -134,6 +134,6 @@ impl Render for ArchiveBrowser {
                 )
             });
 
-        v_flex().w(relative(1.)).child(sidebar.px_1())
+        sidebar.w(relative(1.))
     }
 }
