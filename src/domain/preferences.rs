@@ -1,6 +1,5 @@
 use crate::domain::archive::ArchiveFormat;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 /// Persistent user preferences.
 #[derive(Debug, Clone, Serialize, Deserialize)]

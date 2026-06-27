@@ -1,5 +1,4 @@
 use crate::domain::archive::*;
-use crate::domain::preferences::Preferences;
 use crate::theme::Theme;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;

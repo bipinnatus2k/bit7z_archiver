@@ -1,5 +1,4 @@
 use crate::theme::Theme;
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::h_flex;
 
@@ -16,6 +15,7 @@ pub enum DeletePhase {
     Idle { count: u64 },
     Processing { current: u64, total: u64, message: String },
     Complete,
+    #[allow(dead_code)]
     Error(String),
 }
 
@@ -36,6 +36,7 @@ impl DeleteDialogView {
         self.phase = DeletePhase::Complete;
     }
 
+    #[allow(dead_code)]
     pub fn set_error(&mut self, msg: &str) {
         self.phase = DeletePhase::Error(msg.to_string());
     }

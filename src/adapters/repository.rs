@@ -137,7 +137,7 @@ impl Bit7zRepository {
     }
 
     fn send_progress(&self, update: ProgressUpdate) {
-        if let Ok(mut guard) = self.progress_notifier.lock() {
+        if let Ok(guard) = self.progress_notifier.lock() {
             if let Some(ref notifier) = *guard {
                 notifier.notify(&update);
             }
@@ -183,7 +183,7 @@ impl ArchiveRepository for Bit7zRepository {
     fn create(&self, path: &Path, format: ArchiveFormat,
               encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
         let lib = self.lock_lib()?;
-        let path_str = path.to_str()
+        let _path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal(format!("[create] path is not valid UTF-8: {}", path.display())))?;
 
         let writer_format = match format {
@@ -206,7 +206,7 @@ impl ArchiveRepository for Bit7zRepository {
         }
 
         let raw = writer.into_raw();
-        let mut handle = ArchiveHandle::new_writer()
+        let handle = ArchiveHandle::new_writer()
             .with_path(path.to_path_buf())
             .with_format(format);
         self.insert_raw(handle.id, raw as *mut std::ffi::c_void);
@@ -570,7 +570,7 @@ impl ArchiveRepository for Bit7zRepository {
     fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
         let raw = self.get_raw(archive)?;
         let c_path = std::ffi::CString::new(path)
-            .map_err(|e| ArchiveError::Internal(format!("[list_directory] path contains null byte: '{}'", path)))?;
+            .map_err(|_e| ArchiveError::Internal(format!("[list_directory] path contains null byte: '{}'", path)))?;
         let list = unsafe { crate::ffi::bit7z_reader_list_directory(raw as *mut _, c_path.as_ptr()) };
         if list.is_null() {
             return Err(ArchiveError::NotFound(path.into()));

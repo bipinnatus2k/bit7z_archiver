@@ -1,7 +1,6 @@
 use crate::application::add_to::AddToArchiveUseCase;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Creates a new empty temp file, opens it with the OS default editor,

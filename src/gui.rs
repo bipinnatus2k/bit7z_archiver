@@ -7,7 +7,7 @@ use crate::adapters::bit7z::Library;
 use crate::adapters::repository::Bit7zRepository;
 use crate::adapters::platform;
 use crate::adapters::tray::{TrayManager, TrayGlobal};
-use crate::domain::preferences::{Preferences, PreferencesRepository, ThemeMode};
+use crate::domain::preferences::{Preferences, PreferencesRepository};
 use crate::adapters::view_models::progress_vm::ProgressState;
 use crate::adapters::views::root::RootView;
 use crate::ipc::GuiCommand;

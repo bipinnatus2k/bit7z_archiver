@@ -1,7 +1,5 @@
-use crate::domain::archive::ArchiveFormat;
 use crate::domain::preferences::*;
 use crossbeam::channel::{unbounded, Receiver, Sender};
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::setting::{Settings, SettingPage, SettingGroup, SettingItem, SettingField};
@@ -86,7 +84,7 @@ impl Render for SettingsDialog {
                                             "Minimize to tray",
                                             SettingField::switch(
                                                 move |_| prefs.ui.minimize_to_tray,
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("Keep the application running in the system tray when minimized."),
@@ -94,7 +92,7 @@ impl Render for SettingsDialog {
                                             "Confirm before delete",
                                             SettingField::switch(
                                                 move |_| prefs.ui.confirm_delete,
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("Show a confirmation dialog before deleting archive entries."),
@@ -111,7 +109,7 @@ impl Render for SettingsDialog {
                                             SettingField::dropdown(
                                                 writable_formats(),
                                                 move |_| SharedString::from(prefs.archive.default_format.display_name()),
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("The default archive format when creating new archives."),
@@ -127,7 +125,7 @@ impl Render for SettingsDialog {
                                                     ("5 - Ultra".into(), "5".into()),
                                                 ],
                                                 move |_| SharedString::from(format!("{} - {}", prefs.archive.default_compression_level, compression_level_name(prefs.archive.default_compression_level))),
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("The default compression level for new archives."),
@@ -135,7 +133,7 @@ impl Render for SettingsDialog {
                                             "Encrypt filenames",
                                             SettingField::switch(
                                                 move |_| prefs.archive.default_encrypt_filenames,
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("Encrypt file names in the archive by default."),
@@ -168,7 +166,7 @@ impl Render for SettingsDialog {
                                             "Auto-preview files",
                                             SettingField::switch(
                                                 move |_| prefs.preview.auto_preview,
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("Automatically preview files when selected."),
@@ -182,7 +180,7 @@ impl Render for SettingsDialog {
                                                     ..Default::default()
                                                 },
                                                 move |_| (prefs.preview.text_max_bytes / 1024) as f64,
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("Maximum file size in KB for text preview."),
@@ -196,7 +194,7 @@ impl Render for SettingsDialog {
                                                     ..Default::default()
                                                 },
                                                 move |_| prefs.preview.hex_dump_bytes as f64,
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("Number of bytes to show in hex dump view."),
@@ -221,7 +219,7 @@ impl Render for SettingsDialog {
                                                     ThemeMode::Dark => "Dark",
                                                     ThemeMode::System => "System",
                                                 }),
-                                                |val, _| {},
+                                                |_val, _| {},
                                             )
                                         )
                                         .description("Choose your preferred color scheme."),

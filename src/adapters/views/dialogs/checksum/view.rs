@@ -1,12 +1,9 @@
-use crate::domain::repository::ProgressUpdate;
 use crate::theme::Theme;
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::h_flex;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChecksumViewIntent {
-    SelectAlgorithm(String),
     Start,
     Cancel,
     Close,
@@ -18,6 +15,7 @@ pub enum ChecksumPhase {
     Idle { total: usize, algorithm: String },
     Processing { current: u64, total: u64, file: String, results: Vec<(String, u64, String)> },
     Complete { results: Vec<(String, u64, String)> },
+    #[allow(dead_code)]
     Error(String),
 }
 
@@ -38,6 +36,7 @@ impl ChecksumDialogView {
         self.phase = ChecksumPhase::Complete { results };
     }
 
+    #[allow(dead_code)]
     pub fn set_error(&mut self, msg: &str) {
         self.phase = ChecksumPhase::Error(msg.to_string());
     }

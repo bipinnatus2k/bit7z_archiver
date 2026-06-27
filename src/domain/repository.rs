@@ -1,6 +1,5 @@
 use crate::domain::archive::*;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 /// Progress update message sent during long-running operations.
 #[derive(Debug, Clone)]
@@ -92,6 +91,8 @@ pub struct ArchiveProperties {
     pub has_recovery_record: bool,
     pub locked: bool,
     pub dictionary_size: Option<u64>,
+    pub headers_size: u64,
+    pub volumes_count: u32,
 }
 
 impl Default for ArchiveProperties {
@@ -112,6 +113,8 @@ impl Default for ArchiveProperties {
             has_recovery_record: false,
             locked: false,
             dictionary_size: None,
+            headers_size: 0,
+            volumes_count: 0,
         }
     }
 }
@@ -365,6 +368,8 @@ mod archive_properties_tests {
             encrypted_names: true, has_comment: true,
             comment_size: Some(128), has_recovery_record: false,
             locked: true, dictionary_size: Some(65536),
+            headers_size: 1200,
+            volumes_count: 1,
         };
         assert_eq!(props.items_count, 42);
         assert!(props.is_encrypted);

@@ -30,6 +30,7 @@ mod win {
             Ok(super::InstanceLockWin { handle, key })
         }
     }
+    #[allow(dead_code)]
     pub struct InstanceLockWin { handle: windows_sys::Win32::Foundation::HANDLE, key: String }
     impl Drop for InstanceLockWin {
         fn drop(&mut self) { unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle); } }

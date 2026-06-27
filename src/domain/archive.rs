@@ -32,6 +32,8 @@ pub struct ArchiveEntry {
     pub comment: Option<String>,
     pub user: Option<String>,
     pub group: Option<String>,
+    pub extension: Option<String>,
+    pub hardlink: Option<String>,
     /// Original index in the archive (for preview/extraction).
     pub original_index: u32,
 }
@@ -57,6 +59,8 @@ impl Default for ArchiveEntry {
             comment: None,
             user: None,
             group: None,
+            extension: None,
+            hardlink: None,
             original_index: 0,
         }
     }

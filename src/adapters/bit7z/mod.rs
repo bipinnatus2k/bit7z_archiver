@@ -101,7 +101,7 @@ impl ArchiveReader {
         unsafe { crate::ffi::bit7z_reader_item_count(self.raw as *mut _) }
     }
 
-    pub fn item(&self, index: u32) -> Item {
+    pub fn item(&self, index: u32) -> Item<'_> {
         Item { reader: self, index }
     }
 
@@ -308,8 +308,6 @@ extern "C" {
     // fn bit7z_test_result_free(result: *mut std::ffi::c_void);
 
     // Encryption detection
-    fn bit7z_is_header_encrypted(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
-    fn bit7z_is_encrypted(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
     fn bit7z_reader_has_encrypted_items(reader: *mut std::ffi::c_void) -> i32;
     // Single-call extract to buffer (avoids double-extraction).
     pub fn bit7z_reader_extract_to_buffer_c(
@@ -746,6 +744,17 @@ impl<'a> Item<'a> {
             crate::ffi::bit7z_item_extension(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
         };
         if ret < 0 { return Err("failed to get extension".into()); }
+        let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
+        Ok(c_str.to_string_lossy().into_owned())
+    }
+
+    pub fn hardlink(&self) -> Result<String, String> {
+        let buf_size: u32 = 256;
+        let mut buf: Vec<u8> = vec![0u8; buf_size as usize];
+        let ret = unsafe {
+            crate::ffi::bit7z_item_hardlink(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
+        };
+        if ret < 0 { return Err("failed to get hardlink".into()); }
         let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
         Ok(c_str.to_string_lossy().into_owned())
     }

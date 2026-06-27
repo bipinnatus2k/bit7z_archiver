@@ -2,7 +2,7 @@ use crate::application::create::{CreateArchiveInput, CreateArchiveUseCase};
 use crate::application::add_to::AddToArchiveUseCase;
 use crate::application::preview::PreviewEntryUseCase;
 use crate::application::checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
-use crate::domain::archive::{ArchiveFormat, ArchiveHandle, EncryptionConfig, EncryptionMethod, OverwriteMode, Password};
+use crate::domain::archive::{ArchiveFormat, ArchiveHandle, EncryptionConfig, EncryptionMethod, Password};
 use crate::domain::repository::{ArchiveError, ArchiveRepository};
 use crate::adapters::shell::ShellIntegration;
 use clap::{Parser, Subcommand};

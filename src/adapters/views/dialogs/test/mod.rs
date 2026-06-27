@@ -1,15 +1,13 @@
 mod view;
 
-use crate::application::progress::{progress_channel, CrossbeamNotifier};
+use crate::application::progress::progress_channel;
 use crate::application::test::TestEntriesUseCase;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use crossbeam::channel::{unbounded, Receiver, Sender};
-use crate::application::progress::ProgressUpdate;
 use gpui::*;
-use std::path::Path;
 use std::sync::Arc;
-use view::{TestDialogView, TestPhase, TestViewIntent};
+use view::{TestDialogView, TestViewIntent};
 
 fn count_files_recursive(
     repo: &Arc<dyn ArchiveRepository>,
@@ -92,7 +90,7 @@ impl TestDialog {
             let _ = cx.open_window(opts, move |window, cx| {
                 let view = cx.new(|_cx| TestDialogView::new(total));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password: None, repo, result_tx: Some(tx), total_items: total as u64, indices });
+                let c = cx.new(|_cx| Self { view, handle: Some(handle), path: None, password: None, repo, result_tx: Some(tx), total_items: total as u64, indices });
                 let c_sub = c.clone();
                 cx.subscribe::<TestDialogView, TestViewIntent>(&view_handle, move |_emitter: Entity<TestDialogView>, intent: &TestViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -123,7 +121,7 @@ impl TestDialog {
             let _ = cx.open_window(opts, move |window, cx| {
                 let view = cx.new(|_cx| TestDialogView::new(count));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: None, path: Some(path.to_path_buf()), password, repo, result_tx: Some(tx), total_items: count as u64, indices: None });
+                let c = cx.new(|_cx| Self { view, handle: None, path: Some(path.to_path_buf()), password, repo, result_tx: Some(tx), total_items: count as u64, indices: None });
                 let c_sub = c.clone();
                 cx.subscribe::<TestDialogView, TestViewIntent>(&view_handle, move |_emitter: Entity<TestDialogView>, intent: &TestViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -144,7 +142,7 @@ impl TestDialog {
 
                 let view = self.view.clone();
                 let repo = self.repo.clone();
-                let result_tx = self.result_tx.take();
+                let _result_tx = self.result_tx.take();
                 let (progress_tx, progress_rx) = progress_channel();
                 let (result_tx2, result_rx2) = unbounded::<Result<TestResult, ArchiveError>>();
                 let handle = self.handle.clone();
@@ -205,7 +203,7 @@ impl TestDialog {
 }
 
 impl Render for TestDialog {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         self.view.clone()
     }
 }

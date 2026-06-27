@@ -7,7 +7,7 @@ use crate::domain::repository::*;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::*;
 use std::sync::Arc;
-use view::{DeleteDialogView, DeletePhase, DeleteViewIntent};
+use view::{DeleteDialogView, DeleteViewIntent};
 
 pub enum DeleteResult {
     Success,
@@ -47,7 +47,7 @@ impl DeleteDialog {
                 move |window, cx| {
                     let view = cx.new(|_cx| DeleteDialogView::new(count));
                     let view_handle = view.clone();
-                    let container = cx.new(|cx| Self { view, indices, handle, repo, result_tx: Some(tx) });
+                    let container = cx.new(|_cx| Self { view, indices, handle, repo, result_tx: Some(tx) });
                     cx.subscribe::<DeleteDialogView, DeleteViewIntent>(&view_handle, {
                         let container = container.clone();
                         move |_, intent, cx| {
@@ -107,7 +107,7 @@ impl DeleteDialog {
 }
 
 impl Render for DeleteDialog {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         self.view.clone()
     }
 }

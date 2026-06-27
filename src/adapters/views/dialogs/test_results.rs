@@ -16,7 +16,7 @@ pub enum TestResultsEvent {
 impl EventEmitter<TestResultsEvent> for TestResultsDialog {}
 
 impl TestResultsDialog {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
             result: None,
             show_failed: false,

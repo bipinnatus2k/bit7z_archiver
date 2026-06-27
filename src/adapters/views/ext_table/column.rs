@@ -5,7 +5,6 @@ use gpui::{
     SharedString, Styled as _, TextAlign, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::ActiveTheme;
-use ActiveTheme as _;
 
 /// Represents a column in a table, used for initializing table columns.
 #[derive(Debug, Clone)]

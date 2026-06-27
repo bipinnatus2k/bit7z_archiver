@@ -68,6 +68,15 @@ include_cpp! {
     generate!("bit7z_item_is_symlink")
     generate!("bit7z_item_posix_attrib")
     generate!("bit7z_item_extension")
+    generate!("bit7z_item_hardlink")
+
+    // Reader archive-level properties
+    generate!("bit7z_reader_is_solid")
+    generate!("bit7z_reader_is_multi_volume")
+    generate!("bit7z_reader_volumes_count")
+    generate!("bit7z_reader_headers_size")
+    generate!("bit7z_reader_has_comment")
+    generate!("bit7z_reader_dictionary_size")
 
     // Writer advanced settings
     generate!("bit7z_writer_set_compression_method")

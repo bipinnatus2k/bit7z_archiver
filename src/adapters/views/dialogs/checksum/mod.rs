@@ -6,15 +6,15 @@ use crate::domain::archive::*;
 use crate::domain::repository::*;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::*;
-use std::path::Path;
 use std::sync::Arc;
-use view::{ChecksumDialogView, ChecksumPhase, ChecksumViewIntent};
+use view::{ChecksumDialogView, ChecksumViewIntent};
 
 pub enum ChecksumResultEvent {
     Completed,
     Canceled,
 }
 
+#[allow(dead_code)]
 pub struct ChecksumDialog {
     view: Entity<ChecksumDialogView>,
     handle: Option<ArchiveHandle>,
@@ -44,7 +44,7 @@ impl ChecksumDialog {
             let _ = cx.open_window(opts, move |window, cx| {
                 let view = cx.new(|_cx| ChecksumDialogView::new(count));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password: None, indices, repo, result_tx: Some(tx) });
+                let c = cx.new(|_cx| Self { view, handle: Some(handle), path: None, password: None, indices, repo, result_tx: Some(tx) });
                 let c_sub = c.clone();
                 cx.subscribe::<ChecksumDialogView, ChecksumViewIntent>(&view_handle, move |_emitter: Entity<ChecksumDialogView>, intent: &ChecksumViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -76,7 +76,7 @@ impl ChecksumDialog {
             let _ = cx.open_window(opts, move |window, cx| {
                 let view = cx.new(|_cx| ChecksumDialogView::new(count));
                 let view_handle = view.clone();
-                let c = cx.new(|cx| Self { view, handle: Some(handle), path: None, password, indices: all_indices, repo, result_tx: Some(tx) });
+                let c = cx.new(|_cx| Self { view, handle: Some(handle), path: None, password, indices: all_indices, repo, result_tx: Some(tx) });
                 let c_sub = c.clone();
                 cx.subscribe::<ChecksumDialogView, ChecksumViewIntent>(&view_handle, move |_emitter: Entity<ChecksumDialogView>, intent: &ChecksumViewIntent, cx: &mut App| {
                     c_sub.update(cx, |c, cx| c.handle_intent(intent.clone(), cx));
@@ -94,7 +94,7 @@ impl ChecksumDialog {
 
                 let view = self.view.clone();
                 let repo = self.repo.clone();
-                let result_tx = self.result_tx.take();
+                let _result_tx = self.result_tx.take();
                 let (progress_tx, progress_rx) = progress_channel();
                 let (result_tx2, result_rx2) = unbounded::<Result<(), ArchiveError>>();
                 let handle = self.handle.clone().unwrap();
@@ -115,7 +115,7 @@ impl ChecksumDialog {
                 }).detach();
 
                 cx.spawn(async move |_, cx| {
-                    let mut results: Vec<(String, u64, String)> = Vec::new();
+                    let results: Vec<(String, u64, String)> = Vec::new();
                     loop {
                         while let Ok(update) = progress_rx.try_recv() {
                             view.update(cx, |v, _| v.set_processing(update.items_done, update.items_total, &update.current_file.unwrap_or_default(), results.clone()));
@@ -135,13 +135,12 @@ impl ChecksumDialog {
                     let _ = tx.send(ChecksumResultEvent::Canceled);
                 }
             }
-            _ => {}
         }
     }
 }
 
 impl Render for ChecksumDialog {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         self.view.clone()
     }
 }

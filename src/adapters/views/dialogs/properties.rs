@@ -132,6 +132,8 @@ fn render_archive_content(path: &str, props: Option<&ArchiveProperties>, theme: 
                                 }),
                             DescriptionItem::new("Files").value(format!("{}", props.files_count)),
                             DescriptionItem::new("Folders").value(format!("{}", props.folders_count)),
+                            DescriptionItem::new("Headers size").value(human_size(props.headers_size)),
+                            DescriptionItem::new("Volumes").value(format!("{}", props.volumes_count)),
                         ]),
                 )
                 .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Advanced"))
@@ -187,6 +189,9 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
                 .children([
                     DescriptionItem::new("Name").value(entry.name.clone()),
                     DescriptionItem::new("Path").value(entry.path.clone()),
+                    DescriptionItem::new("Extension").value(
+                        entry.extension.as_deref().unwrap_or("-"),
+                    ),
                 ]),
         )
         .child(
@@ -244,16 +249,33 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
             );
     }
 
-    if entry.is_encrypted {
-        content = content
-            .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Security"))
-            .child(
-                DescriptionList::horizontal()
-                    .bordered(false)
-                    .small()
-                    .child(DescriptionItem::new("Encrypted").value("Yes")),
-            );
-    }
+        if entry.is_encrypted {
+            content = content
+                .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Security"))
+                .child(
+                    DescriptionList::horizontal()
+                        .bordered(false)
+                        .small()
+                        .child(DescriptionItem::new("Encrypted").value("Yes")),
+                );
+        }
+
+        {
+            let mut sec_items = Vec::new();
+            if let Some(ref hl) = entry.hardlink {
+                sec_items.push(DescriptionItem::new("Hardlink target").value(hl.clone()));
+            }
+            if !sec_items.is_empty() {
+                content = content
+                    .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Links"))
+                    .child(
+                        DescriptionList::horizontal()
+                            .bordered(false)
+                            .small()
+                            .children(sec_items),
+                    );
+            }
+        }
 
     if has_tech {
         let mut items = vec![];

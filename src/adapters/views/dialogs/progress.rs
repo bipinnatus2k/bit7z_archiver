@@ -22,7 +22,7 @@ impl ProgressDialog {
     }
 
     pub fn open(cx: &mut AsyncApp, title: String) -> Receiver<ProgressEvent> {
-        let (tx, rx) = unbounded::<ProgressEvent>();
+        let (_tx, rx) = unbounded::<ProgressEvent>();
         cx.spawn(async move |cx| {
             let _ = cx.open_window(
                 WindowOptions {

@@ -1,7 +1,7 @@
 use std::{collections::HashSet, ops::Range, rc::Rc, time::Duration};
 
 use gpui_component::{
-    ActiveTheme, ElementExt, Icon, IconName, StyleSized as _, StyledExt, VirtualListScrollHandle,
+    ActiveTheme, ElementExt, Icon, IconName, StyledExt, VirtualListScrollHandle,
     h_flex,
     menu::{ContextMenuExt, PopupMenu},
     scroll::{ScrollableMask, Scrollbar},

@@ -1,5 +1,4 @@
 use crate::domain::archive::*;
-use crate::domain::preferences::Preferences;
 use crate::theme::Theme;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
@@ -396,7 +395,7 @@ impl Render for CreateArchiveDialog {
             .child(
                 div().flex().flex_row().justify_end().gap_2().pt_2()
                     .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _e, _window, cx| cx.emit(CreateDialogEvent::Canceled))))
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|_this, _e, _window, cx| cx.emit(CreateDialogEvent::Canceled))))
                     .child(
                         div().px_3().py_1().rounded_md().cursor_pointer()
                             .bg(if self.is_valid() { theme.primary } else { theme.muted })

@@ -178,17 +178,26 @@ pub fn pick_folder() -> Option<std::path::PathBuf> {
     }
 
     const BIF_RETURNONLYFSDIRS: u32 = 0x0001;
+    #[allow(dead_code)]
     const BIF_DONTGOBELOWDOMAIN: u32 = 0x0002;
+    #[allow(dead_code)]
     const BIF_STATUSTEXT: u32 = 0x0004;
+    #[allow(dead_code)]
     const BIF_RETURNFSANCESTORS: u32 = 0x0008;
     const BIF_EDITBOX: u32 = 0x0010;
+    #[allow(dead_code)]
     const BIF_VALIDATE: u32 = 0x0020;
     const BIF_NEWDIALOGSTYLE: u32 = 0x0040;
     const BIF_USENEWUI: u32 = BIF_EDITBOX | BIF_NEWDIALOGSTYLE;
+    #[allow(dead_code)]
     const BIF_BROWSEINCLUDEURLS: u32 = 0x0080;
+    #[allow(dead_code)]
     const BIF_BROWSEFORCOMPUTER: u32 = 0x1000;
+    #[allow(dead_code)]
     const BIF_BROWSEFORPRINTER: u32 = 0x2000;
+    #[allow(dead_code)]
     const BIF_BROWSEINCLUDEFILES: u32 = 0x4000;
+    #[allow(dead_code)]
     const BIF_SHAREABLE: u32 = 0x8000;
 
     #[link(name = "shell32")]

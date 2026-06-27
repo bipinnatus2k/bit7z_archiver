@@ -4,7 +4,6 @@ use crate::adapters::views::components::state_view::{empty_view, error_view, loa
 use crate::adapters::views::ext_table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};
 use crate::theme::Theme;
 use gpui::*;
-use gpui::prelude::FluentBuilder as _;
 use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use humansize::{format_size, BINARY};
@@ -239,7 +238,7 @@ impl ArchiveFileList {
                     view.selection = indices.iter().copied().collect();
                     cx.emit(FileListIntent::SelectionChanged(indices));
                 }
-                TableEvent::DoubleClickedRow(row_ix) => {
+                TableEvent::DoubleClickedRow(_row_ix) => {
                     let indices: Vec<u32> = view.table_state.read(cx).selected_rows().iter()
                         .filter_map(|&row| view.entries.get(row))
                         .map(|e| e.original_index)

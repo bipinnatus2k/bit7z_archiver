@@ -1,6 +1,5 @@
 use crate::domain::archive::TestFailure;
 use crate::theme::Theme;
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::h_flex;
 use gpui_component::scroll::ScrollableElement;

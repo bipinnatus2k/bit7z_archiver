@@ -1,7 +1,7 @@
 //! Application color theme, exposed as a GPUI global.
 
 use crate::domain::preferences::ThemeMode;
-use gpui::{rgb, Global, Hsla, App, Window};
+use gpui::{rgb, Global, Hsla, Window};
 
 /// Theme colors used throughout the application.
 #[derive(Clone, Debug)]

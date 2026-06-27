@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use gpui::{
     AnyElement, App, InteractiveElement as _, IntoElement, ParentElement, Pixels, RenderOnce,
     StyleRefinement, Styled, TextAlign, Window, div, prelude::FluentBuilder as _, px, relative,

@@ -15,6 +15,7 @@ pub struct ExtractDialog {
     pub overwrite_mode: OverwriteMode,
     pub show_overwrite_dropdown: bool,
     pub keep_broken: bool,
+    #[allow(dead_code)]
     result_tx: Option<Sender<ExtractDialogEvent>>,
 }
 
@@ -63,7 +64,7 @@ impl ExtractDialog {
                 },
                 move |window, cx| {
                     let tx_lock = tx.lock().unwrap().take().unwrap();
-                    let dialog = cx.new(|cx| ExtractDialog::new(entries, tx_lock));
+                    let dialog = cx.new(|_cx| ExtractDialog::new(entries, tx_lock));
                     let event_sender = event_tx.clone();
                     cx.subscribe::<ExtractDialog, ExtractDialogEvent>(&dialog, {
                         move |_, event: &ExtractDialogEvent, _cx| {
@@ -182,7 +183,7 @@ impl Render for ExtractDialog {
             .child(
                 div().flex().flex_row().justify_end().gap_2().pt_2()
                     .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _e, _window, cx| cx.emit(ExtractDialogEvent::Canceled))))
+                                .on_mouse_down(gpui::MouseButton::Left, cx.listener(|_this, _e, _window, cx| cx.emit(ExtractDialogEvent::Canceled))))
                     .child(
                         div().px_3().py_1().rounded_md().cursor_pointer()
                             .bg(if can_extract { theme.primary } else { theme.muted })

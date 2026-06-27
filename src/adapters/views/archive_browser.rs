@@ -2,7 +2,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::sidebar::{
-    Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem,
+    Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem,
     SidebarToggleButton,
 };
 use gpui_component::{h_flex, Icon, IconName};
