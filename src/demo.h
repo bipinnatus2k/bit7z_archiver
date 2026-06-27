@@ -473,6 +473,34 @@ inline void bit7z_item_list_free(void* list_ptr) {
     delete static_cast<ItemList*>(list_ptr);
 }
 
+// ===== Batch items (all archive items returned as a single ItemList) =====
+
+inline void* bit7z_reader_items(void* reader_ptr) {
+    try {
+        auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
+        auto all_items = reader.items();
+
+        auto* list = new ItemList();
+        list->items = std::move(all_items);
+        list->prefix.clear();
+
+        for (auto& item : list->items) {
+            std::string itemPath = item.path();
+            for (auto& c : itemPath) if (c == '\\') c = '/';
+            list->paths.push_back(std::move(itemPath));
+        }
+        return static_cast<void*>(list);
+    } catch (...) { return nullptr; }
+}
+
+inline uint32_t bit7z_item_list_crc(void* list_ptr, uint32_t index) {
+    return static_cast<ItemList*>(list_ptr)->items[index].crc();
+}
+
+inline void* bit7z_item_list_item(void* list_ptr, uint32_t index) {
+    return static_cast<void*>(&static_cast<ItemList*>(list_ptr)->items[index]);
+}
+
 // ===== Writer wrappers =====
 
 enum WriterFormat : int {

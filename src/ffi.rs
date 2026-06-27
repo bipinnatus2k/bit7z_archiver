@@ -37,6 +37,11 @@ include_cpp! {
     generate!("bit7z_item_list_is_encrypted")
     generate!("bit7z_item_list_free")
 
+    // Batch items (all items in one call)
+    generate!("bit7z_reader_items")
+    generate!("bit7z_item_list_crc")
+    generate!("bit7z_item_list_item")
+
     // Test archive integrity
     generate!("bit7z_reader_test")
     generate!("bit7z_test_result_total")

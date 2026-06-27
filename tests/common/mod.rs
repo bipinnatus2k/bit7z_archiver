@@ -60,3 +60,69 @@ pub fn temp_file(name: &str, content: &str) -> std::path::PathBuf {
     std::fs::write(&path, content).unwrap();
     path
 }
+
+/// Locate the 7z CLI executable on the system.
+pub fn find_7z_cli() -> Option<std::path::PathBuf> {
+    // Check PATH first
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join("7z.exe");
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    // Common install locations
+    for candidate in &[
+        r"C:\Program Files\7-Zip\7z.exe",
+        r"C:\Program Files (x86)\7-Zip\7z.exe",
+    ] {
+        let p = std::path::Path::new(candidate);
+        if p.exists() {
+            return Some(p.to_path_buf());
+        }
+    }
+    // Check vcpkg_installed
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let vcpkg = manifest_dir
+        .join("vcpkg_installed")
+        .join("x64-windows")
+        .join("tools")
+        .join("7z.exe");
+    if vcpkg.exists() {
+        return Some(vcpkg);
+    }
+    None
+}
+
+/// Run a 7z CLI command and return stdout on success, or error message on failure.
+pub fn run_7z(args: &[&str]) -> Result<String, String> {
+    let exe = find_7z_cli().ok_or_else(|| "7z CLI not found".to_string())?;
+    let output = std::process::Command::new(&exe)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run 7z: {}", e))?;
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(stdout)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(format!("7z failed (exit={:?}): {}", output.status.code(), stderr))
+    }
+}
+
+/// Count total entries (files + dirs) in a 7z archive using CLI listing.
+pub fn count_entries_7z(archive: &std::path::Path) -> Result<u64, String> {
+    let stdout = run_7z(&["l", "-slt", archive.to_str().unwrap()])?;
+    // Count "Path = " lines (one per entry)
+    let count = stdout.lines().filter(|l| l.starts_with("Path = ")).count() as u64;
+    Ok(count)
+}
+
+/// Check archive integrity using CLI.
+pub fn verify_7z(archive: &std::path::Path) -> Result<bool, String> {
+    let stdout = run_7z(&["t", archive.to_str().unwrap()])?;
+    Ok(stdout.contains("Everything is Ok"))
+}

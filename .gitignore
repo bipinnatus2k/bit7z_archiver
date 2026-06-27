@@ -10,3 +10,4 @@ cargo.log
 AGENTS.md
 bit7z-bridge/
 .superpowers/
+/tests/fixtures/*.7z

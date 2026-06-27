@@ -26,10 +26,10 @@ fn detect_writer_format(path: &Path) -> bit7z::WriterFormat {
 }
 
 /// Populate extended fields on an ArchiveEntry using the FFI item accessors.
-fn populate_item_details(entry: &mut ArchiveEntry, raw: *mut std::ffi::c_void, index: u32) {
-    entry.crc = Some(unsafe { crate::ffi::bit7z_item_crc(raw as *mut _, index) });
+fn populate_item_details(entry: &mut ArchiveEntry, list: *mut std::ffi::c_void, index: u32) {
+    entry.crc = Some(unsafe { crate::ffi::bit7z_item_list_crc(list as *mut _, index) });
 
-    let item_ptr = unsafe { crate::ffi::bit7z_item_from_reader(raw as *mut _, index) };
+    let item_ptr = unsafe { crate::ffi::bit7z_item_list_item(list as *mut _, index) };
     if item_ptr.is_null() { return; }
 
     let mtime = unsafe { crate::ffi::bit7z_item_mtime(item_ptr) };
@@ -200,7 +200,12 @@ impl ArchiveRepository for Bit7zRepository {
     fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize)
                  -> Result<Page<ArchiveEntry>, ArchiveError> {
         let raw = self.get_raw(archive)?;
-        let count = unsafe { crate::ffi::bit7z_reader_item_count(raw as *mut _) };
+
+        let list = unsafe { crate::ffi::bit7z_reader_items(raw as *mut _) };
+        if list.is_null() {
+            return Err(ArchiveError::Internal("Failed to fetch archive items".into()));
+        }
+        let count = unsafe { crate::ffi::bit7z_item_list_count(list as *mut _) };
 
         let mut entries = Vec::new();
         let start = (offset as u32).min(count);
@@ -208,16 +213,14 @@ impl ArchiveRepository for Bit7zRepository {
 
         for i in start..end {
             use std::ffi::CStr;
-            let p = unsafe { crate::ffi::bit7z_item_path(raw as *mut _, i) };
-            let n = unsafe { crate::ffi::bit7z_item_name(raw as *mut _, i) };
+            let p = unsafe { crate::ffi::bit7z_item_list_path(list as *mut _, i) };
             let path_s = if p.is_null() { String::new() }
                          else { unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() } };
-            let name_s = if n.is_null() { String::new() }
-                         else { unsafe { CStr::from_ptr(n).to_string_lossy().into_owned() } };
-            let size = unsafe { crate::ffi::bit7z_item_size(raw as *mut _, i) };
-            let csize = unsafe { crate::ffi::bit7z_item_packed_size(raw as *mut _, i) };
-            let is_dir = unsafe { crate::ffi::bit7z_item_is_dir(raw as *mut _, i) != 0 };
-            let is_enc = unsafe { crate::ffi::bit7z_item_is_encrypted(raw as *mut _, i) != 0 };
+            let name_s = path_s.rsplit('/').next().unwrap_or(&path_s).to_string();
+            let size = unsafe { crate::ffi::bit7z_item_list_size(list as *mut _, i) };
+            let csize = unsafe { crate::ffi::bit7z_item_list_packed_size(list as *mut _, i) };
+            let is_dir = unsafe { crate::ffi::bit7z_item_list_is_dir(list as *mut _, i) != 0 };
+            let is_enc = unsafe { crate::ffi::bit7z_item_list_is_encrypted(list as *mut _, i) != 0 };
 
             let mut entry = ArchiveEntry {
                 name: name_s, path: path_s,
@@ -226,25 +229,36 @@ impl ArchiveRepository for Bit7zRepository {
                 original_index: i,
                 ..Default::default()
             };
-            populate_item_details(&mut entry, raw as *mut std::ffi::c_void, i);
+            populate_item_details(&mut entry, list as *mut std::ffi::c_void, i);
             entries.push(entry);
         }
+
+        unsafe { crate::ffi::bit7z_item_list_free(list as *mut _); }
         Ok(Page::new(entries, offset, Some(count as usize)))
     }
 
     fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
         let raw = self.get_raw(archive)?;
-        let count = unsafe { crate::ffi::bit7z_reader_item_count(raw as *mut _) };
+
+        let list = unsafe { crate::ffi::bit7z_reader_items(raw as *mut _) };
+        if list.is_null() {
+            return Err(ArchiveError::Internal("Failed to fetch archive items".into()));
+        }
+        let count = unsafe { crate::ffi::bit7z_item_list_count(list as *mut _) };
+
         let mut folders = 0u32;
         let mut files = 0u32;
         let mut total_size = 0u64;
         let mut packed_size = 0u64;
         for i in 0..count {
-            let is_dir = unsafe { crate::ffi::bit7z_item_is_dir(raw as *mut _, i) != 0 };
+            let is_dir = unsafe { crate::ffi::bit7z_item_list_is_dir(list as *mut _, i) != 0 };
             if is_dir { folders += 1; } else { files += 1; }
-            total_size += unsafe { crate::ffi::bit7z_item_size(raw as *mut _, i) };
-            packed_size += unsafe { crate::ffi::bit7z_item_packed_size(raw as *mut _, i) };
+            total_size += unsafe { crate::ffi::bit7z_item_list_size(list as *mut _, i) };
+            packed_size += unsafe { crate::ffi::bit7z_item_list_packed_size(list as *mut _, i) };
         }
+
+        unsafe { crate::ffi::bit7z_item_list_free(list as *mut _); }
+
         Ok(ArchiveProperties {
             items_count: count,
             folders_count: folders,
@@ -542,7 +556,7 @@ impl ArchiveRepository for Bit7zRepository {
                 original_index: orig_idx,
                 ..Default::default()
             };
-            populate_item_details(&mut entry, raw as *mut std::ffi::c_void, orig_idx);
+            populate_item_details(&mut entry, list as *mut std::ffi::c_void, i);
             entries.push(entry);
         }
         unsafe { crate::ffi::bit7z_item_list_free(list); }
