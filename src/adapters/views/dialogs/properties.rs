@@ -82,8 +82,7 @@ impl PropertiesDialog {
             });
             let _ = cx.open_window(
                 WindowOptions {
-                    window_bounds: Option::from(bounds),
-                    // window_bounds: Some(WindowBounds::centered(size(px(420.), px(380.)), &(cx)),
+                    window_bounds: Some(bounds),
                     window_background: WindowBackgroundAppearance::Opaque,
                     window_decorations: Some(WindowDecorations::Client),
                     focus: true,

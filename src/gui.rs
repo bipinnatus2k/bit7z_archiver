@@ -76,17 +76,17 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
             });
         }
 
-        let open_path = open_path.clone();
-        let open_password = open_password.clone();
+        // let open_path = open_path.clone();
+        // let open_password = open_password.clone();
 
         cx.spawn(async move |cx| {
+            let bounds = cx.update(|app| {
+                WindowBounds::centered(size(px(800.), px(600.)), app)
+            });
             cx.open_window(
                 WindowOptions {
                     titlebar: Option::from(TitleBar::title_bar_options()),
-                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                        point(px(100.), px(100.)),
-                        size(px(800.), px(600.)),
-                    ))),
+                    window_bounds: Some(bounds),
                     window_background: WindowBackgroundAppearance::Opaque,
                     window_decorations: Some(WindowDecorations::Client),
                     ..Default::default()
