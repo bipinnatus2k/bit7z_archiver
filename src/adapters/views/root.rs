@@ -36,7 +36,7 @@ impl RootView {
         cx.new(|cx| {
             let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
 
-            let menu = cx.new(|_| Menu::new());
+            let menu = cx.new(|cx| Menu::new(window, cx));
             let toolbar = cx.new(|_| Toolbar::new());
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(window, cx));
@@ -190,7 +190,10 @@ impl RootView {
                             this.entry_list.update(cx, |c, cx| c.select_all_entries(cx));
                             this.sync_children(cx);
                         }
-                        MenuIntent::InvertSelection => { this.state.invert_selection(); this.sync_children(cx); }
+                        MenuIntent::InvertSelection => {
+                            this.state.invert_selection();
+                            this.sync_children(cx);
+                        }
                         MenuIntent::DeleteSelected => {
                             if !this.state.selection.is_empty() {
                                 if let Some(ref h) = this.state.archive {
@@ -481,7 +484,7 @@ impl RootView {
 
         self.entry_list.update(cx, |c, cx| c.set_state(entries, status, path, cx));
         self.toolbar.update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
-        self.menu.update(cx, |c, _| c.set_state(is_open, has_sel, single));
+        self.menu.update(cx, |c, cx| c.set_state(is_open, has_sel, single, cx));
         self.archive_browser.update(cx, |c, _| c.set_state(subdirs, vec![]));
         self.status_bar.update(cx, |c, _| c.set_status(&status_text));
     }
@@ -746,9 +749,9 @@ impl Render for RootView {
                 h_resizable("main-hz")
                     .child(
                         resizable_panel()
-                            .size(px(240.))
-                            .size_range(px(150.)..px(500.))
-                            .flex_none()
+                            .size(px(255.))           // 初始宽度
+                            .size_range(px(200.)..px(320.))  // 最小/最大宽度限制
+                            // .flex_none()
                             .child(self.archive_browser.clone())
                     )
                     .child(

@@ -1,8 +1,27 @@
 use crate::adapters::events::ChecksumAlgorithm;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::menu::{AppMenuBar, DropdownMenu, PopupMenuItem};
-use gpui_component::TitleBar;
+use gpui_component::menu::AppMenuBar;
+use gpui_component::{GlobalState, TitleBar};
+
+gpui::actions!(menu_actions, [
+    OpenArchive,
+    CreateArchive,
+    AddFiles,
+    TestSelected,
+    TestAll,
+    CloseArchive,
+    ShowProperties,
+    SelectAll,
+    InvertSelection,
+    DeleteSelected,
+    RenameSelected,
+    ChecksumCrc32,
+    ChecksumMd5,
+    ChecksumSha1,
+    ChecksumSha256,
+    ShowSettings,
+    About,
+]);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MenuIntent {
@@ -25,140 +44,155 @@ pub enum MenuIntent {
 impl EventEmitter<MenuIntent> for Menu {}
 
 pub struct Menu {
-    is_open: bool,
-    has_selection: bool,
-    single_selection: bool,
+    bar: Entity<AppMenuBar>,
 }
 
 impl Menu {
-    pub fn new() -> Self {
-        Self { is_open: false, has_selection: false, single_selection: false }
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let bar = AppMenuBar::new(cx);
+
+        macro_rules! bind_action {
+            ($action:ty, $intent:expr) => {
+                cx.on_action(
+                    std::any::TypeId::of::<$action>(),
+                    window,
+                    move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
+                        cx.emit($intent);
+                    },
+                );
+            };
+        }
+
+        bind_action!(OpenArchive, MenuIntent::OpenArchive);
+        bind_action!(CreateArchive, MenuIntent::CreateArchive);
+        bind_action!(AddFiles, MenuIntent::AddFiles);
+        bind_action!(TestSelected, MenuIntent::TestSelected);
+        bind_action!(TestAll, MenuIntent::TestAll);
+        bind_action!(CloseArchive, MenuIntent::CloseArchive);
+        bind_action!(ShowProperties, MenuIntent::ShowProperties);
+        bind_action!(SelectAll, MenuIntent::SelectAll);
+        bind_action!(InvertSelection, MenuIntent::InvertSelection);
+        bind_action!(DeleteSelected, MenuIntent::DeleteSelected);
+        bind_action!(RenameSelected, MenuIntent::RenameSelected);
+        bind_action!(ShowSettings, MenuIntent::ShowSettings);
+        bind_action!(About, MenuIntent::About);
+
+        // Checksum actions — each maps to Checksum(intent) with its algorithm
+        cx.on_action(
+            std::any::TypeId::of::<ChecksumCrc32>(),
+            window,
+            move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
+                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Crc32));
+            },
+        );
+        cx.on_action(
+            std::any::TypeId::of::<ChecksumMd5>(),
+            window,
+            move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
+                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Md5));
+            },
+        );
+        cx.on_action(
+            std::any::TypeId::of::<ChecksumSha1>(),
+            window,
+            move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
+                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha1));
+            },
+        );
+        cx.on_action(
+            std::any::TypeId::of::<ChecksumSha256>(),
+            window,
+            move |_: &mut Self, _: &dyn std::any::Any, _: DispatchPhase, _: &mut Window, cx: &mut Context<Self>| {
+                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha256));
+            },
+        );
+
+        let menu = Self { bar };
+        menu.reload(cx);
+        menu
     }
 
-    pub fn set_state(&mut self, is_open: bool, has_selection: bool, single_selection: bool) {
-        self.is_open = is_open;
-        self.has_selection = has_selection;
-        self.single_selection = single_selection;
+    pub fn set_state(&mut self, is_open: bool, has_selection: bool, _single_selection: bool, cx: &mut Context<Self>) {
+        let menus = Self::build_menus(is_open, has_selection);
+        let owned: Vec<OwnedMenu> = menus.into_iter().map(|m| m.owned()).collect();
+        GlobalState::global_mut(cx).set_app_menus(owned);
+        self.bar.update(cx, |bar, cx| bar.reload(cx));
+    }
+
+    fn reload(&self, cx: &mut Context<Self>) {
+        let menus = Self::build_menus(false, false);
+        let owned: Vec<OwnedMenu> = menus.into_iter().map(|m| m.owned()).collect();
+        GlobalState::global_mut(cx).set_app_menus(owned);
+        self.bar.update(cx, |bar, cx| bar.reload(cx));
+    }
+
+    fn build_menus(is_open: bool, has_selection: bool) -> Vec<gpui::Menu> {
+        vec![
+            gpui::Menu {
+                name: "File".into(),
+                items: vec![
+                    MenuItem::action("Open Archive", OpenArchive),
+                    MenuItem::action("Create Archive", CreateArchive),
+                    MenuItem::action("Add Files", AddFiles).disabled(!is_open),
+                    MenuItem::Separator,
+                    MenuItem::submenu(gpui::Menu {
+                        name: "Test".into(),
+                        items: vec![
+                            MenuItem::action("Test Selected Files", TestSelected).disabled(!has_selection),
+                            MenuItem::action("Test Entire Archive", TestAll).disabled(!is_open),
+                        ],
+                        disabled: !is_open,
+                    }),
+                    MenuItem::Separator,
+                    MenuItem::action("Close Archive", CloseArchive).disabled(!is_open),
+                    MenuItem::Separator,
+                    MenuItem::action("Properties", ShowProperties).disabled(!is_open),
+                ],
+                disabled: false,
+            },
+            gpui::Menu {
+                name: "Edit".into(),
+                items: vec![
+                    MenuItem::action("Select All", SelectAll).disabled(!is_open),
+                    MenuItem::action("Invert Selection", InvertSelection).disabled(!is_open),
+                    MenuItem::Separator,
+                    MenuItem::action("Delete", DeleteSelected).disabled(!has_selection),
+                    MenuItem::action("Rename", RenameSelected).disabled(!has_selection),
+                ],
+                disabled: false,
+            },
+            gpui::Menu {
+                name: "Tools".into(),
+                items: vec![
+                    MenuItem::submenu(gpui::Menu {
+                        name: "Checksum".into(),
+                        items: vec![
+                            MenuItem::action("CRC32", ChecksumCrc32).disabled(!has_selection),
+                            MenuItem::action("MD5", ChecksumMd5).disabled(!has_selection),
+                            MenuItem::action("SHA1", ChecksumSha1).disabled(!has_selection),
+                            MenuItem::action("SHA256", ChecksumSha256).disabled(!has_selection),
+                        ],
+                        disabled: !has_selection,
+                    }),
+                    MenuItem::Separator,
+                    MenuItem::action("Settings", ShowSettings),
+                ],
+                disabled: false,
+            },
+            gpui::Menu {
+                name: "Help".into(),
+                items: vec![
+                    MenuItem::action("About bit7z Archiver", About),
+                ],
+                disabled: false,
+            },
+        ]
     }
 }
 
 impl Render for Menu {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let self_handle = cx.entity();
-
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         TitleBar::new()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .child(AppMenuBar::new(cx))
-            )
-            .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_0()
-                .child(Button::new("menu-file").label("File").ghost().dropdown_menu({
-                    let h = self_handle.clone();
-                    move |menu, _window, _cx| {
-                        menu.item(PopupMenuItem::new("Open Archive").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::OpenArchive)); }
-                        }))
-                        .item(PopupMenuItem::new("Create Archive").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::CreateArchive)); }
-                        }))
-                        .item(PopupMenuItem::new("Add Files").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::AddFiles)); }
-                        }))
-                        .separator()
-                        .submenu("Test Archive", _window, _cx, {
-                            let h = h.clone();
-                            move |sub, _w, _c| {
-                                sub.item(PopupMenuItem::new("Test Selected Files").on_click({
-                                    let h = h.clone();
-                                    move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::TestSelected)); }
-                                }))
-                                .item(PopupMenuItem::new("Test Entire Archive").on_click({
-                                    let h = h.clone();
-                                    move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::TestAll)); }
-                                }))
-                            }
-                        })
-                        .separator()
-                        .item(PopupMenuItem::new("Close Archive").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::CloseArchive)); }
-                        }))
-                        .separator()
-                        .item(PopupMenuItem::new("Properties").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::ShowProperties)); }
-                        }))
-                    }
-                }))
-                .child(Button::new("menu-edit").label("Edit").ghost().dropdown_menu({
-                    let h = self_handle.clone();
-                    move |menu, _window, _cx| {
-                        menu.item(PopupMenuItem::new("Select All").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::SelectAll)); }
-                        }))
-                        .item(PopupMenuItem::new("Invert Selection").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::InvertSelection)); }
-                        }))
-                        .separator()
-                        .item(PopupMenuItem::new("Delete").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::DeleteSelected)); }
-                        }))
-                        .item(PopupMenuItem::new("Rename").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::RenameSelected)); }
-                        }))
-                    }
-                }))
-                .child(Button::new("menu-tools").label("Tools").ghost().dropdown_menu({
-                    let h = self_handle.clone();
-                    move |menu, window, cx| {
-                        let h_sub = h.clone();
-                        menu.submenu("Checksum", window, cx, move |sub, _w, _c| {
-                            let h_crc32 = h_sub.clone();
-                            let h_md5 = h_sub.clone();
-                            let h_sha1 = h_sub.clone();
-                            let h_sha256 = h_sub.clone();
-                            sub.item(PopupMenuItem::new("CRC32").on_click({
-                                move |_, _, cx| { h_crc32.update(cx, |_, cx| cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Crc32))); }
-                            }))
-                            .item(PopupMenuItem::new("MD5").on_click({
-                                move |_, _, cx| { h_md5.update(cx, |_, cx| cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Md5))); }
-                            }))
-                            .item(PopupMenuItem::new("SHA1").on_click({
-                                move |_, _, cx| { h_sha1.update(cx, |_, cx| cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha1))); }
-                            }))
-                            .item(PopupMenuItem::new("SHA256").on_click({
-                                move |_, _, cx| { h_sha256.update(cx, |_, cx| cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha256))); }
-                            }))
-                        })
-                        .separator()
-                        .item(PopupMenuItem::new("Settings").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::ShowSettings)); }
-                        }))
-                    }
-                }))
-                .child(Button::new("menu-help").label("Help").ghost().dropdown_menu({
-                    let h = self_handle.clone();
-                    move |menu, _window, _cx| {
-                        menu.item(PopupMenuItem::new("About bit7z Archiver").on_click({
-                            let h = h.clone();
-                            move |_, _, cx| { h.update(cx, |_, cx| cx.emit(MenuIntent::About)); }
-                        }))
-                    }
-                })),
-        )
+            .child(div().flex().items_center().child(self.bar.clone()))
     }
 }

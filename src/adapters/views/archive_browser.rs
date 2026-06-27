@@ -1,11 +1,11 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::button::Button;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::sidebar::{
     Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem,
-    SidebarToggleButton,
 };
-use gpui_component::{h_flex, Icon, IconName};
+use gpui_component::{h_flex, v_flex, IconName, Sizable};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,12 +34,20 @@ impl ArchiveBrowser {
             move |this: &mut Self, _, ev: &InputEvent, _: &mut Window, cx| match ev {
                 InputEvent::Change => {
                     let value = this.input_state.read(cx).value();
-                    h.update(cx, |_, cx| cx.emit(BrowserIntent::SetFilter(value.to_string())));
+                    h.update(cx, |_, cx| {
+                        cx.emit(BrowserIntent::SetFilter(value.to_string()))
+                    });
                 }
                 _ => {}
             }
         })];
-        Self { subdirs: vec![], recent_files: vec![], input_state, collapsed: false, _subscriptions }
+        Self {
+            subdirs: vec![],
+            recent_files: vec![],
+            input_state,
+            collapsed: false,
+            _subscriptions,
+        }
     }
 
     pub fn set_state(&mut self, subdirs: Vec<String>, recent_files: Vec<String>) {
@@ -65,58 +73,67 @@ impl Render for ArchiveBrowser {
         let sidebar = Sidebar::new("archive-browser")
             .collapsible(true)
             .collapsed(collapsed)
+            .border_0()
             .header(
-                SidebarHeader::new()
+                v_flex()
+                    .gap_3()
                     .child(
-                        h_flex()
-                            .child(Icon::new(IconName::FolderOpen))
-                            .when(!collapsed, |this| this.child("File Explorer"))
-                            .child(SidebarToggleButton::new()
-                                .collapsed(collapsed)
-                                .on_click({
-                                    let this = self_handle.clone();
-                                    move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                        this.update(cx, |this, cx| this.toggle_collapsed(cx));
-                                    }
-                                }))
+                        SidebarHeader::new().child(
+                            h_flex()
+                                .child(
+                                    Button::new("collapse")
+                                        .icon(IconName::FolderOpen)
+                                        .small()
+                                        .on_click({
+                                            let this = self_handle.clone();
+                                            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                                this.update(cx, |this, cx| {
+                                                    this.toggle_collapsed(cx)
+                                                });
+                                            }
+                                        }),
+                                )
+                                .when(!collapsed, |this| this.gap_2().child("File Explorer")),
+                        ),
                     )
+                    .child(Input::new(&self.input_state).rounded_2xl().bordered(false))
+                ,
             )
             .child(
-                SidebarGroup::new("Folders")
-                    .child(
-                        SidebarMenu::new()
-                            .children(self.subdirs.iter().cloned().map(|name| {
-                                let h = self_handle.clone();
-                                SidebarMenuItem::new(name.clone())
-                                    .icon(IconName::Folder)
-                                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                        h.update(cx, |_, cx| cx.emit(BrowserIntent::NavigateInto(name.clone())));
-                                    })
-                            }))
-                    )
+                SidebarGroup::new("Folders").child(SidebarMenu::new().children(
+                    self.subdirs.iter().cloned().map(|name| {
+                        let h = self_handle.clone();
+                        SidebarMenuItem::new(name.clone())
+                            .icon(IconName::Folder)
+                            .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                h.update(cx, |_, cx| {
+                                    cx.emit(BrowserIntent::NavigateInto(name.clone()))
+                                });
+                            })
+                    }),
+                )),
             )
-            .when(!self.recent_files.is_empty(), |sidebar| sidebar.child(
-                SidebarGroup::new("Recent Files")
-                    .child(
-                        SidebarMenu::new()
-                            .children(self.recent_files.iter().cloned().map(|path| {
-                                let h = self_handle.clone();
-                                let file_name = Path::new(&path)
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| path.clone());
-                                SidebarMenuItem::new(file_name)
-                                    .icon(IconName::File)
-                                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                        h.update(cx, |_, cx| cx.emit(BrowserIntent::OpenRecentFile(path.clone())));
-                                    })
-                            }))
-                    )
-            ))
-            ;
+            .when(!self.recent_files.is_empty(), |sidebar| {
+                sidebar.child(
+                    SidebarGroup::new("Recent Files").child(SidebarMenu::new().children(
+                        self.recent_files.iter().cloned().map(|path| {
+                            let h = self_handle.clone();
+                            let file_name = Path::new(&path)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| path.clone());
+                            SidebarMenuItem::new(file_name)
+                                .icon(IconName::File)
+                                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                    h.update(cx, |_, cx| {
+                                        cx.emit(BrowserIntent::OpenRecentFile(path.clone()))
+                                    });
+                                })
+                        }),
+                    )),
+                )
+            });
 
-        div().flex().flex_col().size_full()
-            .child(Input::new(&self.input_state).px_1().py_1())
-            .child(sidebar.flex_1())
+        v_flex().w(relative(1.)).child(sidebar.px_1())
     }
 }

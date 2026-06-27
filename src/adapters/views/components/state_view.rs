@@ -1,11 +1,20 @@
 use crate::theme::Theme;
 use gpui::*;
+use gpui_component::{h_flex, Sizable};
+use gpui_component::spinner::Spinner;
 
 /// Reusable loading state.
 pub fn loading_view(cx: &App) -> impl IntoElement {
     let theme = cx.global::<Theme>();
-    div().p_8().text_center().text_color(theme.muted)
-        .child("Loading...")
+    h_flex()
+        .items_center()
+        .gap_2()
+        .child(
+            Spinner::new()
+                .large()
+                .color(theme.primary)
+        )
+        .child("Loading ...")
 }
 
 /// Reusable empty state with a message.

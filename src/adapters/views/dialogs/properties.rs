@@ -6,6 +6,8 @@ use gpui_component::description_list::{DescriptionItem, DescriptionList};
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::Sizable;
 use gpui_component::WindowExt;
+use humansize::{format_size, BINARY};
+
 
 pub struct PropertiesDialog {
     mode: PropertiesMode,
@@ -20,17 +22,6 @@ pub enum PropertiesMode {
     Entries(Vec<ArchiveEntry>),
 }
 
-fn human_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else if bytes < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
-}
 
 fn bool_yn(v: bool) -> &'static str {
     if v { "Yes" } else { "No" }
@@ -122,8 +113,8 @@ fn render_archive_content(path: &str, props: Option<&ArchiveProperties>, theme: 
                         .children([
                             DescriptionItem::new("Type").value(type_label),
                             DescriptionItem::new("Location").value(path.to_string()),
-                            DescriptionItem::new("Size").value(human_size(props.total_size)),
-                            DescriptionItem::new("Packed").value(human_size(props.packed_size)),
+                            DescriptionItem::new("Size").value(format!("{}({})",props.total_size,format_size(props.total_size,BINARY))),
+                            DescriptionItem::new("Packed").value(format!("{}({})",props.packed_size,format_size(props.packed_size,BINARY))),
                             DescriptionItem::new("Ratio")
                                 .value(if props.total_size > 0 {
                                     format!("{:.0}%", (1.0 - props.packed_size as f64 / props.total_size as f64) * 100.0)
@@ -132,7 +123,7 @@ fn render_archive_content(path: &str, props: Option<&ArchiveProperties>, theme: 
                                 }),
                             DescriptionItem::new("Files").value(format!("{}", props.files_count)),
                             DescriptionItem::new("Folders").value(format!("{}", props.folders_count)),
-                            DescriptionItem::new("Headers size").value(human_size(props.headers_size)),
+                            DescriptionItem::new("Headers size").value(format!("{}({})",props.headers_size,format_size(props.headers_size,BINARY))),
                             DescriptionItem::new("Volumes").value(format!("{}", props.volumes_count)),
                         ]),
                 )
@@ -148,7 +139,7 @@ fn render_archive_content(path: &str, props: Option<&ArchiveProperties>, theme: 
                         DescriptionItem::new("Locked").value(bool_yn(props.locked)),
                     ];
                     if let Some(sz) = props.dictionary_size {
-                        items.push(DescriptionItem::new("Dictionary").value(human_size(sz)));
+                        items.push(DescriptionItem::new("Dictionary").value(format!("{}({})",sz,format_size(sz,BINARY))));
                     }
                     DescriptionList::horizontal().bordered(false).small().children(items)
                 })
@@ -163,8 +154,8 @@ fn render_archive_content(path: &str, props: Option<&ArchiveProperties>, theme: 
 
 fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
     let mut general_items = vec![
-        DescriptionItem::new("Size").value(human_size(entry.size)),
-        DescriptionItem::new("Packed").value(human_size(entry.compressed_size)),
+        DescriptionItem::new("Size").value(format!("{}({})",entry.size,format_size(entry.size,BINARY))),
+        DescriptionItem::new("Packed").value(format!("{}({})",entry.compressed_size,format_size(entry.compressed_size,BINARY))),
         DescriptionItem::new("Ratio")
             .value(format!("{:.0}%", entry.compression_ratio() * 100.0)),
     ];
@@ -186,6 +177,7 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
         .child(div().font_weight(FontWeight::MEDIUM).child("General"))
         .child(
             DescriptionList::vertical()
+                .columns(1)
                 .children([
                     DescriptionItem::new("Name").value(entry.name.clone()),
                     DescriptionItem::new("Path").value(entry.path.clone()),
@@ -196,7 +188,8 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
         )
         .child(
             DescriptionList::vertical()
-                .bordered(false)
+                .columns(2)
+                // .bordered(false)
                 .small()
                 .children(general_items),
         );
@@ -204,7 +197,7 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
     if has_time {
         let mut items = vec![];
         if let Some(ts) = entry.modified {
-            items.push(DescriptionItem::new("Modified").value(ts.to_string()));
+            items.push(DescriptionItem::new("Modified").value(ts.naive_local().to_string()));
         }
         if let Some(ts) = entry.created {
             items.push(DescriptionItem::new("Created").value(ts.to_string()));
@@ -216,7 +209,7 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
             .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Time"))
             .child(
                 DescriptionList::vertical()
-                    .bordered(false)
+                    // .bordered(false)
                     .small()
                     .children(items),
             );
@@ -245,6 +238,7 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
                 DescriptionList::horizontal()
                     .bordered(false)
                     .small()
+                    .columns(1)
                     .children(items),
             );
     }
@@ -254,7 +248,7 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
                 .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Security"))
                 .child(
                     DescriptionList::horizontal()
-                        .bordered(false)
+                        // .bordered(false)
                         .small()
                         .child(DescriptionItem::new("Encrypted").value("Yes")),
                 );
@@ -270,7 +264,7 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
                     .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Links"))
                     .child(
                         DescriptionList::horizontal()
-                            .bordered(false)
+                            // .bordered(false)
                             .small()
                             .children(sec_items),
                     );
@@ -292,7 +286,7 @@ fn render_single_entry(entry: &ArchiveEntry) -> impl IntoElement {
             .child(div().font_weight(FontWeight::MEDIUM).pt_2().child("Technical"))
             .child(
                 DescriptionList::vertical()
-                    .bordered(false)
+                    // .bordered(false)
                     .small()
                     .children(items),
             );
@@ -331,11 +325,11 @@ impl Render for PropertiesDialog {
                     .child(div().font_weight(FontWeight::MEDIUM).child("Totals"))
                     .child(
                         DescriptionList::horizontal()
-                            .bordered(false)
+                            // .bordered(false)
                             .small()
                             .children([
-                                DescriptionItem::new("Size").value(human_size(total_size)),
-                                DescriptionItem::new("Packed").value(human_size(total_packed)),
+                                DescriptionItem::new("Size").value(format_size(total_size,BINARY)),
+                                DescriptionItem::new("Packed").value(format_size(total_packed,BINARY)),
                                 DescriptionItem::new("Files").value(format!("{}", entry_count)),
                             ]),
                     )
@@ -381,8 +375,8 @@ impl Render for PropertiesDialog {
                                 .flex_row()
                                 .gap_2()
                                 .child(div().w(px(200.)).text_xs().overflow_hidden().child(e.path.clone()))
-                                .child(div().w(px(80.)).text_xs().child(human_size(e.size)))
-                                .child(div().w(px(80.)).text_xs().child(human_size(e.compressed_size))),
+                                .child(div().w(px(80.)).text_xs().child(format_size(e.size,BINARY)))
+                                .child(div().w(px(80.)).text_xs().child(format_size(e.compressed_size,BINARY))),
                         );
                     }
                 }

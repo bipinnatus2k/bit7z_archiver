@@ -1,6 +1,6 @@
 use gpui::*;
 use gpui_component::button::Button;
-use gpui_component::Disableable;
+use gpui_component::{Disableable, IconName};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToolbarIntent {
@@ -43,42 +43,42 @@ impl Render for Toolbar {
 
         let self_handle = cx.entity().clone();
 
-        let open_btn = Button::new("open").on_click({
+        let open_btn = Button::new("open").icon(IconName::FolderOpen).on_click({
             let h = self_handle.clone();
             move |_, _, cx| { h.update(cx, |_, cx| cx.emit(ToolbarIntent::OpenArchive)); }
         });
         let open_btn = if show_labels { open_btn.label("Open") } else { open_btn };
         row = row.child(open_btn);
 
-        let create_btn = Button::new("create").on_click({
+        let create_btn = Button::new("create").icon(IconName::Plus).on_click({
             let h = self_handle.clone();
             move |_, _, cx| { h.update(cx, |_, cx| cx.emit(ToolbarIntent::CreateArchive)); }
         });
         let create_btn = if show_labels { create_btn.label("Create") } else { create_btn };
         row = row.child(create_btn);
 
-        let add_btn = Button::new("add").disabled(!self.is_open).on_click({
+        let add_btn = Button::new("add").icon(IconName::Plus).disabled(!self.is_open).on_click({
             let h = self_handle.clone();
             move |_, _, cx| { h.update(cx, |_, cx| cx.emit(ToolbarIntent::AddFiles)); }
         });
         let add_btn = if show_labels { add_btn.label("Add") } else { add_btn };
         row = row.child(add_btn);
 
-        let extract_btn = Button::new("extract").disabled(!self.is_ready || !self.has_selection).on_click({
+        let extract_btn = Button::new("extract").icon(IconName::ChevronDown).disabled(!self.is_ready || !self.has_selection).on_click({
             let h = self_handle.clone();
             move |_, _, cx| { h.update(cx, |_, cx| cx.emit(ToolbarIntent::ExtractSelected)); }
         });
         let extract_btn = if show_labels { extract_btn.label("Extract") } else { extract_btn };
         row = row.child(extract_btn);
 
-        let test_btn = Button::new("test").disabled(!self.is_open).on_click({
+        let test_btn = Button::new("test").icon(IconName::PanelRightClose).disabled(!self.is_open).on_click({
             let h = self_handle.clone();
             move |_, _, cx| { h.update(cx, |_, cx| cx.emit(ToolbarIntent::TestArchive)); }
         });
         let test_btn = if show_labels { test_btn.label("Test") } else { test_btn };
         row = row.child(test_btn);
 
-        let close_btn = Button::new("close").disabled(!self.is_open).on_click({
+        let close_btn = Button::new("close").icon(IconName::Close).disabled(!self.is_open).on_click({
             let h = self_handle.clone();
             move |_, _, cx| { h.update(cx, |_, cx| cx.emit(ToolbarIntent::CloseArchive)); }
         });
@@ -87,7 +87,7 @@ impl Render for Toolbar {
 
         row.child(div().flex_1())
             .child(
-                Button::new("settings").on_click(move |_, _, cx| {
+                Button::new("settings").icon(IconName::Settings).on_click(move |_, _, cx| {
                     self_handle.update(cx, |_, cx| cx.emit(ToolbarIntent::ShowSettings));
                 })
             )
