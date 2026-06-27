@@ -547,6 +547,8 @@ mod archive_properties {
             has_recovery_record: false,
             locked: true,
             dictionary_size: Some(65536),
+            headers_size: 1200,
+            volumes_count: 1,
         };
         assert_eq!(props.items_count, 42);
         assert_eq!(props.folders_count, 5);

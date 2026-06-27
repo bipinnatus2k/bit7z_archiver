@@ -93,13 +93,13 @@ impl PasswordDialog {
 }
 
 impl Render for PasswordDialog {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.global::<Theme>();
         let has_error = self.error.is_some();
         let err = self.error.clone();
 
         div().flex().flex_col().gap_3().p_4()
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, _cx| {
                 if event.keystroke.key == "enter" {
                     this.submit_and_close(window);
                 }
