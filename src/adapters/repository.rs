@@ -157,14 +157,35 @@ impl ArchiveRepository for Bit7zRepository {
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal(format!("[open] path is not valid UTF-8: {}", path.display())))?;
 
-        let is_header_encrypted = lib.is_header_encrypted(path_str);
+        let is_rar = path_str.to_lowercase().ends_with(".rar");
 
-        if is_header_encrypted && password.is_none() {
-            return Err(ArchiveError::EncryptedArchiveRequiresPassword);
-        }
-
-        let reader = bit7z::ArchiveReader::open(&lib, path_str, password)
-            .map_err(|e| ArchiveError::Internal(format!("[open] failed to open archive '{}': {}", path_str, e)))?;
+        let (is_header_encrypted, reader) = if is_rar {
+            // RAR doesn't have header encryption as a separate concept.
+            // The static is_header_encrypted check opens a temp BitArchiveReader
+            // without a password, which hangs on encrypted RARs (7-Zip tries to
+            // show a password dialog via COM). Skip it entirely.
+            match bit7z::ArchiveReader::open(&lib, path_str, password) {
+                Ok(r) => (false, r),
+                Err(_) if password.is_none() => {
+                    return Err(ArchiveError::EncryptedArchiveRequiresPassword);
+                }
+                Err(e) => {
+                    return Err(ArchiveError::Internal(
+                        format!("[open] failed to open RAR archive '{}': {}", path_str, e),
+                    ));
+                }
+            }
+        } else {
+            let enc = lib.is_header_encrypted(path_str);
+            if enc && password.is_none() {
+                return Err(ArchiveError::EncryptedArchiveRequiresPassword);
+            }
+            let r = bit7z::ArchiveReader::open(&lib, path_str, password)
+                .map_err(|e| ArchiveError::Internal(
+                    format!("[open] failed to open archive '{}': {}", path_str, e),
+                ))?;
+            (enc, r)
+        };
 
         let has_encrypted_items = if is_header_encrypted {
             true

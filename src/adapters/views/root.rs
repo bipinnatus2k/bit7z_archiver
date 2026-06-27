@@ -542,22 +542,31 @@ impl RootView {
         let handle = self.state.archive.clone();
         let path = self.state.current_path.clone();
         let controller = self.controller.repo();
-        let _entry_list = self.entry_list.clone();
 
         cx.spawn(async move |this, cx| {
             if let Some(ref h) = handle {
                 match controller.list_directory(h, &path) {
                     Ok(entries) => {
-                        this.update(cx, |this, cx| {
+                        let _ = this.update(cx, |this, cx| {
                             this.state.directory_cache.insert(path.clone(), entries);
                             this.state.reapply_filter_and_sort();
                             this.state.status = ViewStatus::Ready;
                             this.sync_children(cx);
                             cx.notify();
-                        }).expect("");
+                        });
                     }
-                    Err(_) => {}
+                    Err(e) => {
+                        let _ = this.update(cx, |this, cx| {
+                            this.state.status = ViewStatus::Error(e.to_string());
+                            cx.notify();
+                        });
+                    }
                 }
+            } else {
+                let _ = this.update(cx, |this, cx| {
+                    this.state.status = ViewStatus::Ready;
+                    cx.notify();
+                });
             }
         }).detach();
     }
