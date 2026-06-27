@@ -1,7 +1,7 @@
 use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus};
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
-use crate::adapters::views::menu::{Menu, MenuIntent};
+use crate::adapters::views::menu::{self, Menu};
 use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
@@ -109,122 +109,6 @@ impl RootView {
                         ToolbarIntent::ShowSettings => {
                             cx.spawn(async move |_, cx| {
                                 crate::adapters::views::dialogs::settings::SettingsDialog::open(cx);
-                            }).detach();
-                        }
-                    }
-                }
-            }).detach();
-
-            // Menu intent subscription
-            cx.subscribe::<Menu, MenuIntent>(&menu, {
-                move |this: &mut RootView, _emitter, intent: &MenuIntent, cx| {
-                    match intent {
-                        MenuIntent::OpenArchive => {
-                            if let Some(path) = crate::adapters::platform::pick_archive_file() {
-                                this.handle_open_archive(&path, None, cx);
-                            }
-                        }
-                        MenuIntent::CreateArchive => {
-                            cx.spawn(async move |_, cx| {
-                                crate::adapters::views::dialogs::create::CreateArchiveDialog::open(cx, vec![]);
-                            }).detach();
-                        }
-                        MenuIntent::AddFiles => {
-                            if let Some(ref handle) = this.state.archive {
-                                let repo = this.controller.repo();
-                                let h = handle.clone();
-                                cx.spawn(async move |_, cx| {
-                                    crate::adapters::views::dialogs::add_files::AddFilesDialog::open(cx, crate::domain::archive::ArchiveFormat::SevenZip, Some(h), Some(repo), false);
-                                }).detach();
-                            }
-                        }
-                        MenuIntent::TestSelected => {
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                            let handle = this.state.archive.clone();
-                            let repo = this.controller.repo();
-                            cx.spawn(async move |_, cx| {
-                                if let Some(h) = handle {
-                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, Some(indices), repo);
-                                }
-                            }).detach();
-                        }
-                        MenuIntent::TestAll => {
-                            let handle = this.state.archive.clone();
-                            let repo = this.controller.repo();
-                            cx.spawn(async move |_, cx| {
-                                if let Some(h) = handle {
-                                    crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, None, repo);
-                                }
-                            }).detach();
-                        }
-                        MenuIntent::CloseArchive => {
-                            if let Some(h) = this.state.archive.take() { this.controller.close_archive(h); }
-                            this.state = ArchiveState::new();
-                            this.sync_children(cx);
-                        }
-                        MenuIntent::ShowProperties => {
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                            let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
-                                .get(&this.state.current_path)
-                                .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
-                                .unwrap_or_default();
-                            if !entries.is_empty() {
-                                cx.spawn(async move |_, cx| {
-                                    crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
-                                }).detach();
-                            } else if let Some(ref handle) = this.state.archive {
-                                let path_str = handle.path.as_ref()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .unwrap_or_default();
-                                let repo = this.controller.repo();
-                                let h = handle.clone();
-                                cx.spawn(async move |_, cx| {
-                                    if let Ok(props) = repo.get_properties(&h) {
-                                        crate::adapters::views::dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
-                                    }
-                                }).detach();
-                            }
-                        }
-                        MenuIntent::SelectAll => {
-                            this.state.select_all();
-                            this.entry_list.update(cx, |c, cx| c.select_all_entries(cx));
-                            this.sync_children(cx);
-                        }
-                        MenuIntent::InvertSelection => {
-                            this.state.invert_selection();
-                            this.sync_children(cx);
-                        }
-                        MenuIntent::DeleteSelected => {
-                            if !this.state.selection.is_empty() {
-                                if let Some(ref h) = this.state.archive {
-                                    let repo = this.controller.repo(); let handle = h.clone(); let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                                    cx.spawn(async move |_, cx| { crate::adapters::views::dialogs::delete::DeleteDialog::open(cx, indices, handle, repo); }).detach();
-                                }
-                            }
-                        }
-                        MenuIntent::RenameSelected => {
-                            if let Some(idx) = this.state.first_selected_index() {
-                                cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
-                            }
-                        }
-                        MenuIntent::Checksum(_algo) => {
-                            let handle = this.state.archive.clone();
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                            let repo = this.controller.repo();
-                            cx.spawn(async move |_, cx| {
-                                if let Some(h) = handle {
-                                    crate::adapters::views::dialogs::checksum::ChecksumDialog::open_with_entries(cx, h, indices, repo);
-                                }
-                            }).detach();
-                        }
-                        MenuIntent::ShowSettings => {
-                            cx.spawn(async move |_, cx| {
-                                crate::adapters::views::dialogs::settings::SettingsDialog::open(cx);
-                            }).detach();
-                        }
-                        MenuIntent::About => {
-                            cx.spawn(async move |_, cx| {
-                                crate::adapters::views::dialogs::about::AboutDialog::open(cx);
                             }).detach();
                         }
                     }
@@ -573,6 +457,17 @@ impl RootView {
             }
         }).detach();
     }
+
+    fn menu_checksum(&self, cx: &mut Context<Self>) {
+        let handle = self.state.archive.clone();
+        let indices: Vec<u32> = self.state.selection.iter().copied().collect();
+        let repo = self.controller.repo();
+        cx.spawn(async move |_, cx| {
+            if let Some(h) = handle {
+                crate::adapters::views::dialogs::checksum::ChecksumDialog::open_with_entries(cx, h, indices, repo);
+            }
+        }).detach();
+    }
 }
 
 impl Render for RootView {
@@ -742,6 +637,116 @@ impl Render for RootView {
                     "Escape" => {}
                     _ => {}
                 }
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::OpenArchive, _window, cx| {
+                if let Some(path) = crate::adapters::platform::pick_archive_file() {
+                    this.handle_open_archive(&path, None, cx);
+                }
+            }))
+            .on_action(cx.listener(|_: &mut RootView, _: &menu::CreateArchive, _window, cx| {
+                cx.spawn(async move |_, cx| {
+                    crate::adapters::views::dialogs::create::CreateArchiveDialog::open(cx, vec![]);
+                }).detach();
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::AddFiles, _window, cx| {
+                if let Some(ref handle) = this.state.archive {
+                    let repo = this.controller.repo();
+                    let h = handle.clone();
+                    cx.spawn(async move |_, cx| {
+                        crate::adapters::views::dialogs::add_files::AddFilesDialog::open(cx, crate::domain::archive::ArchiveFormat::SevenZip, Some(h), Some(repo), false);
+                    }).detach();
+                }
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::TestSelected, _window, cx| {
+                let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                let handle = this.state.archive.clone();
+                let repo = this.controller.repo();
+                cx.spawn(async move |_, cx| {
+                    if let Some(h) = handle {
+                        crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, Some(indices), repo);
+                    }
+                }).detach();
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::TestAll, _window, cx| {
+                let handle = this.state.archive.clone();
+                let repo = this.controller.repo();
+                cx.spawn(async move |_, cx| {
+                    if let Some(h) = handle {
+                        crate::adapters::views::dialogs::test::TestDialog::open_with_entries(cx, h, None, repo);
+                    }
+                }).detach();
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::CloseArchive, _window, cx| {
+                if let Some(h) = this.state.archive.take() { this.controller.close_archive(h); }
+                this.state = ArchiveState::new();
+                this.sync_children(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::ShowProperties, _window, cx| {
+                let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
+                    .get(&this.state.current_path)
+                    .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
+                    .unwrap_or_default();
+                if !entries.is_empty() {
+                    cx.spawn(async move |_, cx| {
+                        crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
+                    }).detach();
+                } else if let Some(ref handle) = this.state.archive {
+                    let path_str = handle.path.as_ref()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let repo = this.controller.repo();
+                    let h = handle.clone();
+                    cx.spawn(async move |_, cx| {
+                        if let Ok(props) = repo.get_properties(&h) {
+                            crate::adapters::views::dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
+                        }
+                    }).detach();
+                }
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::SelectAll, _window, cx| {
+                this.state.select_all();
+                this.entry_list.update(cx, |c, cx| c.select_all_entries(cx));
+                this.sync_children(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::InvertSelection, _window, cx| {
+                this.state.invert_selection();
+                this.sync_children(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::DeleteSelected, _window, cx| {
+                if !this.state.selection.is_empty() {
+                    if let Some(ref h) = this.state.archive {
+                        let repo = this.controller.repo(); let handle = h.clone(); let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                        cx.spawn(async move |_, cx| { crate::adapters::views::dialogs::delete::DeleteDialog::open(cx, indices, handle, repo); }).detach();
+                    }
+                }
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::RenameSelected, _window, cx| {
+                if let Some(idx) = this.state.first_selected_index() {
+                    cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
+                }
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::ChecksumCrc32, _window, cx| {
+                this.menu_checksum(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::ChecksumMd5, _window, cx| {
+                this.menu_checksum(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::ChecksumSha1, _window, cx| {
+                this.menu_checksum(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::ChecksumSha256, _window, cx| {
+                this.menu_checksum(cx);
+            }))
+            .on_action(cx.listener(|_: &mut RootView, _: &menu::ShowSettings, _window, cx| {
+                cx.spawn(async move |_, cx| {
+                    crate::adapters::views::dialogs::settings::SettingsDialog::open(cx);
+                }).detach();
+            }))
+            .on_action(cx.listener(|_: &mut RootView, _: &menu::About, _window, cx| {
+                cx.spawn(async move |_, cx| {
+                    crate::adapters::views::dialogs::about::AboutDialog::open(cx);
+                }).detach();
             }))
             .child(self.menu.clone())
             .child(self.toolbar.clone())

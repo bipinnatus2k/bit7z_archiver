@@ -1,4 +1,3 @@
-use crate::adapters::events::ChecksumAlgorithm;
 use gpui::*;
 use gpui_component::menu::AppMenuBar;
 use gpui_component::{GlobalState, TitleBar};
@@ -22,26 +21,6 @@ gpui::actions!(menu_actions, [
     ShowSettings,
     About,
 ]);
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MenuIntent {
-    OpenArchive,
-    CreateArchive,
-    AddFiles,
-    TestSelected,
-    TestAll,
-    CloseArchive,
-    ShowProperties,
-    SelectAll,
-    InvertSelection,
-    DeleteSelected,
-    RenameSelected,
-    Checksum(ChecksumAlgorithm),
-    ShowSettings,
-    About,
-}
-
-impl EventEmitter<MenuIntent> for Menu {}
 
 pub struct Menu {
     bar: Entity<AppMenuBar>,
@@ -134,60 +113,8 @@ impl Menu {
 }
 
 impl Render for Menu {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .on_action(cx.listener(|_: &mut Menu, _: &OpenArchive, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::OpenArchive);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &CreateArchive, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::CreateArchive);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &AddFiles, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::AddFiles);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &TestSelected, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::TestSelected);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &TestAll, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::TestAll);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &CloseArchive, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::CloseArchive);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &ShowProperties, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::ShowProperties);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &SelectAll, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::SelectAll);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &InvertSelection, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::InvertSelection);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &DeleteSelected, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::DeleteSelected);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &RenameSelected, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::RenameSelected);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &ChecksumCrc32, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Crc32));
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &ChecksumMd5, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Md5));
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &ChecksumSha1, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha1));
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &ChecksumSha256, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::Checksum(ChecksumAlgorithm::Sha256));
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &ShowSettings, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::ShowSettings);
-            }))
-            .on_action(cx.listener(|_: &mut Menu, _: &About, _: &mut Window, cx: &mut Context<Menu>| {
-                cx.emit(MenuIntent::About);
-            }))
-            .child(TitleBar::new()
-                .child(div().flex().items_center().child(self.bar.clone())))
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        TitleBar::new()
+            .child(div().flex().items_center().child(self.bar.clone()))
     }
 }
