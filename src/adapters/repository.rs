@@ -157,25 +157,13 @@ impl ArchiveRepository for Bit7zRepository {
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal(format!("[open] path is not valid UTF-8: {}", path.display())))?;
 
-        let is_rar = path_str.to_lowercase().ends_with(".rar");
+        // RAR format is not supported by this version of bit7z/7-Zip —
+        // BitArchiveReader hangs on open regardless of encryption.
+        if path_str.to_lowercase().ends_with(".rar") {
+            return Err(ArchiveError::UnsupportedOperation);
+        }
 
-        let (is_header_encrypted, reader) = if is_rar {
-            // RAR doesn't have header encryption as a separate concept.
-            // The static is_header_encrypted check opens a temp BitArchiveReader
-            // without a password, which hangs on encrypted RARs (7-Zip tries to
-            // show a password dialog via COM). Skip it entirely.
-            match bit7z::ArchiveReader::open(&lib, path_str, password) {
-                Ok(r) => (false, r),
-                Err(_) if password.is_none() => {
-                    return Err(ArchiveError::EncryptedArchiveRequiresPassword);
-                }
-                Err(e) => {
-                    return Err(ArchiveError::Internal(
-                        format!("[open] failed to open RAR archive '{}': {}", path_str, e),
-                    ));
-                }
-            }
-        } else {
+        let (is_header_encrypted, reader) = {
             let enc = lib.is_header_encrypted(path_str);
             if enc && password.is_none() {
                 return Err(ArchiveError::EncryptedArchiveRequiresPassword);
