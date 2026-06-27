@@ -59,6 +59,21 @@ inline void* bit7z_reader_open(void* lib_ptr, const char* path, const char* pass
             ext = p.substr(dot);
             for (auto& c : ext) c = (char)tolower(c);
         }
+        auto try_format = [&](const bit7z::BitInFormat& fmt) -> bit7z::BitArchiveReader* {
+            try {
+                return new bit7z::BitArchiveReader(lib,
+                    bit7z::tstring(path ? path : ""), fmt,
+                    bit7z::tstring(password ? password : ""));
+            } catch (...) { return nullptr; }
+        };
+
+        if (ext == ".rar") {
+            // RAR5 archives need BitFormat::Rar5; fallback to BitFormat::Rar.
+            if (auto* r = try_format(bit7z::BitFormat::Rar5)) return r;
+            if (auto* r = try_format(bit7z::BitFormat::Rar))  return r;
+            return nullptr;
+        }
+
         const bit7z::BitInFormat& fmt =
             (ext == ".zip")  ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Zip) :
             (ext == ".tar")  ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Tar) :
@@ -66,12 +81,9 @@ inline void* bit7z_reader_open(void* lib_ptr, const char* path, const char* pass
             (ext == ".bz2" || ext == ".tbz") ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::BZip2) :
             (ext == ".xz"  || ext == ".txz") ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Xz) :
             (ext == ".wim") ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Wim) :
-            (ext == ".rar") ? static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::Rar) :
             static_cast<const bit7z::BitInFormat&>(bit7z::BitFormat::SevenZip);
-        auto* reader = new bit7z::BitArchiveReader(lib,
-            bit7z::tstring(path ? path : ""), fmt,
-            bit7z::tstring(password ? password : ""));
-        return static_cast<void*>(reader);
+        if (auto* r = try_format(fmt)) return r;
+        return nullptr;
     } catch (...) { return nullptr; }
 }
 inline void bit7z_reader_close(void* reader_ptr) {
