@@ -1,4 +1,3 @@
-use std::path;
 use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus};
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
@@ -172,6 +171,17 @@ impl RootView {
                             if !entries.is_empty() {
                                 cx.spawn(async move |_, cx| {
                                     crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
+                                }).detach();
+                            } else if let Some(ref handle) = this.state.archive {
+                                let path_str = handle.path.as_ref()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                let repo = this.controller.repo();
+                                let h = handle.clone();
+                                cx.spawn(async move |_, cx| {
+                                    if let Ok(props) = repo.get_properties(&h) {
+                                        crate::adapters::views::dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
+                                    }
                                 }).detach();
                             }
                         }
@@ -377,6 +387,17 @@ impl RootView {
                                 cx.spawn(async move |_, cx| {
                                     crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
                                 }).detach();
+                            } else if let Some(ref handle) = this.state.archive {
+                                let path_str = handle.path.as_ref()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                let repo = this.controller.repo();
+                                let h = handle.clone();
+                                cx.spawn(async move |_, cx| {
+                                    if let Ok(props) = repo.get_properties(&h) {
+                                        crate::adapters::views::dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
+                                    }
+                                }).detach();
                             }
                         }
                     }
@@ -414,7 +435,7 @@ impl RootView {
                                 log::info!("IPC open: {} (password: {:?})", path, password.is_some());
                                 let p = std::path::PathBuf::from(&path);
                                 let pw = password.clone();
-                                this.update(cx, |this, cx| {
+                                let _ = this.update(cx, |this, cx| {
                                     this.handle_open_archive(&p, pw, cx);
                                 });
                             }
@@ -448,7 +469,7 @@ impl RootView {
 
     fn sync_children(&mut self, cx: &mut Context<Self>) {
         let entries = self.state.displayed_entries().to_vec();
-        let selection = self.state.selection.clone();
+        let _selection = self.state.selection.clone();
         let status = self.state.status.clone();
         let path = self.state.current_path.clone();
         let is_ready = self.state.is_ready();
@@ -504,7 +525,7 @@ impl RootView {
                         match e {
                             ArchiveError::EncryptedArchiveRequiresPassword => {
                                 this.state.status = ViewStatus::Empty;
-                                cx.emit(ArchiveVmEvent::RequestPassword { path: path_string });
+                                this.pending_password_path = Some(path_string);
                             }
                             _ => {
                                 this.state.status = ViewStatus::Error(e.to_string());
@@ -521,7 +542,7 @@ impl RootView {
         let handle = self.state.archive.clone();
         let path = self.state.current_path.clone();
         let controller = self.controller.repo();
-        let entry_list = self.entry_list.clone();
+        let _entry_list = self.entry_list.clone();
 
         cx.spawn(async move |this, cx| {
             if let Some(ref h) = handle {
@@ -543,7 +564,7 @@ impl RootView {
 }
 
 impl Render for RootView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Open password dialog as independent window if pending
         if let Some(path) = self.pending_password_path.take() {
             let p = path.clone();
@@ -653,6 +674,17 @@ impl Render for RootView {
                         if !entries.is_empty() {
                             cx.spawn(async move |_, cx| {
                                 crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
+                            }).detach();
+                        } else if let Some(ref handle) = this.state.archive {
+                            let path_str = handle.path.as_ref()
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            let repo = this.controller.repo();
+                            let h = handle.clone();
+                            cx.spawn(async move |_, cx| {
+                                if let Ok(props) = repo.get_properties(&h) {
+                                    crate::adapters::views::dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
+                                }
                             }).detach();
                         }
                     }
