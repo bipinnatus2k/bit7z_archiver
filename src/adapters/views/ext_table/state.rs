@@ -1,7 +1,7 @@
 use std::{collections::HashSet, ops::Range, rc::Rc, time::Duration};
 
 use gpui_component::{
-    ActiveTheme, ElementExt, Icon, IconName, StyledExt, VirtualListScrollHandle,
+    ActiveTheme, ElementExt, Icon, IconName, StyledExt,
     h_flex,
     menu::{ContextMenuExt, PopupMenu},
     scroll::{ScrollableMask, Scrollbar},
@@ -14,6 +14,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Task, UniformListScrollHandle, Window, div,
     prelude::FluentBuilder, px, uniform_list,
 };
+use crate::adapters::views::components;
 use crate::adapters::views::ext_table::actions::{
         Cancel, SelectDown, SelectFirst, SelectLast, SelectNextColumn, SelectPageDown,
         SelectPageUp, SelectPrevColumn, SelectUp,
@@ -223,7 +224,7 @@ pub struct TableState<D: TableDelegate> {
     pub col_fixed: bool,
 
     pub vertical_scroll_handle: UniformListScrollHandle,
-    pub horizontal_scroll_handle: VirtualListScrollHandle,
+    pub horizontal_scroll_handle: components::virtual_list::VirtualListScrollHandle,
 
     selected_row: Option<usize>,
     selected_rows: HashSet<usize>,
@@ -257,7 +258,7 @@ where
             delegate,
             col_groups: Vec::new(),
             header_layout: Vec::new(),
-            horizontal_scroll_handle: VirtualListScrollHandle::new(),
+            horizontal_scroll_handle: components::virtual_list::VirtualListScrollHandle::new(),
             vertical_scroll_handle: UniformListScrollHandle::new(),
             selection_mode: SelectionMode::Row,
             selected_row: None,
@@ -1931,10 +1932,10 @@ where
                         .overflow_hidden()
                         .relative()
                         .child(
-                            h_virtual_list(
+                            components::virtual_list::virtual_list(
                                 view,
                                 row_ix,
-                                // Axis::Horizontal,
+                                Axis::Horizontal,
                                 col_sizes,
                                 {
                                     move |table, visible_range: Range<usize>, window, cx| {
@@ -2036,7 +2037,7 @@ where
                                     }
                                 },
                             )
-                            // .with_scroll_handle(&self.horizontal_scroll_handle),//TODO:
+                            .with_scroll_handle(&self.horizontal_scroll_handle),
                         )
                         .child(self.delegate.render_last_empty_col(window, cx)),
                 )

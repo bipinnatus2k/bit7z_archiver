@@ -3,7 +3,7 @@ use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem};
-use gpui_component::{h_flex, v_flex, IconName, Sizable};
+use gpui_component::{h_flex, v_flex, IconName};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]

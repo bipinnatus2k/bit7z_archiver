@@ -162,37 +162,30 @@ impl TableDelegate for FileListTableDelegate {
         m
     }
 
-    fn render_td(&mut self, row_ix: usize, col_ix: usize, _window: &mut Window, _cx: &mut Context<TableState<Self>>) -> impl IntoElement {
-        let entry = match self.entries.get(row_ix) {
-            Some(e) => e,
-            None => return div(),
-        };
-        match self.columns[col_ix].key.as_str() {
-            "name" => {
-                let text = if entry.is_directory {
-                    format!("\u{1f4c1} {}", entry.display_name)
-                } else {
-                    format!("\u{1f4c4} {}", entry.display_name)
-                };
-                div().px_2().child(text)
-            }
-            "size" => div().px_2().child(format_size(entry.size, BINARY)),
-            "packed" => div().px_2().child(format_size(entry.compressed_size, BINARY)),
+    fn render_td(&mut self, row_ix: usize, col_ix: usize, _: &mut Window, _: &mut Context<TableState<Self>>) -> impl IntoElement {
+        let row = &self.entries[row_ix];
+        let col = &self.columns[col_ix];
+
+        match col.key.as_ref() {
+            // "id" => row.display_name.to_string(),
+            "name" => row.display_name.clone(),
+            "size" => row.size.to_string(),
+            "packed" => row.compressed_size.to_string(),
             "ratio" => {
-                let ratio = if entry.size == 0 {
+                let ratio = if row.size == 0 {
                     "0%".to_string()
                 } else {
-                    format!("{:.0}%", (1.0 - (entry.compressed_size as f64 / entry.size as f64)) * 100.)
+                    format!("{:.0}%", (1.0 - (row.compressed_size as f64 / row.size as f64)) * 100.)
                 };
-                div().px_2().child(ratio)
-            }
+                ratio
+            },
             "date" => {
-                let date = entry.modified
-                    .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
-                    .unwrap_or_default();
-                div().px_2().child(date)
-            }
-            _ => div(),
+                let date = row.modified
+                                .map(|t| t.naive_local().to_string())
+                                .unwrap_or_default();
+                date
+            },
+            _ => "".to_string(),
         }
     }
 }
@@ -292,7 +285,8 @@ impl Render for ArchiveFileList {
         let theme = cx.global::<Theme>();
 
         let base = gpui_component::v_flex()
-            .flex_1()
+            .w_full()
+            // .flex_1()
             .border_b_1()
             .border_color(theme.border);
 
@@ -329,7 +323,7 @@ impl Render for ArchiveFileList {
 
                 let table_entity = self.table_state.clone();
                 container.child(
-                    div().flex_1().child(DataTable::new(&table_entity))
+                    div().flex_1().child(DataTable::new(&table_entity).scrollbar_visible(true, true))
                         .id("entry-table-area")
                 )
             }

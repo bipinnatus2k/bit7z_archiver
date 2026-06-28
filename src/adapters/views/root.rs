@@ -769,7 +769,7 @@ impl Render for RootView {
                                 resizable_panel()
                                     .size(px(200.))
                                     .size_range(px(100.)..px(500.))
-                                    .flex_none()
+                                    // .flex_none()
                                     .child(self.preview_panel.clone())
                             )
                     )

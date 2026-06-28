@@ -895,6 +895,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "smallvec",
  "thiserror 2.0.18",
  "tracing",
  "windows-sys 0.59.0",
