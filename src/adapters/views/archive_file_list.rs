@@ -6,7 +6,7 @@ use crate::theme::Theme;
 use gpui::*;
 use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
-use humansize::{format_size, BINARY};
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileListIntent {

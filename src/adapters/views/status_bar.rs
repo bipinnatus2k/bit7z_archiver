@@ -21,7 +21,7 @@ impl Render for StatusBar {
         let window_width = window.bounds().size.width;
         let compact = window_width < px(640.);
 
-        div().flex().flex_row().justify_between().px_3().py_1()
+        div().flex().flex_row().h(px(30.)).w(relative(1.)).justify_between().px_3().py_1()
             .border_t_1().border_color(cx.global::<Theme>().border).text_sm()
             .child(div().child(self.status_text.clone()))
             .when(!compact, |el| {

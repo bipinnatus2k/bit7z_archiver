@@ -26,15 +26,11 @@ pub struct ArchiveBrowser {
 impl ArchiveBrowser {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input_state = cx.new(|cx| InputState::new(window, cx).placeholder("Filter..."));
-        let self_handle = cx.entity();
         let _subscriptions = vec![cx.subscribe_in(&input_state, window, {
-            let h = self_handle;
             move |this: &mut Self, _, ev: &InputEvent, _: &mut Window, cx| match ev {
                 InputEvent::Change => {
                     let value = this.input_state.read(cx).value();
-                    h.update(cx, |_, cx| {
-                        cx.emit(BrowserIntent::SetFilter(value.to_string()))
-                    });
+                    cx.emit(BrowserIntent::SetFilter(value.to_string()))
                 }
                 _ => {}
             }
