@@ -35,6 +35,30 @@ impl TestEntriesUseCase {
         indices: Option<&[u32]>,
         progress: Option<ProgressSender>,
     ) -> Result<TestResult, ArchiveError> {
+        fn notify(
+            progress: &Option<ProgressSender>,
+            items_done: u64,
+            items_total: u64,
+            bytes_done: u64,
+            bytes_total: u64,
+            current_file: Option<String>,
+            file_total: u64,
+            error: Option<String>,
+        ) {
+            if let Some(ref tx) = progress {
+                let _ = tx.send(ProgressUpdate {
+                    file_current: 0,
+                    file_total,
+                    current_file,
+                    items_done,
+                    items_total,
+                    bytes_done,
+                    bytes_total,
+                    error,
+                });
+            }
+        }
+
         let count = match self.repo.get_properties(archive).ok() {
             Some(p) => p.items_count as usize,
             None => return Err(ArchiveError::Internal("failed to read properties".into())),
@@ -109,6 +133,9 @@ impl TestEntriesUseCase {
         let mut bytes_processed: u64 = 0;
 
         for (done, &index) in expanded.iter().enumerate() {
+            let items_done = (done + 1) as u64;
+            let items_total = total as u64;
+
             let page = match self.repo.list_page(archive, index as usize, 1) {
                 Ok(p) => p,
                 Err(e) => {
@@ -119,18 +146,7 @@ impl TestEntriesUseCase {
                         path: String::new(),
                         reason: TestFailureReason::ReadError(format!("{}", e)),
                     });
-                    if let Some(ref tx) = progress {
-                        let _ = tx.send(ProgressUpdate {
-                            file_current: 0,
-                            file_total: 0,
-                            current_file: None,
-                            items_done: (done + 1) as u64,
-                            items_total: total as u64,
-                            bytes_done: bytes_processed,
-                            bytes_total: total_bytes,
-                            error: Some(format!("{}", e)),
-                        });
-                    }
+                    notify(&progress, items_done, items_total, bytes_processed, total_bytes, None, 0, Some(format!("{}", e)));
                     continue;
                 }
             };
@@ -142,41 +158,17 @@ impl TestEntriesUseCase {
                     path: String::new(),
                     reason: TestFailureReason::ReadError("entry not found".into()),
                 });
-                if let Some(ref tx) = progress {
-                    let _ = tx.send(ProgressUpdate {
-                        file_current: 0,
-                        file_total: 0,
-                        current_file: None,
-                        items_done: (done + 1) as u64,
-                        items_total: total as u64,
-                        bytes_done: bytes_processed,
-                        bytes_total: total_bytes,
-                        error: Some("entry not found".into()),
-                    });
-                }
+                notify(&progress, items_done, items_total, bytes_processed, total_bytes, None, 0, Some("entry not found".into()));
                 continue;
             }
             let entry = &page.items[0];
 
-            // Directories without children (already expanded above) auto-pass
             if entry.is_directory {
                 passed += 1;
-                if let Some(ref tx) = progress {
-                    let _ = tx.send(ProgressUpdate {
-                        file_current: 0,
-                        file_total: entry.size,
-                        current_file: Some(entry.path.clone()),
-                        items_done: (done + 1) as u64,
-                        items_total: total as u64,
-                        bytes_done: bytes_processed,
-                        bytes_total: total_bytes,
-                        error: None,
-                    });
-                }
+                notify(&progress, items_done, items_total, bytes_processed, total_bytes, Some(entry.path.clone()), entry.size, None);
                 continue;
             }
 
-            // Extract to buffer
             let data = match self.repo.extract_to_buffer(archive, index) {
                 Ok(d) => d,
                 Err(e) => {
@@ -187,28 +179,15 @@ impl TestEntriesUseCase {
                         path: entry.path.clone(),
                         reason: TestFailureReason::ReadError(format!("{}", e)),
                     });
-                    if let Some(ref tx) = progress {
-                        let _ = tx.send(ProgressUpdate {
-                            file_current: 0,
-                            file_total: entry.size,
-                            current_file: Some(entry.path.clone()),
-                            items_done: (done + 1) as u64,
-                            items_total: total as u64,
-                            bytes_done: bytes_processed,
-                            bytes_total: total_bytes,
-                            error: Some(format!("{}", e)),
-                        });
-                    }
+                    notify(&progress, items_done, items_total, bytes_processed, total_bytes, Some(entry.path.clone()), entry.size, Some(format!("{}", e)));
                     continue;
                 }
             };
 
             bytes_processed += entry.size;
 
-            // Compute CRC
             let computed_crc = crc32fast::hash(&data);
 
-            // Compare with stored CRC if available
             if let Some(stored_crc) = entry.crc {
                 if computed_crc != stored_crc {
                     failed.push(TestFailure {
@@ -224,36 +203,13 @@ impl TestEntriesUseCase {
                             actual: computed_crc,
                         },
                     });
-                    if let Some(ref tx) = progress {
-                        let _ = tx.send(ProgressUpdate {
-                            file_current: 0,
-                            file_total: entry.size,
-                            current_file: Some(entry.path.clone()),
-                            items_done: (done + 1) as u64,
-                            items_total: total as u64,
-                            bytes_done: bytes_processed,
-                            bytes_total: total_bytes,
-                            error: Some("CRC mismatch".into()),
-                        });
-                    }
+                    notify(&progress, items_done, items_total, bytes_processed, total_bytes, Some(entry.path.clone()), entry.size, Some("CRC mismatch".into()));
                     continue;
                 }
             }
 
             passed += 1;
-
-            if let Some(ref tx) = progress {
-                let _ = tx.send(ProgressUpdate {
-                    file_current: 0,
-                    file_total: entry.size,
-                    current_file: Some(entry.path.clone()),
-                    items_done: (done + 1) as u64,
-                    items_total: total as u64,
-                    bytes_done: bytes_processed,
-                    bytes_total: total_bytes,
-                    error: None,
-                });
-            }
+            notify(&progress, items_done, items_total, bytes_processed, total_bytes, Some(entry.path.clone()), entry.size, None);
         }
 
         Ok(TestResult {
