@@ -773,17 +773,41 @@ impl ArchiveRepository for Bit7zRepository {
         if count == 0 {
             return Ok(TestResult { total: 0, passed: 0, failed: vec![] });
         }
-        let raw_ptr = self.remove_raw(archive.id)
-            .ok_or_else(|| ArchiveError::Internal(format!("[test] archive handle {} not found when removing for test (stale or already closed)", archive.id)))?;
-        let reader = unsafe { crate::adapters::bit7z::ArchiveReader::from_raw(raw_ptr as usize) };
-        let (all_ok, total, failed_count, _failed_paths, failed_errors) = reader.test()
-            .map_err(|e| ArchiveError::Internal(format!("[test] reader.test() failed for archive id {}: {}", archive.id, e)))?;
+
+        let result = unsafe { crate::ffi::bit7z_reader_test(raw as *mut _) };
+        if result.is_null() {
+            return Err(ArchiveError::Internal(format!(
+                "[test] bit7z_reader_test returned null for archive id {}",
+                archive.id
+            )));
+        }
+
+        let all_ok = unsafe { crate::ffi::bit7z_test_result_all_ok(result) } != 0;
+        let total = unsafe { crate::ffi::bit7z_test_result_total(result) };
+        let failed_count = unsafe { crate::ffi::bit7z_test_result_failed_count(result) };
+
+        let mut failed_errors = Vec::new();
+        if !all_ok && failed_count > 0 {
+            let error_msg = unsafe {
+                let ptr = crate::ffi::bit7z_test_result_error(result);
+                if ptr.is_null() {
+                    "test failed".to_string()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            };
+            failed_errors.push(error_msg);
+        }
+
+        unsafe { crate::ffi::bit7z_test_result_free(result); }
+
         let passed = total.saturating_sub(failed_count);
         let mut failures = Vec::new();
         if !all_ok {
             if failed_count > 0 && total > 0 {
                 for i in 0..failed_count.min(total) {
-                    let error = failed_errors.get(i as usize)
+                    let error = failed_errors
+                        .first()
                         .cloned()
                         .unwrap_or_else(|| "test failed".into());
                     failures.push(TestFailure {
@@ -796,7 +820,8 @@ impl ArchiveRepository for Bit7zRepository {
                 }
                 if failed_count > total {
                     for i in total..failed_count {
-                        let error = failed_errors.get(i as usize)
+                        let error = failed_errors
+                            .first()
                             .cloned()
                             .unwrap_or_else(|| "test failed".into());
                         failures.push(TestFailure {
@@ -809,7 +834,8 @@ impl ArchiveRepository for Bit7zRepository {
                     }
                 }
             } else if failed_count > 0 {
-                let error_msg = failed_errors.first()
+                let error_msg = failed_errors
+                    .first()
                     .cloned()
                     .unwrap_or_else(|| "test failed".into());
                 failures.push(TestFailure {
@@ -821,9 +847,12 @@ impl ArchiveRepository for Bit7zRepository {
                 });
             }
         }
-        std::mem::forget(reader);
-        self.insert_raw(archive.id, raw_ptr);
-        Ok(TestResult { total: total as usize, passed: passed as usize, failed: failures })
+
+        Ok(TestResult {
+            total: total as usize,
+            passed: passed as usize,
+            failed: failures,
+        })
     }
 
     fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
