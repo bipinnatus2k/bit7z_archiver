@@ -10,5 +10,4 @@ pub mod preferences_json;
 pub mod shell;
 pub mod tray;
 pub mod platform;
-pub mod models;
 pub mod bit7z;

@@ -1,4 +1,5 @@
 use crate::domain::archive::ArchiveHandle;
+use crate::application::checksum::ChecksumAlgorithm;
 
 /// UI events emitted by ViewModels and consumed by Views.
 #[derive(Debug, Clone)]
@@ -22,12 +23,4 @@ pub enum ArchiveVmEvent {
     RequestChecksum { algorithm: ChecksumAlgorithm },
     RequestPassword { path: String },
     RefreshListing,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChecksumAlgorithm {
-    Crc32,
-    Md5,
-    Sha1,
-    Sha256,
 }

@@ -1,4 +1,4 @@
-use crate::adapters::events::ChecksumAlgorithm;
+use crate::application::checksum::ChecksumAlgorithm;
 use crate::adapters::view_models::archive_state::{LevelEntry, ViewStatus};
 use crate::adapters::views::components::state_view::{empty_view, error_view, loading_view};
 use crate::adapters::views::ext_table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};

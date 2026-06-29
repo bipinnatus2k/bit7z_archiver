@@ -5,6 +5,7 @@ use sha1::Sha1;
 use sha2::Sha256;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChecksumAlgorithm {
     Crc32,
     Md5,
