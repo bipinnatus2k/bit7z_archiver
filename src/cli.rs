@@ -286,7 +286,8 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Err(e) => { eprintln!("Error: {}", e); return; }
             };
             let paths: Vec<std::path::PathBuf> = files.iter().map(std::path::PathBuf::from).collect();
-            match repo.add(&mut handle, &paths, pw.as_ref()) {
+            let uc = crate::application::add_to::AddToArchiveUseCase::new(repo.clone());
+            match uc.execute_with_password(&mut handle, &paths, None, pw.as_ref()) {
                 Ok(()) => println!("Added {} files to {}", files.len(), path),
                 Err(e) => eprintln!("Add error: {}", e),
             }
@@ -298,7 +299,8 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Ok(h) => h,
                 Err(e) => { eprintln!("Error: {}", e); return; }
             };
-            match repo.delete(&mut handle, indices) {
+            let uc = crate::application::delete::DeleteEntriesUseCase::new(repo.clone());
+            match uc.execute(&mut handle, indices, None) {
                 Ok(()) => println!("Deleted {} entries from {}", indices.len(), path),
                 Err(e) => eprintln!("Delete error: {}", e),
             }
@@ -310,7 +312,8 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Ok(h) => h,
                 Err(e) => { eprintln!("Error: {}", e); return; }
             };
-            match repo.rename(&mut handle, *index, name) {
+            let uc = crate::application::rename::RenameEntryUseCase::new(repo.clone());
+            match uc.execute(&mut handle, *index, name) {
                 Ok(()) => println!("Renamed entry {} to '{}'", index, name),
                 Err(e) => eprintln!("Rename error: {}", e),
             }
