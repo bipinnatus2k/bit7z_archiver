@@ -73,7 +73,7 @@ impl RootController {
                 bytes_done: 0, bytes_total: 100,
                 error: None,
             });
-            let result = self.repo.extract_with_progress(archive, &expanded, dest, tx);
+            let result = self.repo.extract_with_progress(archive, &expanded, dest, &crate::application::progress::CrossbeamNotifier(tx.clone()));
             let err_str = result.as_ref().err().map(|e| {
                 format!("Extract error (id={}, dest={}): {}", archive.id, dest.display(), e)
             });

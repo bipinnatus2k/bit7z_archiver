@@ -577,9 +577,15 @@ impl ArchiveRepository for Bit7zRepository {
         archive: &ArchiveHandle,
         indices: &[u32],
         dest: &Path,
-        progress: ProgressSender,
+        notifier: &dyn crate::domain::repository::ProgressNotifier,
     ) -> Result<(), ArchiveError> {
-        self.extract_with_progress(archive, indices, dest, progress)
+        // Bridge: create a channel, spawn forwarder, call internal method
+        let (tx, rx) = crossbeam::channel::unbounded();
+        let result = self.extract_with_progress(archive, indices, dest, tx);
+        while let Ok(update) = rx.try_recv() {
+            notifier.notify(&update);
+        }
+        result
     }
 
     fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32)

@@ -19,8 +19,6 @@ pub trait ProgressNotifier: Send + Sync {
     fn notify(&self, update: &ProgressUpdate);
 }
 
-pub type ProgressSender = crossbeam::channel::Sender<ProgressUpdate>;
-
 /// Core repository trait for archive operations.
 /// Implementations wrap the bit7z C++ bridge.
 pub trait ArchiveRepository: Send + Sync {
@@ -55,7 +53,7 @@ pub trait ArchiveRepository: Send + Sync {
         archive: &ArchiveHandle,
         indices: &[u32],
         dest: &Path,
-        _progress: ProgressSender,
+        _notifier: &dyn ProgressNotifier,
     ) -> Result<(), ArchiveError> {
         self.extract(archive, indices, dest)
     }
