@@ -1,11 +1,176 @@
 use crate::adapters::bit7z;
-use crate::application::progress::ProgressNotifier;
+use crate::application::progress::{ProgressNotifier, ProgressSender, ProgressUpdate};
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use chrono::DateTime;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn MessageBoxW(hWnd: *mut std::ffi::c_void, lpText: *const u16, lpCaption: *const u16, uType: u32) -> i32;
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+fn format_time(timestamp: i64) -> String {
+    let secs = if timestamp >= 0 { timestamp as u64 } else { 0 };
+    let naive = DateTime::from_timestamp(secs as i64, 0).map(|dt| dt.naive_local()).unwrap_or_default();
+    naive.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn show_overwrite_dialog(
+    _src_path: &str, _dest_path: &str,
+    _existing_size: u64, _src_size: u64,
+    _src_mtime: i64, _dest_mtime: i64,
+    _global_mode: &AtomicI32,
+) -> i32 { 0 }
+
+#[cfg(target_os = "windows")]
+fn show_overwrite_dialog(
+    src_path: &str, dest_path: &str,
+    existing_size: u64, src_size: u64,
+    src_mtime: i64, dest_mtime: i64,
+    global_mode: &AtomicI32,
+) -> i32 {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let msg = format!(
+        "File exists:\n\
+         Source: {}\n  Size: {}     Modified: {}\n\
+         Dest:   {}\n  Size: {}     Modified: {}\n\n\
+         Yes = Overwrite    No = Skip    Cancel = Overwrite",
+        src_path, format_bytes(src_size), format_time(src_mtime),
+        dest_path, format_bytes(existing_size), format_time(dest_mtime),
+    );
+    let title = "Confirm Overwrite";
+    let msg_wide: Vec<u16> = OsStr::new(&msg).encode_wide().chain(std::iter::once(0)).collect();
+    let title_wide: Vec<u16> = OsStr::new(title).encode_wide().chain(std::iter::once(0)).collect();
+    let choice = unsafe { MessageBoxW(std::ptr::null_mut(), msg_wide.as_ptr(), title_wide.as_ptr(), 3 | 32) };
+    let action = match choice {
+        6 => 0,
+        7 => 1,
+        _ => 0,
+    };
+
+    let apply_all_msg = match action {
+        0 => "Always overwrite remaining files?",
+        _ => "Always skip remaining files?",
+    };
+    let all_wide: Vec<u16> = OsStr::new(apply_all_msg).encode_wide().chain(std::iter::once(0)).collect();
+    let all_title_wide: Vec<u16> = OsStr::new("Apply to All").encode_wide().chain(std::iter::once(0)).collect();
+    let apply_all = unsafe { MessageBoxW(std::ptr::null_mut(), all_wide.as_ptr(), all_title_wide.as_ptr(), 4 | 32) };
+    if apply_all == 6 {
+        global_mode.store(action, Ordering::Relaxed);
+    }
+
+    action
+}
+
+struct ExtractCtx {
+    progress: ProgressSender,
+    global_mode: AtomicI32,
+    current_file: Mutex<String>,
+    current_file_size: AtomicU64,
+    cancel: Option<Arc<AtomicBool>>,
+    paused: Option<Arc<AtomicBool>>,
+}
+
+extern "C" fn extract_progress_callback(
+    processed: u64,
+    total: u64,
+    ctx: *mut std::ffi::c_void,
+) -> i32 {
+    let ctx = unsafe { &*(ctx as *const ExtractCtx) };
+
+    // Check cancel
+    if let Some(ref cancel) = ctx.cancel {
+        if cancel.load(Ordering::Relaxed) {
+            return 0;
+        }
+    }
+
+    // Handle pause: spin until unpaused or cancelled
+    if let Some(ref paused) = ctx.paused {
+        while paused.load(Ordering::Relaxed) {
+            if let Some(ref cancel) = ctx.cancel {
+                if cancel.load(Ordering::Relaxed) {
+                    return 0;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+
+    let file = ctx.current_file.lock().ok().map(|g| g.clone()).unwrap_or_default();
+    let file = if file.is_empty() { None } else { Some(file) };
+    let file_total = ctx.current_file_size.load(Ordering::Relaxed);
+    let _ = ctx.progress.send(ProgressUpdate {
+        file_current: processed,
+        file_total,
+        current_file: file,
+        items_done: 0, items_total: 0,
+        bytes_done: processed, bytes_total: total,
+        error: None,
+    });
+    1
+}
+
+extern "C" fn extract_file_callback(
+    path: *const std::ffi::c_char,
+    file_size: u64,
+    ctx: *mut std::ffi::c_void,
+) {
+    let ctx = unsafe { &*(ctx as *const ExtractCtx) };
+    let name = unsafe { std::ffi::CStr::from_ptr(path) }
+        .to_string_lossy().into_owned();
+    if let Ok(mut guard) = ctx.current_file.lock() {
+        *guard = name;
+    }
+    ctx.current_file_size.store(file_size, Ordering::Relaxed);
+}
+
+extern "C" fn extract_overwrite_callback(
+    src: *const std::ffi::c_char,
+    dest: *const std::ffi::c_char,
+    existing_size: u64,
+    src_size: u64,
+    src_mtime: i64,
+    dest_mtime: i64,
+    ctx: *mut std::ffi::c_void,
+) -> i32 {
+    let ctx = unsafe { &*(ctx as *const ExtractCtx) };
+    let mode = ctx.global_mode.load(Ordering::Relaxed);
+    match mode {
+        0 => 0,
+        1 => 1,
+        2 => 0,
+        _ => {
+            let src_path = unsafe { std::ffi::CStr::from_ptr(src) }
+                .to_string_lossy().into_owned();
+            let dest_path = unsafe { std::ffi::CStr::from_ptr(dest) }
+                .to_string_lossy().into_owned();
+            show_overwrite_dialog(&src_path, &dest_path, existing_size, src_size, src_mtime, dest_mtime, &ctx.global_mode)
+        }
+    }
+}
 
 /// Detect writer format from archive path extension.
 fn detect_writer_format(path: &Path) -> bit7z::WriterFormat {
@@ -104,6 +269,9 @@ pub struct Bit7zRepository {
     lib: Mutex<bit7z::Library>,
     handles: Mutex<HashMap<u64, *mut std::ffi::c_void>>,
     progress_notifier: Mutex<Option<Box<dyn ProgressNotifier>>>,
+    overwrite_mode: Mutex<OverwriteMode>,
+    cancel: Mutex<Option<Arc<AtomicBool>>>,
+    paused: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 unsafe impl Send for Bit7zRepository {}
@@ -111,7 +279,7 @@ unsafe impl Sync for Bit7zRepository {}
 
 impl Bit7zRepository {
     pub fn new(lib: bit7z::Library) -> Self {
-        Self { lib: Mutex::new(lib), handles: Mutex::new(HashMap::new()), progress_notifier: Mutex::new(None) }
+        Self { lib: Mutex::new(lib), handles: Mutex::new(HashMap::new()), progress_notifier: Mutex::new(None), overwrite_mode: Mutex::new(OverwriteMode::Ask), cancel: Mutex::new(None), paused: Mutex::new(None) }
     }
 
     fn lock_lib(&self) -> Result<std::sync::MutexGuard<'_, bit7z::Library>, ArchiveError> {
@@ -143,12 +311,74 @@ impl Bit7zRepository {
             }
         }
     }
+
+    pub fn extract_with_progress(
+        &self,
+        archive: &ArchiveHandle,
+        indices: &[u32],
+        dest: &Path,
+        progress: ProgressSender,
+    ) -> Result<(), ArchiveError> {
+        let raw = self.get_raw(archive)?;
+        let dest_str = dest.to_str().ok_or_else(|| {
+            ArchiveError::Internal(format!("[extract_with_progress] destination path is not valid UTF-8: {}", dest.display()))
+        })?;
+
+        let mode = match self.overwrite_mode.lock() {
+            Ok(guard) => match *guard {
+                OverwriteMode::Overwrite => 0i32,
+                OverwriteMode::Skip => 1i32,
+                OverwriteMode::RenameExtracted => 2i32,
+                OverwriteMode::Ask => -1i32,
+            },
+            Err(_) => -1i32,
+        };
+        let cancel = self.cancel.lock().ok().and_then(|g| g.clone());
+        let paused = self.paused.lock().ok().and_then(|g| g.clone());
+        let ctx = Box::into_raw(Box::new(ExtractCtx { progress, global_mode: AtomicI32::new(mode), current_file: Mutex::new(String::new()), current_file_size: AtomicU64::new(0), cancel, paused })) as *mut std::ffi::c_void;
+
+        let ret = unsafe {
+            let reader = std::mem::ManuallyDrop::new(bit7z::ArchiveReader::from_raw(raw));
+            reader.extract_to_cb(
+                indices,
+                dest_str,
+                ctx,
+                Some(extract_overwrite_callback),
+                Some(extract_progress_callback),
+                Some(extract_file_callback),
+            )
+        };
+
+        unsafe {
+            drop(Box::from_raw(ctx as *mut ExtractCtx));
+        }
+
+        ret.map_err(|e| ArchiveError::Internal(format!("[extract_with_progress] {}", e)))
+    }
 }
 
 impl ArchiveRepository for Bit7zRepository {
     fn set_progress_notifier(&self, notifier: Box<dyn ProgressNotifier>) {
         if let Ok(mut guard) = self.progress_notifier.lock() {
             *guard = Some(notifier);
+        }
+    }
+
+    fn set_overwrite_mode(&self, mode: OverwriteMode) {
+        if let Ok(mut guard) = self.overwrite_mode.lock() {
+            *guard = mode;
+        }
+    }
+
+    fn set_cancel_flag(&self, cancel: Arc<AtomicBool>) {
+        if let Ok(mut guard) = self.cancel.lock() {
+            *guard = Some(cancel);
+        }
+    }
+
+    fn set_pause_flag(&self, paused: Arc<AtomicBool>) {
+        if let Ok(mut guard) = self.paused.lock() {
+            *guard = Some(paused);
         }
     }
 
@@ -324,9 +554,10 @@ impl ArchiveRepository for Bit7zRepository {
     fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path)
                -> Result<(), ArchiveError> {
         let raw = self.get_raw(archive)?;
-        let c_dest = std::ffi::CString::new(dest.to_str().ok_or_else(|| {
+        let dest_str = dest.to_str().ok_or_else(|| {
             ArchiveError::Internal(format!("[extract] destination path is not valid UTF-8: {}", dest.display()))
-        })?).map_err(|e| ArchiveError::Internal(format!("[extract] CString conversion failed for '{}': {}", dest.display(), e)))?;
+        })?;
+        let c_dest = std::ffi::CString::new(dest_str).map_err(|e| ArchiveError::Internal(format!("[extract] CString conversion failed for '{}': {}", dest.display(), e)))?;
         let ret: i32 = unsafe {
             crate::ffi::bit7z_reader_extract_to(
                 raw as *mut _, indices.as_ptr(), indices.len() as u32, c_dest.as_ptr(),
@@ -334,6 +565,16 @@ impl ArchiveRepository for Bit7zRepository {
         };
         if ret != 0 { Err(ArchiveError::Internal(format!("[extract] bit7z_reader_extract_to returned {} for archive id {}", ret, archive.id))) }
         else { Ok(()) }
+    }
+
+    fn extract_with_progress(
+        &self,
+        archive: &ArchiveHandle,
+        indices: &[u32],
+        dest: &Path,
+        progress: ProgressSender,
+    ) -> Result<(), ArchiveError> {
+        self.extract_with_progress(archive, indices, dest, progress)
     }
 
     fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32)
@@ -631,7 +872,7 @@ impl ArchiveRepository for Bit7zRepository {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
     struct FailOnMissingRepo {
         inner: Arc<dyn ArchiveRepository>,

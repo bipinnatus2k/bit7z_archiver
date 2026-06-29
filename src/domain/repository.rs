@@ -19,6 +19,8 @@ pub trait ProgressNotifier: Send + Sync {
     fn notify(&self, update: &ProgressUpdate);
 }
 
+pub type ProgressSender = crossbeam::channel::Sender<ProgressUpdate>;
+
 /// Core repository trait for archive operations.
 /// Implementations wrap the bit7z C++ bridge.
 pub trait ArchiveRepository: Send + Sync {
@@ -36,6 +38,27 @@ pub trait ArchiveRepository: Send + Sync {
 
     /// Set a progress notifier for long-running operations.
     fn set_progress_notifier(&self, _notifier: Box<dyn ProgressNotifier>) {}
+
+    /// Set the overwrite mode for the next extraction.
+    fn set_overwrite_mode(&self, _mode: OverwriteMode) {}
+
+    /// Set cancel flag for the running extraction.
+    fn set_cancel_flag(&self, _cancel: std::sync::Arc<std::sync::atomic::AtomicBool>) {}
+
+    /// Set pause flag for the running extraction.
+    fn set_pause_flag(&self, _paused: std::sync::Arc<std::sync::atomic::AtomicBool>) {}
+
+    /// Extract with real-time progress callbacks.
+    /// Default falls back to plain extract (no progress).
+    fn extract_with_progress(
+        &self,
+        archive: &ArchiveHandle,
+        indices: &[u32],
+        dest: &Path,
+        _progress: ProgressSender,
+    ) -> Result<(), ArchiveError> {
+        self.extract(archive, indices, dest)
+    }
 
     /// List direct children of `path` in the archive.
     /// `""` (empty string) lists root-level items.
