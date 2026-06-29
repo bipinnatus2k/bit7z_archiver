@@ -297,6 +297,15 @@ impl OverwriteMode {
     pub fn all() -> Vec<OverwriteMode> {
         vec![OverwriteMode::Ask, OverwriteMode::Overwrite, OverwriteMode::Skip, OverwriteMode::RenameExtracted]
     }
+    
+    pub fn index(&self) -> &'static i32 {
+        match self {
+            OverwriteMode::Ask => &0,
+            OverwriteMode::Overwrite => &1,
+            OverwriteMode::Skip => &2,
+            OverwriteMode::RenameExtracted => &3
+        }
+    }
 }
 
 /// Result of an archive integrity test.
