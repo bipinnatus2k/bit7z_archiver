@@ -348,6 +348,9 @@ mod tests {
             src.as_ptr(),
             dest.as_ptr(),
             1024,
+            0,
+            0,
+            0,
             as_ctx_ptr(&ctx),
         );
 
@@ -380,9 +383,13 @@ mod tests {
         let result = overwrite_trampoline(
             src.as_ptr(),
             dest.as_ptr(),
-        0,
+            0,
+            0,
+            0,
+            0,
             as_ctx_ptr(&ctx),
         );
+
 
         handle.join().ok();
         assert_eq!(result, 1, "expected Skip => 1");
@@ -421,6 +428,9 @@ mod tests {
             src.as_ptr(),
             dest.as_ptr(),
             0,
+            0,
+            0,
+            0,
             as_ctx_ptr(&ctx),
         );
 
@@ -444,6 +454,9 @@ mod tests {
             src.as_ptr(),
             dest.as_ptr(),
             0,
+            0,
+            0,
+            0,
             as_ctx_ptr(&ctx),
         );
         assert_eq!(result, 1);
@@ -464,6 +477,9 @@ mod tests {
         let result = overwrite_trampoline(
             src.as_ptr(),
             dest.as_ptr(),
+            0,
+            0,
+            0,
             0,
             as_ctx_ptr(&ctx),
         );
