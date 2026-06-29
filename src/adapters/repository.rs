@@ -387,7 +387,7 @@ impl ArchiveRepository for Bit7zRepository {
         }
     }
 
-    fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
+    fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle<Reader>, ArchiveError> {
         let lib = self.lock_lib()?;
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal(format!("[open] path is not valid UTF-8: {}", path.display())))?;
@@ -434,7 +434,7 @@ impl ArchiveRepository for Bit7zRepository {
     }
 
     fn create(&self, path: &Path, format: ArchiveFormat,
-              encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
+              encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle<Writer>, ArchiveError> {
         let lib = self.lock_lib()?;
         let _path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal(format!("[create] path is not valid UTF-8: {}", path.display())))?;
@@ -466,7 +466,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(handle)
     }
 
-    fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize)
+    fn list_page(&self, archive: &ArchiveHandle<Reader>, offset: usize, limit: usize)
                  -> Result<Page<ArchiveEntry>, ArchiveError> {
         let raw = self.get_raw(archive)?;
 
@@ -506,7 +506,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(Page::new(entries, offset, Some(count as usize)))
     }
 
-    fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
+        fn get_properties(&self, archive: &ArchiveHandle<Reader>) -> Result<ArchiveProperties, ArchiveError> {
         let raw = self.get_raw(archive)?;
 
         let list = unsafe { crate::ffi::bit7z_reader_items(raw as *mut _) };
@@ -556,7 +556,7 @@ impl ArchiveRepository for Bit7zRepository {
         })
     }
 
-    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path)
+    fn extract(&self, archive: &ArchiveHandle<Reader>, indices: &[u32], dest: &Path)
                -> Result<(), ArchiveError> {
         let raw = self.get_raw(archive)?;
         let dest_str = dest.to_str().ok_or_else(|| {
@@ -574,7 +574,7 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn extract_with_progress(
         &self,
-        archive: &ArchiveHandle,
+        archive: &ArchiveHandle<Reader>,
         indices: &[u32],
         dest: &Path,
         notifier: &dyn crate::domain::repository::ProgressNotifier,
@@ -588,7 +588,7 @@ impl ArchiveRepository for Bit7zRepository {
         result
     }
 
-    fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32)
+    fn extract_to_buffer(&self, archive: &ArchiveHandle<Reader>, index: u32)
                          -> Result<Vec<u8>, ArchiveError> {
         let raw = self.get_raw(archive)?;
         let mut out_data: *mut std::ffi::c_void = std::ptr::null_mut();
@@ -613,7 +613,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(result)
     }
 
-    fn add(&self, archive: &mut ArchiveHandle, files: &[std::path::PathBuf], password: Option<&Password>)
+    fn add(&self, archive: &mut ArchiveHandle<Writer>, files: &[std::path::PathBuf], password: Option<&Password>)
            -> Result<(), ArchiveError> {
         let archive_path = archive.path.clone()
             .ok_or_else(|| ArchiveError::Internal(format!("[add] no path in archive handle {}", archive.id)))?;
@@ -622,10 +622,8 @@ impl ArchiveRepository for Bit7zRepository {
             .to_string();
 
         // Close the reader to release file locks before opening the writer.
-        if !archive.is_writer {
-            if let Some(raw) = self.remove_raw(archive.id) {
-                unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
-            }
+        if let Some(raw) = self.remove_raw(archive.id) {
+            unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
         }
 
         let lib = self.lock_lib()?;
@@ -675,7 +673,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(())
     }
 
-    fn add_file_to_path(&self, archive: &mut ArchiveHandle, file_path: &Path, archive_path: &str, password: Option<&Password>)
+    fn add_file_to_path(&self, archive: &mut ArchiveHandle<Writer>, file_path: &Path, archive_path: &str, password: Option<&Password>)
                         -> Result<(), ArchiveError> {
         let archive_file_path = archive.path.clone()
             .ok_or_else(|| ArchiveError::Internal(format!("[add_file_to_path] no path in archive handle {}", archive.id)))?;
@@ -683,10 +681,8 @@ impl ArchiveRepository for Bit7zRepository {
             .ok_or_else(|| ArchiveError::Internal(format!("[add_file_to_path] archive path is not valid UTF-8: {}", archive_file_path.display())))?
             .to_string();
 
-        if !archive.is_writer {
-            if let Some(raw) = self.remove_raw(archive.id) {
-                unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
-            }
+        if let Some(raw) = self.remove_raw(archive.id) {
+            unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
         }
 
         let lib = self.lock_lib()?;
@@ -716,7 +712,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(())
     }
 
-    fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32])
+    fn delete(&self, archive: &mut ArchiveHandle<Writer>, indices: &[u32])
                -> Result<(), ArchiveError> {
         let lib = self.lock_lib()?;
         let archive_path = archive.path.as_ref()
@@ -750,7 +746,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(())
     }
 
-    fn rename(&self, archive: &mut ArchiveHandle, index: u32, new_name: &str)
+    fn rename(&self, archive: &mut ArchiveHandle<Writer>, index: u32, new_name: &str)
               -> Result<(), ArchiveError> {
         let raw = self.get_raw(archive)?;
         let lib = self.lock_lib()?;
@@ -778,7 +774,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(())
     }
 
-    fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
+        fn test(&self, archive: &ArchiveHandle<Reader>) -> Result<TestResult, ArchiveError> {
         let raw = self.get_raw(archive)?;
         let count = unsafe { crate::ffi::bit7z_reader_item_count(raw as *mut _) };
         if count == 0 {
@@ -866,7 +862,7 @@ impl ArchiveRepository for Bit7zRepository {
         })
     }
 
-    fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+        fn list_directory(&self, archive: &ArchiveHandle<Reader>, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
         let raw = self.get_raw(archive)?;
         let c_path = std::ffi::CString::new(path)
             .map_err(|_e| ArchiveError::Internal(format!("[list_directory] path contains null byte: '{}'", path)))?;
@@ -901,7 +897,13 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(entries)
     }
 
-    fn close(&self, archive: &ArchiveHandle) {
+    fn close(&self, archive: &ArchiveHandle<Reader>) {
+        if let Some(raw) = self.remove_raw(archive.id) {
+            unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
+        }
+    }
+
+    fn close_writer(&self, archive: &ArchiveHandle<Writer>) {
         if let Some(raw) = self.remove_raw(archive.id) {
             unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
         }
@@ -931,31 +933,34 @@ use std::sync::{Arc, Mutex};
         fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError> {
             self.inner.list_page(archive, offset, limit)
         }
-        fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
+    fn get_properties(&self, archive: &ArchiveHandle<Reader>) -> Result<ArchiveProperties, ArchiveError> {
             self.inner.get_properties(archive)
         }
-        fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path) -> Result<(), ArchiveError> {
+        fn extract(&self, archive: &ArchiveHandle<Reader>, indices: &[u32], dest: &Path) -> Result<(), ArchiveError> {
             self.inner.extract(archive, indices, dest)
         }
-        fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError> {
+        fn extract_to_buffer(&self, archive: &ArchiveHandle<Reader>, index: u32) -> Result<Vec<u8>, ArchiveError> {
             self.inner.extract_to_buffer(archive, index)
         }
-        fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError> {
+        fn add(&self, archive: &mut ArchiveHandle<Writer>, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError> {
             self.inner.add(archive, files, password)
         }
-        fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError> {
+        fn delete(&self, archive: &mut ArchiveHandle<Writer>, indices: &[u32]) -> Result<(), ArchiveError> {
             self.inner.delete(archive, indices)
         }
-        fn rename(&self, archive: &mut ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError> {
+        fn rename(&self, archive: &mut ArchiveHandle<Writer>, index: u32, new_name: &str) -> Result<(), ArchiveError> {
             self.inner.rename(archive, index, new_name)
         }
-        fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
+    fn test(&self, archive: &ArchiveHandle<Reader>) -> Result<TestResult, ArchiveError> {
             self.inner.test(archive)
         }
-        fn close(&self, archive: &ArchiveHandle) {
+        fn close(&self, archive: &ArchiveHandle<Reader>) {
             self.inner.close(archive)
         }
-        fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+        fn close_writer(&self, archive: &ArchiveHandle<Writer>) {
+            self.inner.close_writer(archive)
+        }
+    fn list_directory(&self, archive: &ArchiveHandle<Reader>, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
             self.inner.list_directory(archive, path)
         }
     }

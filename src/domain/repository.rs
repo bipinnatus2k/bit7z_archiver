@@ -22,17 +22,18 @@ pub trait ProgressNotifier: Send + Sync {
 /// Core repository trait for archive operations.
 /// Implementations wrap the bit7z C++ bridge.
 pub trait ArchiveRepository: Send + Sync {
-    fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError>;
-    fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError>;
-    fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError>;
-    fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError>;
-    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path) -> Result<(), ArchiveError>;
-    fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError>;
-    fn add(&self, archive: &mut ArchiveHandle, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError>;
-    fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError>;
-    fn rename(&self, archive: &mut ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError>;
-    fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError>;
-    fn close(&self, archive: &ArchiveHandle);
+    fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle<Reader>, ArchiveError>;
+    fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle<Writer>, ArchiveError>;
+    fn list_page(&self, archive: &ArchiveHandle<Reader>, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError>;
+    fn get_properties(&self, archive: &ArchiveHandle<Reader>) -> Result<ArchiveProperties, ArchiveError>;
+    fn extract(&self, archive: &ArchiveHandle<Reader>, indices: &[u32], dest: &Path) -> Result<(), ArchiveError>;
+    fn extract_to_buffer(&self, archive: &ArchiveHandle<Reader>, index: u32) -> Result<Vec<u8>, ArchiveError>;
+    fn add(&self, archive: &mut ArchiveHandle<Writer>, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError>;
+    fn delete(&self, archive: &mut ArchiveHandle<Writer>, indices: &[u32]) -> Result<(), ArchiveError>;
+    fn rename(&self, archive: &mut ArchiveHandle<Writer>, index: u32, new_name: &str) -> Result<(), ArchiveError>;
+    fn test(&self, archive: &ArchiveHandle<Reader>) -> Result<TestResult, ArchiveError>;
+    fn close(&self, archive: &ArchiveHandle<Reader>);
+    fn close_writer(&self, archive: &ArchiveHandle<Writer>);
 
     /// Set a progress notifier for long-running operations.
     fn set_progress_notifier(&self, _notifier: Box<dyn ProgressNotifier>) {}
@@ -50,7 +51,7 @@ pub trait ArchiveRepository: Send + Sync {
     /// Default falls back to plain extract (no progress).
     fn extract_with_progress(
         &self,
-        archive: &ArchiveHandle,
+        archive: &ArchiveHandle<Reader>,
         indices: &[u32],
         dest: &Path,
         _notifier: &dyn ProgressNotifier,
@@ -61,10 +62,10 @@ pub trait ArchiveRepository: Send + Sync {
     /// List direct children of `path` in the archive.
     /// `""` (empty string) lists root-level items.
     /// Returns `NotFound` if the path doesn't exist.
-    fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError>;
+    fn list_directory(&self, archive: &ArchiveHandle<Reader>, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError>;
 
     /// Add a single file to the archive at a specific archive-internal path.
-    fn add_file_to_path(&self, _archive: &mut ArchiveHandle, _file_path: &Path, _archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
+    fn add_file_to_path(&self, _archive: &mut ArchiveHandle<Writer>, _file_path: &Path, _archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
         Err(ArchiveError::UnsupportedOperation)
     }
 }
@@ -153,7 +154,7 @@ pub mod test_utils {
         pub test_result: Mutex<TestResult>,
         /// If true, `extract_to_buffer` actually returns data using the CRC as content.
         pub mock_extract_buffer: bool,
-        crate_handle: Mutex<Option<ArchiveHandle>>,
+        last_handle_id: Mutex<Option<u64>>,
     }
 
     impl MockArchiveRepository {
@@ -162,7 +163,7 @@ pub mod test_utils {
                 entries: Mutex::new(entries),
                 test_result: Mutex::new(TestResult { total: 0, passed: 0, failed: vec![] }),
                 mock_extract_buffer: false,
-                crate_handle: Mutex::new(None),
+                last_handle_id: Mutex::new(None),
             }
         }
 
@@ -180,7 +181,7 @@ pub mod test_utils {
                 entries: Mutex::new(entries),
                 test_result: Mutex::new(TestResult { total: n, passed: n, failed: vec![] }),
                 mock_extract_buffer: false,
-                crate_handle: Mutex::new(None),
+                last_handle_id: Mutex::new(None),
             }
         }
 
@@ -204,26 +205,26 @@ pub mod test_utils {
     }
 
     impl ArchiveRepository for MockArchiveRepository {
-        fn open(&self, _path: &Path, _password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
+        fn open(&self, _path: &Path, _password: Option<&Password>) -> Result<ArchiveHandle<Reader>, ArchiveError> {
             let handle = ArchiveHandle::new_reader();
-            *self.crate_handle.lock().unwrap() = Some(handle.clone());
+            *self.last_handle_id.lock().unwrap() = Some(handle.id);
             Ok(handle)
         }
 
-        fn create(&self, path: &Path, _format: ArchiveFormat, _encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
+        fn create(&self, path: &Path, _format: ArchiveFormat, _encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle<Writer>, ArchiveError> {
             let handle = ArchiveHandle::new_writer()
                 .with_path(path.to_path_buf());
-            *self.crate_handle.lock().unwrap() = Some(handle.clone());
+            *self.last_handle_id.lock().unwrap() = Some(handle.id);
             Ok(handle)
         }
 
-        fn list_page(&self, _archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError> {
+        fn list_page(&self, _archive: &ArchiveHandle<Reader>, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError> {
             let entries = self.entries.lock().unwrap();
             let items: Vec<ArchiveEntry> = entries.iter().skip(offset).take(limit).cloned().collect();
             Ok(Page::new(items, offset, Some(entries.len())))
         }
 
-        fn get_properties(&self, _archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
+        fn get_properties(&self, _archive: &ArchiveHandle<Reader>) -> Result<ArchiveProperties, ArchiveError> {
             let entries = self.entries.lock().unwrap();
             let files = entries.iter().filter(|e| !e.is_directory).count() as u32;
             let folders = entries.iter().filter(|e| e.is_directory).count() as u32;
@@ -237,11 +238,11 @@ pub mod test_utils {
             })
         }
 
-        fn extract(&self, _archive: &ArchiveHandle, _indices: &[u32], _dest: &Path) -> Result<(), ArchiveError> {
+        fn extract(&self, _archive: &ArchiveHandle<Reader>, _indices: &[u32], _dest: &Path) -> Result<(), ArchiveError> {
             Ok(())
         }
 
-        fn extract_to_buffer(&self, _archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError> {
+        fn extract_to_buffer(&self, _archive: &ArchiveHandle<Reader>, index: u32) -> Result<Vec<u8>, ArchiveError> {
             if !self.mock_extract_buffer {
                 return Err(ArchiveError::UnsupportedOperation);
             }
@@ -255,7 +256,7 @@ pub mod test_utils {
             Ok(vec![fill; size.max(1)])
         }
 
-        fn add(&self, _archive: &mut ArchiveHandle, files: &[PathBuf], _password: Option<&Password>) -> Result<(), ArchiveError> {
+        fn add(&self, _archive: &mut ArchiveHandle<Writer>, files: &[PathBuf], _password: Option<&Password>) -> Result<(), ArchiveError> {
             let mut entries = self.entries.lock().unwrap();
             let next_idx = entries.len() as u32;
             for (i, path) in files.iter().enumerate() {
@@ -276,7 +277,7 @@ pub mod test_utils {
             Ok(())
         }
 
-        fn add_file_to_path(&self, _archive: &mut ArchiveHandle, file_path: &Path, archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
+        fn add_file_to_path(&self, _archive: &mut ArchiveHandle<Writer>, file_path: &Path, archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
             if file_path.exists() {
                 let name = file_path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
@@ -299,7 +300,7 @@ pub mod test_utils {
             }
         }
 
-        fn delete(&self, _archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError> {
+        fn delete(&self, _archive: &mut ArchiveHandle<Writer>, indices: &[u32]) -> Result<(), ArchiveError> {
             let mut entries = self.entries.lock().unwrap();
             let mut sorted: Vec<u32> = indices.to_vec();
             sorted.sort_unstable_by(|a, b| b.cmp(a)); // descending
@@ -315,7 +316,7 @@ pub mod test_utils {
             Ok(())
         }
 
-        fn rename(&self, _archive: &mut ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError> {
+        fn rename(&self, _archive: &mut ArchiveHandle<Writer>, index: u32, new_name: &str) -> Result<(), ArchiveError> {
             let mut entries = self.entries.lock().unwrap();
             let entry = entries.iter_mut()
                 .find(|e| e.original_index == index)
@@ -331,11 +332,11 @@ pub mod test_utils {
             Ok(())
         }
 
-        fn test(&self, _archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
+        fn test(&self, _archive: &ArchiveHandle<Reader>) -> Result<TestResult, ArchiveError> {
             Ok(self.test_result.lock().unwrap().clone())
         }
 
-        fn list_directory(&self, _archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+        fn list_directory(&self, _archive: &ArchiveHandle<Reader>, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
             let entries = self.entries.lock().unwrap();
             let prefix = if path.is_empty() { String::new() } else { path.to_string() };
             let plen = prefix.len();
@@ -349,8 +350,12 @@ pub mod test_utils {
             Ok(result)
         }
 
-        fn close(&self, _archive: &ArchiveHandle) {
-            *self.crate_handle.lock().unwrap() = None;
+        fn close(&self, _archive: &ArchiveHandle<Reader>) {
+            *self.last_handle_id.lock().unwrap() = None;
+        }
+
+        fn close_writer(&self, _archive: &ArchiveHandle<Writer>) {
+            *self.last_handle_id.lock().unwrap() = None;
         }
     }
 }

@@ -137,6 +137,12 @@ impl ArchiveFormat {
     }
 }
 
+/// Type state markers for ArchiveHandle
+#[derive(Debug, Clone, Copy)]
+pub struct Reader;
+#[derive(Debug, Clone, Copy)]
+pub struct Writer;
+
 /// Opaque handle to an opened archive.
 /// The raw FFI pointer is managed by the adapter layer (Bit7zRepository).
 ///
@@ -144,39 +150,59 @@ impl ArchiveFormat {
 /// The actual resource is tracked by id in the repository. After close() is called,
 /// the repository removes the entry, and subsequent operations on any clone will
 /// fail with "handle not found" - this is safe and expected behavior.
-#[derive(Debug, Clone)]
-pub struct ArchiveHandle {
+///
+/// The type parameter `State` enforces at compile time whether this handle is
+/// for reading (Reader) or writing (Writer) operations.
+#[derive(Debug)]
+pub struct ArchiveHandle<State = Reader> {
     pub(crate) id: u64,
-    pub(crate) is_writer: bool,
     pub(crate) path: Option<PathBuf>,
     pub(crate) format: Option<ArchiveFormat>,
     pub(crate) is_header_encrypted: bool,
     pub(crate) has_encrypted_items: bool,
+    _state: std::marker::PhantomData<State>,
 }
 
-impl ArchiveHandle {
+impl<State> Clone for ArchiveHandle<State> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            path: self.path.clone(),
+            format: self.format,
+            is_header_encrypted: self.is_header_encrypted,
+            has_encrypted_items: self.has_encrypted_items,
+            _state: std::marker::PhantomData,
+        }
+    }
+}
+
+impl ArchiveHandle<Reader> {
     pub fn new_reader() -> Self {
         Self {
             id: next_archive_id(),
-            is_writer: false,
             path: None,
             format: None,
             is_header_encrypted: false,
             has_encrypted_items: false,
+            _state: std::marker::PhantomData,
         }
     }
+}
 
+impl ArchiveHandle<Writer> {
     pub fn new_writer() -> Self {
         Self {
             id: next_archive_id(),
-            is_writer: true,
             path: None,
             format: None,
             is_header_encrypted: false,
             has_encrypted_items: false,
+            _state: std::marker::PhantomData,
         }
     }
+}
 
+impl<State> ArchiveHandle<State> {
     pub fn with_path(mut self, path: PathBuf) -> Self {
         self.path = Some(path);
         self

@@ -10,7 +10,7 @@ impl AddToArchiveUseCase {
     pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self { Self { repo } }
     pub fn execute(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &mut ArchiveHandle<Writer>,
         files: &[PathBuf],
         progress: Option<ProgressSender>,
     ) -> Result<(), ArchiveError> {
@@ -19,7 +19,7 @@ impl AddToArchiveUseCase {
 
     pub fn execute_with_password(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &mut ArchiveHandle<Writer>,
         files: &[PathBuf],
         progress: Option<ProgressSender>,
         password: Option<&Password>,

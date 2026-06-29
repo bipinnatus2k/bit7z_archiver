@@ -1,4 +1,4 @@
-use crate::adapters::events::ArchiveVmEvent;
+// use crate::adapters::events::ArchiveVmEvent;
 use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus};
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
@@ -9,7 +9,7 @@ use crate::adapters::views::root_controller::RootController;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
 
-impl EventEmitter<ArchiveVmEvent> for RootView {}
+// impl EventEmitter<ArchiveVmEvent> for RootView {}
 use crate::domain::repository::ArchiveError;
 use crate::gui::IpcReceiver;
 use crate::ipc::GuiCommand;
@@ -307,7 +307,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                         }
                         FileListIntent::RenameEntry(idx) => {
                             let actual_idx = idx.unwrap_or_else(|| this.state.first_selected_index().unwrap_or(0));
-                            cx.emit(ArchiveVmEvent::RequestRename { index: actual_idx, new_name: String::new() });
+                            // cx.emit(ArchiveVmEvent::RequestRename { index: actual_idx, new_name: String::new() });
                         }
                         FileListIntent::DeleteSelected => {
                             let handle = this.state.archive.clone();
@@ -680,7 +680,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                     }
                     "f2" => {
                         if let Some(idx) = this.state.first_selected_index() {
-                            cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
+                            // cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
                         }
                     }
                     "enter" if modifiers.alt => {
@@ -834,7 +834,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
             }))
             .on_action(cx.listener(|this: &mut RootView, _: &menu::RenameSelected, _window, cx| {
                 if let Some(idx) = this.state.first_selected_index() {
-                    cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
+                    // cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() });
                 }
             }))
             .on_action(cx.listener(|this: &mut RootView, _: &menu::ChecksumCrc32, _window, cx| {
