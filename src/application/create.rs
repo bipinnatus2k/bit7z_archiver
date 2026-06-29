@@ -65,7 +65,7 @@ mod tests {
             fn rename(&self, _: &mut ArchiveHandle, _: u32, _: &str) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
             fn test(&self, _: &ArchiveHandle) -> Result<TestResult, ArchiveError> { Ok(TestResult { total: 0, passed: 0, failed: vec![] }) }
             fn list_directory(&self, _: &ArchiveHandle, _: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> { Ok(vec![]) }
-            fn close(&self, _: ArchiveHandle) {}
+            fn close(&self, _: &ArchiveHandle) {}
         }
         let uc = CreateArchiveUseCase::new(Arc::new(FailOnCreate));
         let input = CreateArchiveInput {

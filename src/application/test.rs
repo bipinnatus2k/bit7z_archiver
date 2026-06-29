@@ -122,6 +122,8 @@ impl TestEntriesUseCase {
             }
             if !files.is_empty() {
                 expanded.extend(files);
+            } else {
+                expanded.push(index);
             }
         }
         expanded.sort();
@@ -274,7 +276,7 @@ use std::sync::Arc;
             fn rename(&self, _: &mut ArchiveHandle, _: u32, _: &str) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
             fn test(&self, _: &ArchiveHandle) -> Result<TestResult, ArchiveError> { Err(ArchiveError::Internal("test failed".into())) }
             fn list_directory(&self, _: &ArchiveHandle, _: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> { Ok(vec![]) }
-            fn close(&self, _: ArchiveHandle) {}
+            fn close(&self, _: &ArchiveHandle) {}
         }
         let uc = TestArchiveUseCase::new(Arc::new(FailTest));
         let handle = ArchiveHandle::new_reader();

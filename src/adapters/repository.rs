@@ -952,7 +952,7 @@ use std::sync::{Arc, Mutex};
         fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
             self.inner.test(archive)
         }
-        fn close(&self, archive: ArchiveHandle) {
+        fn close(&self, archive: &ArchiveHandle) {
             self.inner.close(archive)
         }
         fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
