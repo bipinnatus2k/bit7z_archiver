@@ -822,9 +822,9 @@ inline int32_t bit7z_reader_extract_to_cb(
     uint32_t count,
     const char* dest_path,
     void* ctx,
-    int32_t (*on_overwrite)(const char* src, const char* dest, uint64_t existing_size, void* ctx),
+    int32_t (*on_overwrite)(const char* src, const char* dest, uint64_t existing_size, uint64_t src_size, int64_t src_mtime, int64_t dest_mtime, void* ctx),
     int32_t (*on_progress)(uint64_t processed, uint64_t total, void* ctx),
-    void      (*on_file)(const char* path, void* ctx)
+    void      (*on_file)(const char* path, uint64_t file_size, void* ctx)
 ) {
     try {
         auto& reader = *static_cast<bit7z::BitArchiveReader*>(reader_ptr);
@@ -846,9 +846,24 @@ inline int32_t bit7z_reader_extract_to_cb(
         }
 
         if (on_overwrite || on_file) {
-            reader.setFileCallback([&reader, &destDir, ctx, on_overwrite, on_file](const bit7z::tstring& path) {
+            auto fileIndex = std::make_shared<uint32_t>(0);
+            reader.setFileCallback([&reader, &destDir, ctx, on_overwrite, on_file, fileIndex, indices, count](const bit7z::tstring& path) {
+                uint32_t idx = (*fileIndex)++;
+
+                // Look up source item info
+                uint64_t fileSize = 0;
+                int64_t srcMtime = 0;
+                if (idx < count) {
+                    auto itemPtr = bit7z_item_from_reader(&reader, indices[idx]);
+                    if (itemPtr) {
+                        auto* item = static_cast<bit7z::BitArchiveItem*>(itemPtr);
+                        fileSize = item->size();
+                        srcMtime = static_cast<int64_t>(std::chrono::system_clock::to_time_t(item->lastWriteTime()));
+                    }
+                }
+
                 if (on_file) {
-                    on_file(path.c_str(), ctx);
+                    on_file(path.c_str(), fileSize, ctx);
                 }
 
                 if (!on_overwrite) return;
@@ -857,10 +872,11 @@ inline int32_t bit7z_reader_extract_to_cb(
 
                 struct stat st;
                 if (stat(fullDest.c_str(), &st) == 0) {
-                    uint64_t existingSize = static_cast<uint64_t>(st.st_size);
-                    int32_t action = on_overwrite(path.c_str(), fullDest.c_str(), existingSize, ctx);
+                    int64_t destMtime = static_cast<int64_t>(st.st_mtime);
+                    int32_t action = on_overwrite(path.c_str(), fullDest.c_str(), static_cast<uint64_t>(st.st_size), fileSize, srcMtime, destMtime, ctx);
                     switch (action) {
                         case 0: reader.setOverwriteMode(bit7z::OverwriteMode::Overwrite); break;
+                        case 1: reader.setOverwriteMode(bit7z::OverwriteMode::Skip); break;
                         default: reader.setOverwriteMode(bit7z::OverwriteMode::Skip); break;
                     }
                 } else {
@@ -939,9 +955,9 @@ extern "C" int32_t bit7z_reader_extract_to_cb_c(
     uint32_t count,
     const char* dest_path,
     void* ctx,
-    int32_t (*on_overwrite)(const char* src, const char* dest, uint64_t existing_size, void* ctx),
+    int32_t (*on_overwrite)(const char* src, const char* dest, uint64_t existing_size, uint64_t src_size, int64_t src_mtime, int64_t dest_mtime, void* ctx),
     int32_t (*on_progress)(uint64_t processed, uint64_t total, void* ctx),
-    void   (*on_file)(const char* path, void* ctx)
+    void   (*on_file)(const char* path, uint64_t file_size, void* ctx)
 ) {
     return bit7z_reader_extract_to_cb(reader_ptr, indices, count, dest_path, ctx, on_overwrite, on_progress, on_file);
 }

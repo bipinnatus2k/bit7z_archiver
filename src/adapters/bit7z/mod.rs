@@ -200,9 +200,9 @@ extern "C" {
         count: u32,
         dest: *const std::ffi::c_char,
         ctx: *mut std::ffi::c_void,
-        on_overwrite: Option<unsafe extern "C" fn(*const std::ffi::c_char, *const std::ffi::c_char, u64, *mut std::ffi::c_void) -> i32>,
+        on_overwrite: Option<unsafe extern "C" fn(*const std::ffi::c_char, *const std::ffi::c_char, u64, u64, i64, i64, *mut std::ffi::c_void) -> i32>,
         on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
-        on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
+        on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, u64, *mut std::ffi::c_void)>,
     ) -> i32;
 }
 
@@ -215,9 +215,9 @@ impl ArchiveReader {
         indices: &[u32],
         dest: &str,
         ctx: *mut std::ffi::c_void,
-        on_overwrite: Option<unsafe extern "C" fn(*const std::ffi::c_char, *const std::ffi::c_char, u64, *mut std::ffi::c_void) -> i32>,
+        on_overwrite: Option<unsafe extern "C" fn(*const std::ffi::c_char, *const std::ffi::c_char, u64, u64, i64, i64, *mut std::ffi::c_void) -> i32>,
         on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
-        on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
+        on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, u64, *mut std::ffi::c_void)>,
     ) -> Result<(), String> {
         let c_dest = std::ffi::CString::new(dest).map_err(|e| format!("{}", e))?;
         let ret = bit7z_reader_extract_to_cb_c(
