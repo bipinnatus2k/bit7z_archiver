@@ -4,6 +4,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::setting::{Settings, SettingPage, SettingGroup, SettingItem, SettingField};
 use std::sync::{Arc, Mutex};
+use gpui_component::v_flex;
 
 type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
 
@@ -39,6 +40,7 @@ impl SettingsDialog {
                     ))),
                     window_background: WindowBackgroundAppearance::Opaque,
                     window_decorations: Some(WindowDecorations::Client),
+                    focus: true,
                     ..Default::default()
                 },
                 move |window, cx| {
@@ -61,14 +63,14 @@ impl SettingsDialog {
 }
 
 impl Render for SettingsDialog {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let prefs = self.prefs.clone();
-        let window_width = window.bounds().size.width;
-        let dialog_width = if window_width < px(640.) { px(400.) } else { px(720.) };
-        let dialog_height = if window_width < px(640.) { px(480.) } else { px(540.) };
+        // let window_width = window.bounds().size.width;
+        // let dialog_width = if window_width < px(640.) { px(400.) } else { px(720.) };
+        // let dialog_height = if window_width < px(640.) { px(480.) } else { px(540.) };
 
-        div()
-            .flex().flex_col().p_4().w(dialog_width).h(dialog_height)
+        v_flex()
+            .size_full()
             .child(
                 Settings::new("app-settings")
                     .sidebar_width(px(180.))

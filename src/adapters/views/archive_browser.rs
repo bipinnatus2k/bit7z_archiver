@@ -1,6 +1,6 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
-use gpui_component::button::Button;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem};
 use gpui_component::{h_flex, v_flex, IconName};
@@ -78,15 +78,17 @@ impl Render for ArchiveBrowser {
                                 .child(
                                     Button::new("collapse")
                                         .icon(IconName::FolderOpen)
+                                        .ghost()
                                         // .small()
                                         .on_click({
                                             let this = self_handle.clone();
                                             move |click_event: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                                if click_event.click_count() >= 2 {
+                                                if click_event.click_count() == 2 {
                                                     this.update(cx, |this, cx| {
                                                         this.toggle_collapsed(cx)
                                                     });
                                                 }
+
                                             }
                                         }),
                                 )
