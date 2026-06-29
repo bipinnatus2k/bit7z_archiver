@@ -1,22 +1,24 @@
+use crate::adapters::events::ArchiveVmEvent;
 use crate::adapters::view_models::archive_state::{ArchiveState, ViewStatus};
 use crate::adapters::views::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::adapters::views::archive_file_list::{ArchiveFileList, FileListIntent};
+use crate::adapters::views::dialogs::password::PasswordDialog;
 use crate::adapters::views::menu::{self, Menu};
 use crate::adapters::views::preview_panel::PreviewPanel;
+use crate::adapters::views::root_controller::RootController;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
-use crate::adapters::views::root_controller::RootController;
-use crate::adapters::views::dialogs::password::PasswordDialog;
-use crate::adapters::events::ArchiveVmEvent;
 
 impl EventEmitter<ArchiveVmEvent> for RootView {}
-use crate::domain::repository::{ArchiveError};
+use crate::domain::repository::ArchiveError;
 use crate::gui::IpcReceiver;
 use crate::ipc::GuiCommand;
 use crossbeam::channel::unbounded;
 use gpui::*;
-use std::path::Path;
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 pub struct RootView {
     menu: Entity<Menu>,
@@ -32,7 +34,12 @@ pub struct RootView {
 }
 
 impl RootView {
-    pub fn new(window: &mut Window, cx: &mut App, open_path: Option<String>, open_password: Option<String>) -> Entity<Self> {
+    pub fn new(
+        window: &mut Window,
+        cx: &mut App,
+        open_path: Option<String>,
+        open_password: Option<String>,
+    ) -> Entity<Self> {
         cx.new(|cx| {
             let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
 
@@ -82,9 +89,38 @@ impl RootView {
                                 .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
                                 .unwrap_or_default();
                             if !entries.is_empty() {
-                                cx.spawn(async move |_, cx| {
-                                    crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
-                                }).detach();
+                                if let Some(ref handle) = this.state.archive {
+                                    let handle = handle.clone();
+                                    let controller = this.controller.clone();
+                                    let busy = indices.clone();
+                                    cx.spawn(async move |_, cx| {
+                                        let rx = crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
+                                        use crossbeam::channel::TryRecvError;
+                                        loop {
+                                            match rx.try_recv() {
+                                                Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
+                                                    let (tx, progress_rx) = crate::application::progress::progress_channel();
+                                                    let cancel = Arc::new(AtomicBool::new(false));
+let paused = Arc::new(AtomicBool::new(false));
+crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
+                                                    let ctrl = controller.clone();
+                                                    let h = handle.clone();
+                                                    let dest = destination.clone();
+                                                    let idx = busy.clone();
+                                                    cx.background_spawn(async move {
+                                                        let _ = ctrl.extract(&h, &idx, &dest, overwrite_mode, Some(tx), Some(cancel), Some(paused));
+                                                    }).detach();
+                                                    break;
+                                                }
+                                                Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::Canceled) => break,
+                                                Err(TryRecvError::Empty) => {
+                                                    cx.background_spawn(std::future::ready(())).await;
+                                                }
+                                                Err(TryRecvError::Disconnected) => break,
+                                            }
+                                        }
+                                    }).detach();
+                                }
                             }
                         }
                         ToolbarIntent::TestArchive => {
@@ -224,9 +260,38 @@ impl RootView {
                                 .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
                                 .unwrap_or_default();
                             if !entries.is_empty() {
-                                cx.spawn(async move |_, cx| {
-                                    crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
-                                }).detach();
+                                if let Some(ref handle) = this.state.archive {
+                                    let handle = handle.clone();
+                                    let controller = this.controller.clone();
+                                    let busy = indices.clone();
+                                    cx.spawn(async move |_, cx| {
+                                        let rx = crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
+                                        use crossbeam::channel::TryRecvError;
+                                        loop {
+                                            match rx.try_recv() {
+                                                Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
+                                                    let (tx, progress_rx) = crate::application::progress::progress_channel();
+                                                    let cancel = Arc::new(AtomicBool::new(false));
+let paused = Arc::new(AtomicBool::new(false));
+crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
+                                                    let ctrl = controller.clone();
+                                                    let h = handle.clone();
+                                                    let dest = destination.clone();
+                                                    let idx = busy.clone();
+                                                    cx.background_spawn(async move {
+                                                        let _ = ctrl.extract(&h, &idx, &dest, overwrite_mode, Some(tx), Some(cancel), Some(paused));
+                                                    }).detach();
+                                                    break;
+                                                }
+                                                Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::Canceled) => break,
+                                                Err(TryRecvError::Empty) => {
+                                                    cx.background_spawn(std::future::ready(())).await;
+                                                }
+                                                Err(TryRecvError::Disconnected) => break,
+                                            }
+                                        }
+                                    }).detach();
+                                }
                             }
                         }
                         FileListIntent::TestSelected => {
@@ -366,14 +431,24 @@ impl RootView {
         let subdirs = self.state.filtered_subdirs();
         let status_text = self.state.status_text();
 
-        self.entry_list.update(cx, |c, cx| c.set_state(entries, status, path, cx));
-        self.toolbar.update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
-        self.menu.update(cx, |c, cx| c.set_state(is_open, has_sel, single, cx));
-        self.archive_browser.update(cx, |c, _| c.set_state(subdirs, vec![]));
-        self.status_bar.update(cx, |c, _| c.set_status(&status_text));
+        self.entry_list
+            .update(cx, |c, cx| c.set_state(entries, status, path, cx));
+        self.toolbar
+            .update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
+        self.menu
+            .update(cx, |c, cx| c.set_state(is_open, has_sel, single, cx));
+        self.archive_browser
+            .update(cx, |c, _| c.set_state(subdirs, vec![]));
+        self.status_bar
+            .update(cx, |c, _| c.set_status(&status_text));
     }
 
-    fn handle_open_archive(&mut self, path: &Path, password: Option<String>, cx: &mut Context<Self>) {
+    fn handle_open_archive(
+        &mut self,
+        path: &Path,
+        password: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         self.state.status = ViewStatus::Loading;
         self.sync_children(cx);
         cx.emit(ArchiveVmEvent::SelectionChanged(None));
@@ -385,44 +460,45 @@ impl RootView {
         let pw = password.map(|s| crate::domain::archive::Password::new(s));
         let pw_clone = pw.clone();
 
-        let bg_task = cx.background_spawn(async move {
-            use_case.execute(&path_buf, pw.as_ref())
-        });
+        let bg_task = cx.background_spawn(async move { use_case.execute(&path_buf, pw.as_ref()) });
 
         cx.spawn(async move |this, cx| {
             let result = bg_task.await;
-            let _ = this.update(cx, |this, cx| {
-                match result {
-                    Ok(output) => {
-                        this.state.archive = Some(output.handle);
-                        this.state.properties = Some(output.properties);
-                        this.state.archive_password = pw_clone;
-                        this.state.current_path = String::new();
-                        this.state.path_history.clear();
-                        this.state.directory_cache.clear();
-                        let mut prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
-                        prefs.archive.add_recent(path_string);
-                        cx.set_global(crate::gui::PreferencesGlobal(prefs));
-                        if let Err(e) = cx.global::<crate::gui::PreferencesRepoGlobal>().0.save(&cx.global::<crate::gui::PreferencesGlobal>().0) {
-                            log::warn!("Failed to persist preferences: {}", e);
-                        }
-                        this.load_current_directory(cx);
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(output) => {
+                    this.state.archive = Some(output.handle);
+                    this.state.properties = Some(output.properties);
+                    this.state.archive_password = pw_clone;
+                    this.state.current_path = String::new();
+                    this.state.path_history.clear();
+                    this.state.directory_cache.clear();
+                    let mut prefs = cx.global::<crate::gui::PreferencesGlobal>().0.clone();
+                    prefs.archive.add_recent(path_string);
+                    cx.set_global(crate::gui::PreferencesGlobal(prefs));
+                    if let Err(e) = cx
+                        .global::<crate::gui::PreferencesRepoGlobal>()
+                        .0
+                        .save(&cx.global::<crate::gui::PreferencesGlobal>().0)
+                    {
+                        log::warn!("Failed to persist preferences: {}", e);
                     }
-                    Err(e) => {
-                        match e {
-                            ArchiveError::EncryptedArchiveRequiresPassword => {
-                                this.state.status = ViewStatus::Empty;
-                                this.pending_password_path = Some(path_string);
-                            }
-                            _ => {
-                                this.state.status = ViewStatus::Error(e.to_string());
-                            }
+                    this.load_current_directory(cx);
+                }
+                Err(e) => {
+                    match e {
+                        ArchiveError::EncryptedArchiveRequiresPassword => {
+                            this.state.status = ViewStatus::Empty;
+                            this.pending_password_path = Some(path_string);
                         }
-                        cx.notify();
+                        _ => {
+                            this.state.status = ViewStatus::Error(e.to_string());
+                        }
                     }
+                    cx.notify();
                 }
             });
-        }).detach();
+        })
+        .detach();
     }
 
     fn load_current_directory(&mut self, cx: &mut Context<Self>) {
@@ -455,7 +531,8 @@ impl RootView {
                     cx.notify();
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     fn menu_checksum(&self, cx: &mut Context<Self>) {
@@ -464,9 +541,12 @@ impl RootView {
         let repo = self.controller.repo();
         cx.spawn(async move |_, cx| {
             if let Some(h) = handle {
-                crate::adapters::views::dialogs::checksum::ChecksumDialog::open_with_entries(cx, h, indices, repo);
+                crate::adapters::views::dialogs::checksum::ChecksumDialog::open_with_entries(
+                    cx, h, indices, repo,
+                );
             }
-        }).detach();
+        })
+        .detach();
     }
 }
 
@@ -487,7 +567,8 @@ impl Render for RootView {
                                     let p_buf = std::path::PathBuf::from(&p);
                                     this.update(cx, |this, cx| {
                                         this.handle_open_archive(&p_buf, Some(pw), cx);
-                                    }).expect("TODO: panic message");
+                                    })
+                                    .expect("TODO: panic message");
                                 }
                                 PasswordResult::Canceled => {}
                             }
@@ -500,7 +581,8 @@ impl Render for RootView {
                         Err(TryRecvError::Disconnected) => break,
                     }
                 }
-            }).detach();
+            })
+            .detach();
         }
 
         gpui_component::v_flex().size_full().relative()
@@ -535,9 +617,38 @@ impl Render for RootView {
                             .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
                             .unwrap_or_default();
                         if !entries.is_empty() {
-                            cx.spawn(async move |_, cx| {
-                                crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
-                            }).detach();
+                            if let Some(ref handle) = this.state.archive {
+                                let handle = handle.clone();
+                                let controller = this.controller.clone();
+                                let busy = indices.clone();
+                                cx.spawn(async move |_, cx| {
+                                    let rx = crate::adapters::views::dialogs::extract::ExtractDialog::open(entries, cx);
+                                    use crossbeam::channel::TryRecvError;
+                                    loop {
+                                        match rx.try_recv() {
+                                                Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
+                                                    let (tx, progress_rx) = crate::application::progress::progress_channel();
+                                                    let cancel = Arc::new(AtomicBool::new(false));
+let paused = Arc::new(AtomicBool::new(false));
+crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
+                                                    let ctrl = controller.clone();
+                                                    let h = handle.clone();
+                                                    let dest = destination.clone();
+                                                    let idx = busy.clone();
+                                                    cx.background_spawn(async move {
+                                                        let _ = ctrl.extract(&h, &idx, &dest, overwrite_mode, Some(tx), Some(cancel), Some(paused));
+                                                    }).detach();
+                                                    break;
+                                                }
+                                            Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::Canceled) => break,
+                                            Err(TryRecvError::Empty) => {
+                                                cx.background_spawn(std::future::ready(())).await;
+                                            }
+                                            Err(TryRecvError::Disconnected) => break,
+                                        }
+                                    }
+                                }).detach();
+                            }
                         }
                     }
                     "t" if cmd => {
@@ -775,7 +886,5 @@ impl Render for RootView {
                     )
             ))
             .child(self.status_bar.clone())
-
-
     }
 }
