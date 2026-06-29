@@ -62,7 +62,7 @@ mod open_and_list {
         let f3 = page.items.iter().find(|e| e.name == "f3.txt").unwrap();
         assert_eq!(f3.size, 32);
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -84,7 +84,7 @@ mod open_and_list {
         assert!(names.contains(&"sub"));
         assert!(names.contains(&"f3.txt"));
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -106,7 +106,7 @@ mod open_and_list {
         assert!(names.contains(&"sub"));
         assert!(names.contains(&"f3.txt"));
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -127,7 +127,7 @@ mod open_and_list {
         assert_eq!(props.items_count, 0);
         assert_eq!(props.files_count, 0);
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 }
 
@@ -155,7 +155,7 @@ mod properties {
         assert!(!props.is_encrypted);
         assert!(!props.has_encrypted_items);
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -179,7 +179,7 @@ mod properties {
         assert!(props.packed_size > 0);
         assert!(props.packed_size <= props.total_size);
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -197,7 +197,7 @@ mod properties {
         assert!(props.is_encrypted);
         assert!(props.has_encrypted_items);
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 }
 
@@ -233,7 +233,7 @@ mod extract {
         let content = std::fs::read_to_string(&extracted_path).unwrap();
         assert_eq!(content.trim_end(), "hello world from f1");
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -262,7 +262,7 @@ mod extract {
         assert!(dest.join("f2.txt").exists());
         assert!(dest.join("sub").join("f3.txt").exists());
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -285,7 +285,7 @@ mod extract {
         let content = String::from_utf8(buffer).unwrap();
         assert_eq!(content.trim_end(), "hello world from f1");
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -311,7 +311,7 @@ mod extract {
         let content = String::from_utf8(buffer).unwrap();
         assert_eq!(content.trim_end(), "hello world from f1");
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 }
 
@@ -337,7 +337,7 @@ mod test_integrity {
         assert_eq!(result.passed, 4);
         assert!(result.failed.is_empty());
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -355,7 +355,7 @@ mod test_integrity {
         assert_eq!(result.passed, 0);
         assert!(result.failed.is_empty());
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -374,7 +374,7 @@ mod test_integrity {
         assert_eq!(result.passed, 1);
         assert!(result.failed.is_empty());
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -393,7 +393,7 @@ mod test_integrity {
                     test_result.passed < 2 || !test_result.failed.is_empty(),
                     "Corrupted archive should have at least one failed entry"
                 );
-                repo.close(handle);
+                repo.close(&handle);
             }
             Err(e) => {
                 // Opening a corrupted archive may fail — that itself proves integrity detection
@@ -427,7 +427,7 @@ mod list_directory {
         assert!(root.iter().any(|e| e.name == "f1.txt" && !e.is_directory));
         assert!(root.iter().any(|e| e.name == "f2.txt" && !e.is_directory));
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -445,7 +445,7 @@ mod list_directory {
         assert_eq!(children.len(), 1, "Expected 1 child in 'sub/' directory");
         assert_eq!(children[0].name, "f3.txt");
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     #[test]
@@ -466,7 +466,7 @@ mod list_directory {
             Err(e) => panic!("Unexpected error: {:?}", e),
         }
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 }
 
@@ -534,7 +534,7 @@ mod error_handling {
         let result = repo.extract(&handle, &[999], &dest);
         assert!(result.is_err());
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 }
 
@@ -569,7 +569,7 @@ mod pagination {
         let page3 = repo.list_page(&handle, 10, 5).unwrap();
         assert_eq!(page3.items.len(), 0);
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 }
 
@@ -599,6 +599,6 @@ mod compression_ratio {
             assert!(ratio <= 1.0, "Ratio should not exceed 1.0");
         }
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 }

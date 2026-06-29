@@ -461,7 +461,7 @@ fn bench_list_directory(
         });
     }
 
-    repo.close(handle);
+    repo.close(&handle);
 }
 
 // ── Report ────────────────────────────────────────────────────────────────

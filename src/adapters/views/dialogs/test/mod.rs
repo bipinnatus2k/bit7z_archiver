@@ -108,7 +108,7 @@ impl TestDialog {
         repo: Arc<dyn ArchiveRepository>,
     ) -> Receiver<TestResultEvent> {
         let count = repo.open(&path, password.as_ref())
-            .and_then(|h| { let n = repo.get_properties(&h).map(|p| p.files_count).unwrap_or(0); repo.close(h); Ok(n) })
+            .and_then(|h| { let n = repo.get_properties(&h).map(|p| p.files_count).unwrap_or(0); repo.close(&h); Ok(n) })
             .unwrap_or(0) as usize;
         let (tx, rx) = unbounded::<TestResultEvent>();
         let opts = WindowOptions {
@@ -159,7 +159,7 @@ impl TestDialog {
                     let uc = TestEntriesUseCase::new(repo.clone());
                     let result = uc.execute(&h, indices.as_deref(), Some(progress_tx));
                     if dialog_owns_handle {
-                        repo.close(h);
+                        repo.close(&h);
                     }
                     let _ = result_tx2.send(result);
                 }).detach();

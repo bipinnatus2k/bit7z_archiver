@@ -890,7 +890,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(entries)
     }
 
-    fn close(&self, archive: ArchiveHandle) {
+    fn close(&self, archive: &ArchiveHandle) {
         if let Some(raw) = self.remove_raw(archive.id) {
             unsafe { crate::ffi::bit7z_reader_close(raw as *mut _); }
         }

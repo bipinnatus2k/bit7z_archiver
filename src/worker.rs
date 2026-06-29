@@ -45,7 +45,7 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
                             code: 1, message: e.to_string(),
                         }),
                     }
-                    repo.close(archive);
+                    repo.close(&archive);
                 }
                 Err(e) => send_msg(&mut stdout, &WorkerMessage::Error {
                     code: 1, message: e.to_string(),

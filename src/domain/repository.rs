@@ -34,7 +34,7 @@ pub trait ArchiveRepository: Send + Sync {
     fn delete(&self, archive: &mut ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError>;
     fn rename(&self, archive: &mut ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError>;
     fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError>;
-    fn close(&self, archive: ArchiveHandle);
+    fn close(&self, archive: &ArchiveHandle);
 
     /// Set a progress notifier for long-running operations.
     fn set_progress_notifier(&self, _notifier: Box<dyn ProgressNotifier>) {}
@@ -351,7 +351,7 @@ pub mod test_utils {
             Ok(result)
         }
 
-        fn close(&self, _archive: ArchiveHandle) {
+        fn close(&self, _archive: &ArchiveHandle) {
             *self.crate_handle.lock().unwrap() = None;
         }
     }

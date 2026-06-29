@@ -253,7 +253,7 @@ impl RootController {
     }
 
     pub fn close_archive(&self, archive: ArchiveHandle) {
-        self.repo.close(archive);
+        self.repo.close(&archive);
     }
 }
 

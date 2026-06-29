@@ -139,6 +139,11 @@ impl ArchiveFormat {
 
 /// Opaque handle to an opened archive.
 /// The raw FFI pointer is managed by the adapter layer (Bit7zRepository).
+///
+/// Note: ArchiveHandle is Clone because it's just metadata (id, path, format).
+/// The actual resource is tracked by id in the repository. After close() is called,
+/// the repository removes the entry, and subsequent operations on any clone will
+/// fail with "handle not found" - this is safe and expected behavior.
 #[derive(Debug, Clone)]
 pub struct ArchiveHandle {
     pub(crate) id: u64,

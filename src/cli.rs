@@ -121,7 +121,7 @@ where
 {
     let handle = repo.open(path, password)?;
     let result = f(&handle);
-    repo.close(handle);
+    repo.close(&handle);
     result
 }
 
@@ -221,7 +221,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
             let add_uc = AddToArchiveUseCase::new(repo.clone());
             match add_uc.execute(&mut handle, &file_paths, None) {
                 Ok(()) => {},
-                Err(e) => { eprintln!("Error adding files: {}", e); repo.close(handle); return; }
+                Err(e) => { eprintln!("Error adding files: {}", e); repo.close(&handle); return; }
             }
 
             // Compute sizes for summary
@@ -245,7 +245,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 dest, file_paths.len(), format_size(uncompressed, BINARY),
                 format_size(compressed, BINARY), ratio);
 
-            repo.close(handle);
+            repo.close(&handle);
         }
         Commands::Preview { path, index, password, max_bytes } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
@@ -274,7 +274,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                         }
                         Err(e) => eprintln!("Preview error: {}", e),
                     }
-                    repo.close(handle);
+                    repo.close(&handle);
                 }
                 Err(e) => eprintln!("Error: {}", e),
             }
@@ -290,7 +290,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Ok(()) => println!("Added {} files to {}", files.len(), path),
                 Err(e) => eprintln!("Add error: {}", e),
             }
-            repo.close(handle);
+            repo.close(&handle);
         }
         Commands::Delete { path, indices, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
@@ -302,7 +302,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Ok(()) => println!("Deleted {} entries from {}", indices.len(), path),
                 Err(e) => eprintln!("Delete error: {}", e),
             }
-            repo.close(handle);
+            repo.close(&handle);
         }
         Commands::Rename { path, index, name, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
@@ -314,7 +314,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Ok(()) => println!("Renamed entry {} to '{}'", index, name),
                 Err(e) => eprintln!("Rename error: {}", e),
             }
-            repo.close(handle);
+            repo.close(&handle);
         }
         Commands::List { path, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
@@ -357,7 +357,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 }
                 Err(e) => eprintln!("Error listing archive: {}", e),
             }
-            repo.close(handle);
+            repo.close(&handle);
         }
         Commands::Checksum { path, index, algorithm, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
@@ -379,7 +379,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 }
                 Err(e) => eprintln!("Checksum error: {}", e),
             }
-            repo.close(handle);
+            repo.close(&handle);
         }
         Commands::NewFolder { path, folder_path, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
@@ -392,7 +392,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Ok(()) => println!("Created folder '{}' in {}", folder_path, path.display()),
                 Err(e) => eprintln!("Error: {}", e),
             }
-            repo.close(handle);
+            repo.close(&handle);
         }
         Commands::ShellInstall => {
             #[cfg(target_os = "windows")]

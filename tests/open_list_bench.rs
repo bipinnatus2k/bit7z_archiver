@@ -84,7 +84,7 @@ fn open_list_bench() {
             let start = Instant::now();
             if let Ok(handle) = repo.open(&path, None) {
                 open_times.push(start.elapsed());
-                repo.close(handle);
+                repo.close(&handle);
             }
         }
         if !open_times.is_empty() {
@@ -143,7 +143,7 @@ fn open_list_bench() {
             });
         }
 
-        repo.close(handle);
+        repo.close(&handle);
     }
 
     print_report(&results);
