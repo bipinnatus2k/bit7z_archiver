@@ -36,6 +36,9 @@ extern "C" fn overwrite_trampoline(
     src: *const c_char,
     dest: *const c_char,
     existing_size: u64,
+    _src_size: u64,
+    _src_mtime: i64,
+    _dest_mtime: i64,
     ctx: *mut c_void,
 ) -> i32 {
     let ctx = unsafe { &*(ctx as *const WorkerCtx) };
@@ -88,6 +91,10 @@ extern "C" fn file_trampoline(path: *const c_char, ctx: *mut c_void) {
     });
 }
 
+extern "C" fn extract_file_trampoline(path: *const c_char, _file_size: u64, ctx: *mut c_void) {
+    file_trampoline(path, ctx)
+}
+
 /// Spawn a background thread that extracts items with progress, cancel, pause,
 /// and per-file conflict support.
 ///
@@ -125,9 +132,9 @@ pub fn spawn_extract(
                 &indices,
                 &dest,
                 &ctx as *const WorkerCtx as *mut c_void,
-                Some(overwrite_trampoline as unsafe extern "C" fn(_, _, _, _) -> _),
+                Some(overwrite_trampoline as unsafe extern "C" fn(_, _, _, _, _, _, _) -> _),
                 Some(progress_trampoline as unsafe extern "C" fn(_, _, _) -> _),
-                Some(file_trampoline as unsafe extern "C" fn(_, _)),
+                Some(extract_file_trampoline as unsafe extern "C" fn(_, _, _)),
             )
         };
 
