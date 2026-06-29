@@ -17,7 +17,9 @@ use crate::domain::{
 };
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
+#[derive(Clone)]
 pub struct RootController {
     repo: Arc<dyn ArchiveRepository>,
 }
@@ -53,9 +55,84 @@ impl RootController {
         archive: &ArchiveHandle,
         indices: &[u32],
         dest: &Path,
+        overwrite_mode: OverwriteMode,
+        progress: Option<ProgressSender>,
+        cancel: Option<Arc<AtomicBool>>,
+        paused: Option<Arc<AtomicBool>>,
     ) -> Result<(), ArchiveError> {
-        let uc = ExtractEntriesUseCase::new(self.repo.clone());
-        uc.execute(archive, indices, dest)
+        let expanded = self.expand_indices(archive, indices)?;
+        if let Some(tx) = progress {
+            self.repo.set_overwrite_mode(overwrite_mode);
+            if let Some(ref c) = cancel { self.repo.set_cancel_flag(c.clone()); }
+            if let Some(ref p) = paused { self.repo.set_pause_flag(p.clone()); }
+            let tx_end = tx.clone();
+            let _ = tx.send(crate::application::progress::ProgressUpdate {
+                file_current: 0, file_total: expanded.len() as u64,
+                current_file: Some(format!("Extracting {} items to {}", expanded.len(), dest.display())),
+                items_done: 0, items_total: expanded.len() as u64,
+                bytes_done: 0, bytes_total: 100,
+                error: None,
+            });
+            let result = self.repo.extract_with_progress(archive, &expanded, dest, tx);
+            let err_str = result.as_ref().err().map(|e| {
+                format!("Extract error (id={}, dest={}): {}", archive.id, dest.display(), e)
+            });
+            if let Some(ref msg) = err_str {
+                eprintln!("{}", msg);
+            }
+            let _ = tx_end.send(crate::application::progress::ProgressUpdate {
+                file_current: 0, file_total: 0,
+                current_file: None,
+                items_done: if result.is_ok() { expanded.len() as u64 } else { 0 },
+                items_total: expanded.len() as u64,
+                bytes_done: 100, bytes_total: 100,
+                error: err_str,
+            });
+            result
+        } else {
+            let uc = ExtractEntriesUseCase::new(self.repo.clone());
+            uc.execute(archive, &expanded, dest)
+        }
+    }
+
+    /// Expand selection to include all child items of selected directories.
+    pub fn expand_indices(&self, archive: &ArchiveHandle, indices: &[u32]) -> Result<Vec<u32>, ArchiveError> {
+        let mut expanded = Vec::new();
+        for &idx in indices {
+            if let Ok(page) = self.repo.list_page(archive, idx as usize, 1) {
+                if let Some(entry) = page.items.first() {
+                    if entry.is_directory {
+                        self.collect_directory(archive, &entry.path, &mut expanded)?;
+                        continue;
+                    }
+                }
+            }
+            expanded.push(idx);
+        }
+        Ok(expanded)
+    }
+
+    fn collect_directory(
+        &self,
+        archive: &ArchiveHandle,
+        dir_path: &str,
+        expanded: &mut Vec<u32>,
+    ) -> Result<(), ArchiveError> {
+        let path = if dir_path.ends_with('/') {
+            dir_path.to_string()
+        } else {
+            format!("{}/", dir_path)
+        };
+        if let Ok(children) = self.repo.list_directory(archive, &path) {
+            for child in &children {
+                if child.is_directory {
+                    self.collect_directory(archive, &child.path, expanded)?;
+                } else {
+                    expanded.push(child.original_index);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn extract_to_buffer(
