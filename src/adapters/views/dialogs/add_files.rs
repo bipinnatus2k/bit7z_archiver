@@ -39,7 +39,7 @@ pub struct AddFilesDialog {
     password_confirm_input: Option<Entity<InputState>>,
     format_select: Option<Entity<SelectState<SearchableVec<FormatItem>>>>,
     level_select: Option<Entity<SelectState<SearchableVec<LevelItem>>>>,
-    archive: Option<ArchiveHandle>,
+    archive: Option<ArchiveHandle<Writer>>,
     repo: Option<std::sync::Arc<dyn crate::domain::repository::ArchiveRepository>>,
     is_solid: bool,
 }
@@ -122,7 +122,7 @@ impl AddFilesDialog {
     pub fn new(
         cx: &mut Context<Self>,
         format: ArchiveFormat,
-        archive: Option<ArchiveHandle>,
+        archive: Option<ArchiveHandle<Writer>>,
         repo: Option<std::sync::Arc<dyn crate::domain::repository::ArchiveRepository>>,
         is_solid: bool,
     ) -> Self {
@@ -215,7 +215,7 @@ impl AddFilesDialog {
     pub fn open(
         cx: &mut AsyncApp,
         format: ArchiveFormat,
-        archive: Option<ArchiveHandle>,
+        archive: Option<ArchiveHandle<Writer>>,
         repo: Option<Arc<dyn crate::domain::repository::ArchiveRepository>>,
         is_solid: bool,
     ) -> Receiver<AddFilesDialogEvent> {
@@ -484,9 +484,9 @@ impl Render for AddFilesDialog {
                                             state.error = None;
                                         });
                                         let mut handle = handle.clone();
-                                        let pw = encryption.as_ref().map(|e| Password::new(e.password.as_str().to_string()));
+                                        // let pw = encryption.as_ref().map(|e| e.password ) ;
                                         cx.background_spawn(async move {
-                                            let _ = uc.execute_with_password(&mut handle, &files, Some(tx), pw.as_ref());
+                                            let _ = uc.execute_with_password(&mut handle, &files, Some(tx), Some(&encryption.as_ref().unwrap().password));
                                         }).detach();
                                     }
                                     cx.emit(AddFilesDialogEvent::Canceled);

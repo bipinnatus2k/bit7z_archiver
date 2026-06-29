@@ -45,7 +45,7 @@ impl RootController {
     pub fn create_archive(
         &self,
         input: &CreateArchiveInput,
-    ) -> Result<ArchiveHandle, ArchiveError> {
+    ) -> Result<ArchiveHandle<Writer>, ArchiveError> {
         let uc = CreateArchiveUseCase::new(self.repo.clone());
         uc.execute(input)
     }
@@ -145,7 +145,7 @@ impl RootController {
 
     pub fn add_files(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &mut ArchiveHandle<Writer>,
         files: &[std::path::PathBuf],
         progress: Option<ProgressSender>,
         password: Option<&Password>,
@@ -165,7 +165,7 @@ impl RootController {
 
     pub fn delete_entries(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &mut ArchiveHandle<Writer>,
         indices: &[u32],
         progress: Option<ProgressSender>,
     ) -> Result<(), ArchiveError> {
@@ -178,7 +178,7 @@ impl RootController {
 
     pub fn rename_entry(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &mut ArchiveHandle<Writer>,
         index: u32,
         new_name: &str,
     ) -> Result<(), ArchiveError> {

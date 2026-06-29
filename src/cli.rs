@@ -245,7 +245,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 dest, file_paths.len(), format_size(uncompressed, BINARY),
                 format_size(compressed, BINARY), ratio);
 
-            repo.close(&handle);
+            repo.close_writer(&handle);
         }
         Commands::Preview { path, index, password, max_bytes } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));

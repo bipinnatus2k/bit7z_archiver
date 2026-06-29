@@ -18,7 +18,7 @@ pub enum DeleteResult {
 pub struct DeleteDialog {
     view: Entity<DeleteDialogView>,
     indices: Vec<u32>,
-    handle: ArchiveHandle,
+    handle: ArchiveHandle<Writer>,
     repo: Arc<dyn ArchiveRepository>,
     result_tx: Option<Sender<DeleteResult>>,
 }
@@ -27,7 +27,7 @@ impl DeleteDialog {
     pub fn open(
         cx: &mut AsyncApp,
         indices: Vec<u32>,
-        handle: ArchiveHandle,
+        handle: ArchiveHandle<Writer>,
         repo: Arc<dyn ArchiveRepository>,
     ) -> Receiver<DeleteResult> {
         let (tx, rx) = unbounded::<DeleteResult>();

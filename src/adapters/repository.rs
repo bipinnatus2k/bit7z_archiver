@@ -291,7 +291,7 @@ impl Bit7zRepository {
         self.lib.lock().map_err(|_| ArchiveError::Internal("[lock_lib] bit7z library mutex poisoned - a prior operation panicked while holding the lock".into()))
     }
 
-    fn get_raw(&self, archive: &ArchiveHandle) -> Result<usize, ArchiveError> {
+    fn get_raw<T>(&self, archive: &ArchiveHandle<T>) -> Result<usize, ArchiveError> {
         self.handles.lock().map_err(|_| ArchiveError::Internal("[get_raw] handles mutex poisoned - a prior operation panicked while holding the lock".into()))?
             .get(&archive.id)
             .copied()
@@ -927,7 +927,7 @@ use std::sync::{Arc, Mutex};
             }
             self.inner.open(path, password)
         }
-        fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
+        fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle<Writer>, ArchiveError> {
             self.inner.create(path, format, encryption)
         }
         fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError> {
