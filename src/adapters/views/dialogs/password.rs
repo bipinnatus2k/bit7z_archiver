@@ -2,8 +2,9 @@ use crate::theme::Theme;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
-use gpui_component::h_flex;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::{h_flex, v_flex};
 
 #[derive(Debug, Clone)]
 pub enum PasswordDialogEvent {
@@ -56,6 +57,8 @@ impl PasswordDialog {
                     ))),
                     window_background: WindowBackgroundAppearance::Opaque,
                     window_decorations: Some(WindowDecorations::Client),
+                    focus: true,
+                    kind: WindowKind::PopUp,
                     ..Default::default()
                 },
                 move |window, cx| {
@@ -98,7 +101,9 @@ impl Render for PasswordDialog {
         let has_error = self.error.is_some();
         let err = self.error.clone();
 
-        div().flex().flex_col().gap_3().p_4()
+        v_flex()
+            .p_4()
+            .gap_4()
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, _cx| {
                 if event.keystroke.key == "enter" {
                     this.submit_and_close(window);
@@ -107,18 +112,16 @@ impl Render for PasswordDialog {
                     this.cancel_and_close(window);
                 }
             }))
-            .child(div().font_weight(FontWeight::BOLD).child("Password Required"))
+            .child(div().font_weight(FontWeight::BOLD).text_lg().child("Password Required"))
             .child(div().text_sm().child(format!("The archive \"{}\" is encrypted.", self.archive_name)))
             .child(Input::new(&self.input_state).flex_1())
             .when(has_error, |el| el.child(div().text_sm().mt_1().text_color(theme.error).child(err.unwrap_or_default())))
             .child(h_flex().justify_end().gap_2()
-                .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, window, _cx| {
-                        this.cancel_and_close(window);
-                    })))
-                .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("OK")
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, window, _cx| {
-                        this.submit_and_close(window);
-                    }))))
+                .child(Button::new("cancel").outline().label("Cancel").on_click(cx.listener(|this, _, window, _| {
+                    this.cancel_and_close(window);
+                })))
+                .child(Button::new("ok").primary().label("OK").on_click(cx.listener(|this, _, window, _| {
+                    this.submit_and_close(window);
+                }))))
     }
 }

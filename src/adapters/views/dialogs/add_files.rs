@@ -9,6 +9,7 @@ use gpui_component::input::{Input, InputState};
 use gpui_component::select::{Select, SelectItem, SelectState, SearchableVec};
 use gpui_component::Disableable;
 use gpui_component::IndexPath;
+use gpui_component::{h_flex, v_flex};
 use std::sync::{Arc, Mutex};
 
 type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
@@ -303,7 +304,7 @@ impl Render for AddFilesDialog {
                 field()
                     .label("Source")
                     .child(
-                        gpui_component::h_flex()
+                        h_flex()
                             .gap_2()
                             .child(
                                 Button::new("add-files")
@@ -344,7 +345,7 @@ impl Render for AddFilesDialog {
                                     if self.file_list.is_empty() {
                                         div().text_color(cx.global::<Theme>().muted).text_sm().child("No files added").into_any()
                                     } else {
-                                        div().flex().flex_col().gap_px().children(
+                                        v_flex().gap_px().children(
                                             self.file_list.iter().map(|p| {
                                                 div().text_sm().truncate().child(p.to_string_lossy().to_string()).into_any()
                                             }).collect::<Vec<_>>()
@@ -358,7 +359,7 @@ impl Render for AddFilesDialog {
                 field()
                     .label("Filter")
                     .child(
-                        gpui_component::h_flex()
+                        h_flex()
                             .gap_2()
                             .child(div().flex_1().child(Input::new(&filter_input)))
                             .child(
@@ -462,7 +463,7 @@ impl Render for AddFilesDialog {
             })
             .child(
                 field().label_indent(false).child(
-                    gpui_component::h_flex().justify_end().gap_2()
+                    h_flex().justify_end().gap_2()
                         .child(Button::new("cancel").label("Cancel").on_click(cx.listener(|_, _, _, cx| { cx.emit(AddFilesDialogEvent::Canceled); })))
                         .child(
                             Button::new("ok").primary().label("OK").disabled(!is_valid)

@@ -2,6 +2,8 @@ use crate::domain::archive::{TestFailure, TestResult};
 use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::{h_flex, v_flex};
 
 pub struct TestResultsDialog {
     pub result: Option<TestResult>,
@@ -33,7 +35,7 @@ impl Render for TestResultsDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.global::<Theme>().clone();
 
-        div().flex().flex_col().gap_3().p_4().w(px(420.))
+        v_flex().gap_3().p_4().w(px(420.))
             .child(div().font_weight(FontWeight::BOLD).text_lg().child("Test Results"))
             .when_some(self.result.as_ref(), |el, result| {
                 let all_pass = result.failed.is_empty();
@@ -44,20 +46,19 @@ impl Render for TestResultsDialog {
                 )
                 .when(!all_pass, |el| {
                     el.child(
-                        div().flex().flex_col().gap_1()
+                        v_flex().gap_1()
                             .child(
-                                div().px_2().py_1().cursor_pointer().flex().flex_row().gap_1()
-                                    .hover(|mut s| { s.background = Some(theme.hover.into()); s })
-                                    .child(if self.show_failed { "\u{25BC}" } else { "\u{25B6}" })
-                                    .child(format!("Failed entries ({})", result.failed.len()))
-                                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _e, _window, cx| {
+                                Button::new("toggle-failed")
+                                    .label(if self.show_failed { "\u{25BC} Failed entries" } else { "\u{25B6} Failed entries" })
+                                    .ghost()
+                                    .on_click(cx.listener(|this, _e, _window, cx| {
                                         this.show_failed = !this.show_failed;
                                         cx.notify();
                                     }))
                             )
                             .when(self.show_failed, |el| {
                                 el.child(
-                                    div().flex().flex_col().gap_1().pl_4()
+                                    v_flex().gap_1().pl_4()
                                         .children(result.failed.iter().map(|f| {
                                             failed_entry(f, &theme).into_any_element()
                                         }).collect::<Vec<_>>())
@@ -70,10 +71,12 @@ impl Render for TestResultsDialog {
                 el.child(div().text_sm().text_color(theme.muted).child("Loading results..."))
             })
             .child(
-                div().flex().flex_row().justify_end().gap_2().pt_2()
+                h_flex().justify_end().gap_2().pt_2()
                     .child(
-                        div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Close")
-                            .on_mouse_down(MouseButton::Left, cx.listener(|_this, _e, _window, cx| {
+                        Button::new("close")
+                            .label("Close")
+                            .primary()
+                            .on_click(cx.listener(|_this, _e, _window, cx| {
                                 cx.emit(TestResultsEvent::Close);
                             }))
                     )
@@ -93,7 +96,7 @@ fn failed_entry(f: &TestFailure, theme: &Theme) -> impl IntoElement {
             "Unsupported operation".to_string()
         }
     };
-    div().flex().flex_col().gap_0().py_1()
+    v_flex().gap_0().py_1()
         .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(format!("#{} {}", f.index, f.path)))
         .child(div().text_xs().text_color(theme.error).child(reason))
 }
