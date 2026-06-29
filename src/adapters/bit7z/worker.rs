@@ -29,6 +29,10 @@ struct WorkerCtx {
     conflict_rx: Receiver<ConflictAction>,
 }
 
+// SAFETY: WorkerCtx contains only thread-safe types:
+// - Arc<AtomicBool> is Send + Sync
+// - crossbeam Sender/Receiver are Send
+// This struct is passed as a raw pointer to C callbacks, which only read from it.
 unsafe impl Send for WorkerCtx {}
 unsafe impl Sync for WorkerCtx {}
 

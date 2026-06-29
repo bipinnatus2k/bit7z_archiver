@@ -19,6 +19,10 @@ pub struct Library {
     raw: Handle,
 }
 
+// SAFETY: Library wraps a raw FFI handle (usize) to a C++ bit7z library instance.
+// The underlying C++ library is thread-safe for concurrent read operations.
+// All FFI calls go through the repository's Mutex-protected methods, ensuring
+// serialized access to mutable operations.
 unsafe impl Send for Library {}
 unsafe impl Sync for Library {}
 
@@ -76,6 +80,10 @@ pub struct ArchiveReader {
     raw: Handle,
 }
 
+// SAFETY: ArchiveReader wraps a raw FFI handle (usize) to a C++ archive reader.
+// The handle is only used for read operations which are thread-safe in bit7z.
+// The handle is stored in Bit7zRepository's HashMap protected by Mutex, and
+// all access goes through methods that lock the mutex first.
 unsafe impl Send for ArchiveReader {}
 unsafe impl Sync for ArchiveReader {}
 
@@ -387,6 +395,9 @@ pub struct Writer {
     raw: Handle,
 }
 
+// SAFETY: Writer wraps a raw FFI handle (usize) to a C++ archive writer.
+// Writer instances are short-lived and used within a single operation.
+// All access is serialized through Bit7zRepository's Mutex-protected library lock.
 unsafe impl Send for Writer {}
 unsafe impl Sync for Writer {}
 
@@ -579,6 +590,9 @@ pub struct Editor {
     raw: Handle,
 }
 
+// SAFETY: Editor wraps a raw FFI handle (usize) to a C++ archive editor.
+// Editor instances are short-lived and used within a single operation.
+// All access is serialized through Bit7zRepository's Mutex-protected library lock.
 unsafe impl Send for Editor {}
 unsafe impl Sync for Editor {}
 

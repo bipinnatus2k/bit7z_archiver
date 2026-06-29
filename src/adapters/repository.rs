@@ -274,6 +274,11 @@ pub struct Bit7zRepository {
     paused: Mutex<Option<Arc<AtomicBool>>>,
 }
 
+// SAFETY: Bit7zRepository contains raw FFI pointers in the handles HashMap.
+// All fields are wrapped in Mutex, ensuring thread-safe access. The raw pointers
+// are only accessed while holding the appropriate locks (lib Mutex for FFI calls,
+// handles Mutex for pointer lookup). The C++ bit7z library is thread-safe for
+// concurrent reads, and mutable operations are serialized through the lib Mutex.
 unsafe impl Send for Bit7zRepository {}
 unsafe impl Sync for Bit7zRepository {}
 
