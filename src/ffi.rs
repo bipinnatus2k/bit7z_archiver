@@ -1,10 +1,14 @@
+// Allow non-standard naming for autocxx-generated C/C++ bindings
+#![allow(non_upper_case_globals)]
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+
 use autocxx::prelude::*;
 
 include_cpp! {
     #include "demo.h"
     safety!(unsafe_ffi)
 
-    generate!("multiply")
     generate!("bit7z_create_library")
     generate!("bit7z_destroy_library")
 

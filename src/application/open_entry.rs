@@ -1,12 +1,8 @@
+use crate::application::progress::NoopNotifier;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-pub struct NoopNotifier;
-impl ProgressNotifier for NoopNotifier {
-    fn notify(&self, _update: &ProgressUpdate) {}
-}
+use std::sync::atomic::AtomicBool;
 
 pub struct OpenEntryUseCase {
     repo: Arc<dyn ArchiveRepository>,

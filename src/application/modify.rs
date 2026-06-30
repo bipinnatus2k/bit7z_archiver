@@ -1,7 +1,10 @@
 use crate::application::plan::{ExecutionPlan, ConflictResolution};
+use crate::application::progress::NoopNotifier;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 pub struct ModifyArchiveUseCase {
     repo: Arc<dyn ArchiveRepository>,
@@ -37,5 +40,90 @@ impl ModifyArchiveUseCase {
     {
         plan.apply_resolutions(resolutions);
         self.repo.apply_changes(archive, &plan, options)
+    }
+
+    pub fn add_files(
+        &self,
+        archive: &ArchiveHandle,
+        files: &[PathBuf],
+        progress: Option<Arc<dyn ProgressNotifier>>,
+    ) -> Result<(), ArchiveError> {
+        for f in files {
+            if !f.is_file() && !f.is_dir() {
+                return Err(ArchiveError::NotFound(f.to_string_lossy().to_string()));
+            }
+        }
+
+        let mut change_set = ChangeSet::new();
+        for f in files {
+            let archive_path = f.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            change_set.add(f.clone(), archive_path);
+        }
+
+        let plan = self.repo.plan_changes(archive, &change_set)?;
+
+        if plan.has_conflicts() {
+            return Err(ArchiveError::Conflict);
+        }
+
+        let options = WriteOptions {
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
+        };
+
+        self.repo.apply_changes(archive, &plan, &options)
+    }
+
+    pub fn delete_entries(
+        &self,
+        archive: &ArchiveHandle,
+        indices: &[u32],
+        progress: Option<Arc<dyn ProgressNotifier>>,
+    ) -> Result<(), ArchiveError> {
+        let mut change_set = ChangeSet::new();
+        for &idx in indices {
+            change_set.delete(idx);
+        }
+
+        let plan = self.repo.plan_changes(archive, &change_set)?;
+
+        if plan.has_conflicts() {
+            return Err(ArchiveError::Conflict);
+        }
+
+        let options = WriteOptions {
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
+        };
+
+        self.repo.apply_changes(archive, &plan, &options)
+    }
+
+    pub fn rename_entry(
+        &self,
+        archive: &ArchiveHandle,
+        index: u32,
+        new_name: &str,
+    ) -> Result<(), ArchiveError> {
+        let mut change_set = ChangeSet::new();
+        change_set.rename(index, new_name.to_string());
+
+        let plan = self.repo.plan_changes(archive, &change_set)?;
+
+        if plan.has_conflicts() {
+            return Err(ArchiveError::Conflict);
+        }
+
+        let options = WriteOptions {
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: Arc::new(NoopNotifier),
+        };
+
+        self.repo.apply_changes(archive, &plan, &options)
     }
 }

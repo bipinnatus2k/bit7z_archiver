@@ -17,3 +17,10 @@ impl ProgressNotifier for CrossbeamNotifier {
         let _ = self.0.send(update.clone());
     }
 }
+
+/// A no-op notifier that discards all progress updates.
+pub struct NoopNotifier;
+
+impl ProgressNotifier for NoopNotifier {
+    fn notify(&self, _update: &ProgressUpdate) {}
+}

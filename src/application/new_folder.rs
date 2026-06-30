@@ -1,12 +1,8 @@
+use crate::application::progress::NoopNotifier;
 use crate::domain::archive::{ArchiveHandle, Password, ChangeSet};
 use crate::domain::repository::*;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-
-struct NoopNotifier;
-impl ProgressNotifier for NoopNotifier {
-    fn notify(&self, _update: &ProgressUpdate) {}
-}
 
 pub fn new_folder(
     repo: Arc<dyn ArchiveRepository>,

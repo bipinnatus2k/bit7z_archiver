@@ -73,7 +73,7 @@ impl RootController {
             });
             (Arc::new(CrossbeamNotifier(tx.clone())), Some(tx))
         } else {
-            (Arc::new(crate::application::open_entry::NoopNotifier), None)
+            (Arc::new(crate::application::progress::NoopNotifier), None)
         };
 
         let options = ExtractOptions {

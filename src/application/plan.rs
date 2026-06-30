@@ -2,6 +2,7 @@ use crate::domain::archive::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+#[must_use = "ExecutionPlan must be passed to apply_changes"]
 #[derive(Debug)]
 pub struct ExecutionPlan {
     pub deletes: Vec<u32>,

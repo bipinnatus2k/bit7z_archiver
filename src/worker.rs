@@ -39,7 +39,7 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
                         overwrite_mode: crate::domain::archive::OverwriteMode::Overwrite,
                         cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                         paused: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                        notifier: std::sync::Arc::new(crate::application::open_entry::NoopNotifier),
+                        notifier: std::sync::Arc::new(crate::application::progress::NoopNotifier),
                     };
                     let result = repo.extract(&archive, &indices, &dest, &options);
                     match result {

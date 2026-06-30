@@ -169,7 +169,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                     overwrite_mode: crate::domain::archive::OverwriteMode::Ask,
                     cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                     paused: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                    notifier: std::sync::Arc::new(crate::application::open_entry::NoopNotifier),
+                    notifier: std::sync::Arc::new(crate::application::progress::NoopNotifier),
                 };
                 repo.extract(handle, &indices, Path::new(dest), &options)?;
                 println!("Extracted {} entries to {}", indices.len(), dest);

@@ -34,9 +34,9 @@ pub struct FfiHandle {
     kind: HandleKind,
 }
 
-// SAFETY: FfiHandle wraps a raw FFI pointer. The underlying C++ bit7z
-// library is thread-safe for concurrent read operations. Mutable
-// operations are serialized through the repository's RwLock.
+// SAFETY: FfiHandle wraps a raw FFI pointer. All access is serialized
+// through the repository's Mutex, which ensures only one thread calls
+// into the C++ bit7z library at a time on the same handle.
 unsafe impl Send for FfiHandle {}
 unsafe impl Sync for FfiHandle {}
 
@@ -104,13 +104,6 @@ impl Library {
             return Err("Failed to load 7-Zip library".into());
         }
         Ok(Self { raw })
-    }
-
-    /// Take ownership of the raw handle (prevents Drop from destroying).
-    pub fn into_raw(self) -> Handle {
-        let h = self.raw;
-        std::mem::forget(self);
-        h
     }
 
     /// Create from a raw handle (takes ownership).

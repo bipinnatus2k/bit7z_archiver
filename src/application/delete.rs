@@ -1,20 +1,15 @@
+use crate::application::modify::ModifyArchiveUseCase;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-
-struct NoopNotifier;
-impl ProgressNotifier for NoopNotifier {
-    fn notify(&self, _update: &ProgressUpdate) {}
-}
 
 pub struct DeleteEntriesUseCase {
-    repo: Arc<dyn ArchiveRepository>,
+    inner: ModifyArchiveUseCase,
 }
 
 impl DeleteEntriesUseCase {
     pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self {
-        Self { repo }
+        Self { inner: ModifyArchiveUseCase::new(repo) }
     }
 
     pub fn execute(
@@ -23,24 +18,7 @@ impl DeleteEntriesUseCase {
         indices: &[u32],
         progress: Option<Arc<dyn ProgressNotifier>>,
     ) -> Result<(), ArchiveError> {
-        let mut change_set = ChangeSet::new();
-        for &idx in indices {
-            change_set.delete(idx);
-        }
-
-        let plan = self.repo.plan_changes(archive, &change_set)?;
-
-        if plan.has_conflicts() {
-            return Err(ArchiveError::Conflict);
-        }
-
-        let options = WriteOptions {
-            cancel: Arc::new(AtomicBool::new(false)),
-            paused: Arc::new(AtomicBool::new(false)),
-            notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
-        };
-
-        self.repo.apply_changes(archive, &plan, &options)
+        self.inner.delete_entries(archive, indices, progress)
     }
 }
 

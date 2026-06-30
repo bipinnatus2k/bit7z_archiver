@@ -1,6 +1,6 @@
 use crate::domain::archive::*;
 use crate::application::plan::ExecutionPlan;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -139,7 +139,7 @@ impl Default for ArchiveProperties {
 #[doc(hidden)]
 pub mod test_utils {
     use super::*;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
     /// A mock repository that returns control over its behavior.

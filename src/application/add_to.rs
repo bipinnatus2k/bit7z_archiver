@@ -1,20 +1,17 @@
-use crate::application::plan::ExecutionPlan;
+use crate::application::modify::ModifyArchiveUseCase;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
-struct NoopNotifier;
-
-impl ProgressNotifier for NoopNotifier {
-    fn notify(&self, _update: &ProgressUpdate) {}
+pub struct AddToArchiveUseCase {
+    inner: ModifyArchiveUseCase,
 }
 
-pub struct AddToArchiveUseCase { repo: Arc<dyn ArchiveRepository> }
-
 impl AddToArchiveUseCase {
-    pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self { Self { repo } }
+    pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self {
+        Self { inner: ModifyArchiveUseCase::new(repo) }
+    }
 
     pub fn execute(
         &self,
@@ -22,33 +19,7 @@ impl AddToArchiveUseCase {
         files: &[PathBuf],
         progress: Option<Arc<dyn ProgressNotifier>>,
     ) -> Result<(), ArchiveError> {
-        for f in files {
-            if !f.is_file() && !f.is_dir() {
-                return Err(ArchiveError::NotFound(f.to_string_lossy().to_string()));
-            }
-        }
-
-        let mut change_set = ChangeSet::new();
-        for f in files {
-            let archive_path = f.file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            change_set.add(f.clone(), archive_path);
-        }
-
-        let plan = self.repo.plan_changes(archive, &change_set)?;
-
-        if plan.has_conflicts() {
-            return Err(ArchiveError::Conflict);
-        }
-
-        let options = WriteOptions {
-            cancel: Arc::new(AtomicBool::new(false)),
-            paused: Arc::new(AtomicBool::new(false)),
-            notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
-        };
-
-        self.repo.apply_changes(archive, &plan, &options)
+        self.inner.add_files(archive, files, progress)
     }
 }
 

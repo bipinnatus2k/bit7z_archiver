@@ -22,7 +22,7 @@ mod repo_operations {
         WriteOptions {
             cancel: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
-            notifier: Arc::new(bit7z_archiver::application::open_entry::NoopNotifier),
+            notifier: Arc::new(bit7z_archiver::application::progress::NoopNotifier),
         }
     }
 
@@ -317,7 +317,7 @@ mod compress_cli {
         WriteOptions {
             cancel: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
-            notifier: Arc::new(bit7z_archiver::application::open_entry::NoopNotifier),
+            notifier: Arc::new(bit7z_archiver::application::progress::NoopNotifier),
         }
     }
 
@@ -369,7 +369,7 @@ mod compress_cli {
             overwrite_mode: OverwriteMode::Overwrite,
             cancel: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
-            notifier: Arc::new(bit7z_archiver::application::open_entry::NoopNotifier),
+            notifier: Arc::new(bit7z_archiver::application::progress::NoopNotifier),
         };
         let result = repo.extract(&handle, &[0], &dest, &options);
         assert!(result.is_ok());

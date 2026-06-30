@@ -144,6 +144,7 @@ impl ArchiveFormat {
 /// The actual resource is tracked by id in the repository. After close() is called,
 /// the repository removes the entry, and subsequent operations on any clone will
 /// fail with "handle not found" - this is safe and expected behavior.
+#[must_use = "ArchiveHandle tracks a C++ resource; dropping it loses the reference"]
 #[derive(Debug, Clone)]
 pub struct ArchiveHandle {
     pub(crate) id: u64,
@@ -270,6 +271,7 @@ impl fmt::Debug for Password {
 }
 
 /// Configuration for creating encrypted archives.
+#[must_use = "EncryptionConfig contains a password; unused config is likely a bug"]
 #[derive(Debug, Clone)]
 pub struct EncryptionConfig {
     pub password: Password,
@@ -372,6 +374,7 @@ pub enum ArchiveChange {
 }
 
 /// A batch of changes to be applied to an archive atomically.
+#[must_use = "ChangeSet must be applied via plan_changes/apply_changes"]
 #[derive(Debug, Clone, Default)]
 pub struct ChangeSet {
     changes: Vec<ArchiveChange>,

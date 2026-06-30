@@ -4,10 +4,11 @@ use crate::application::progress::{ProgressNotifier, ProgressSender, ProgressUpd
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use chrono::DateTime;
+use humansize::{format_size, BINARY};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 #[cfg(target_os = "windows")]
 extern "system" {
@@ -18,21 +19,6 @@ extern "system" {
 pub enum CacheState {
     Valid,
     Dirty,
-}
-
-fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
 }
 
 fn format_time(timestamp: i64) -> String {
@@ -64,8 +50,8 @@ fn show_overwrite_dialog(
          Source: {}\n  Size: {}     Modified: {}\n\
          Dest:   {}\n  Size: {}     Modified: {}\n\n\
          Yes = Overwrite    No = Skip    Cancel = Overwrite",
-        src_path, format_bytes(src_size), format_time(src_mtime),
-        dest_path, format_bytes(existing_size), format_time(dest_mtime),
+        src_path, format_size(src_size, BINARY), format_time(src_mtime),
+        dest_path, format_size(existing_size, BINARY), format_time(dest_mtime),
     );
     let title = "Confirm Overwrite";
     let msg_wide: Vec<u16> = OsStr::new(&msg).encode_wide().chain(std::iter::once(0)).collect();
@@ -342,56 +328,26 @@ fn populate_item_details(entry: &mut ArchiveEntry, list: *mut std::ffi::c_void, 
     entry.posix_attrib = Some(unsafe { crate::ffi::bit7z_item_posix_attrib(item_ptr) });
     entry.is_symlink = unsafe { crate::ffi::bit7z_item_is_symlink(item_ptr) != 0 };
 
-    let mut buf: Vec<u8> = vec![0u8; 256];
+    // Use a single stack-allocated buffer for all C string reads
+    let mut buf = [0u8; 256];
 
-    let ret = unsafe {
-        crate::ffi::bit7z_item_compression_method(item_ptr, buf.as_mut_ptr() as *mut _, 256)
-    };
-    if ret >= 0 {
-        let s = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
-        let s = s.to_string_lossy().into_owned();
-        if !s.is_empty() { entry.compression_method = Some(s); }
+    macro_rules! read_field {
+        ($ffi_fn:ident, $field:ident) => {
+            let ret = unsafe { crate::ffi::$ffi_fn(item_ptr, buf.as_mut_ptr() as *mut _, 256) };
+            if ret >= 0 {
+                let s = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
+                let s = s.to_string_lossy().into_owned();
+                if !s.is_empty() { entry.$field = Some(s); }
+            }
+        };
     }
 
-    buf.fill(0);
-    let ret = unsafe { crate::ffi::bit7z_item_comment(item_ptr, buf.as_mut_ptr() as *mut _, 256) };
-    if ret >= 0 {
-        let s = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
-        let s = s.to_string_lossy().into_owned();
-        if !s.is_empty() { entry.comment = Some(s); }
-    }
-
-    buf.fill(0);
-    let ret = unsafe { crate::ffi::bit7z_item_user(item_ptr, buf.as_mut_ptr() as *mut _, 256) };
-    if ret >= 0 {
-        let s = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
-        let s = s.to_string_lossy().into_owned();
-        if !s.is_empty() { entry.user = Some(s); }
-    }
-
-    buf.fill(0);
-    let ret = unsafe { crate::ffi::bit7z_item_group(item_ptr, buf.as_mut_ptr() as *mut _, 256) };
-    if ret >= 0 {
-        let s = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
-        let s = s.to_string_lossy().into_owned();
-        if !s.is_empty() { entry.group = Some(s); }
-    }
-
-    buf.fill(0);
-    let ret = unsafe { crate::ffi::bit7z_item_extension(item_ptr, buf.as_mut_ptr() as *mut _, 256) };
-    if ret >= 0 {
-        let s = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
-        let s = s.to_string_lossy().into_owned();
-        if !s.is_empty() { entry.extension = Some(s); }
-    }
-
-    buf.fill(0);
-    let ret = unsafe { crate::ffi::bit7z_item_hardlink(item_ptr, buf.as_mut_ptr() as *mut _, 256) };
-    if ret >= 0 {
-        let s = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const _) };
-        let s = s.to_string_lossy().into_owned();
-        if !s.is_empty() { entry.hardlink = Some(s); }
-    }
+    read_field!(bit7z_item_compression_method, compression_method);
+    read_field!(bit7z_item_comment, comment);
+    read_field!(bit7z_item_user, user);
+    read_field!(bit7z_item_group, group);
+    read_field!(bit7z_item_extension, extension);
+    read_field!(bit7z_item_hardlink, hardlink);
 }
 
 struct RepositoryInner {
@@ -406,24 +362,17 @@ struct RepositoryInner {
 
 /// FFI-backed implementation of ArchiveRepository.
 ///
-/// All mutable state is consolidated into a single `RwLock<RepositoryInner>`.
-/// Read operations acquire a read lock; write operations (open, add, delete, etc.)
-/// acquire a write lock, ensuring atomicity of multi-step handle transitions.
+/// All mutable state is consolidated into a single `Mutex<RepositoryInner>`.
+/// The Mutex serializes all access, ensuring thread safety since the C++ bit7z
+/// library is not safe for concurrent read operations on the same handle.
 pub struct Bit7zRepository {
-    inner: RwLock<RepositoryInner>,
+    inner: Mutex<RepositoryInner>,
 }
-
-// SAFETY: Bit7zRepository wraps FfiHandle pointers protected by RwLock.
-// The RwLock ensures thread-safe access. The underlying C++ bit7z library
-// is thread-safe for concurrent reads, and mutable operations are serialized
-// through the write lock.
-unsafe impl Send for Bit7zRepository {}
-unsafe impl Sync for Bit7zRepository {}
 
 impl Bit7zRepository {
     pub fn new(lib: bit7z::Library) -> Self {
         Self {
-            inner: RwLock::new(RepositoryInner {
+            inner: Mutex::new(RepositoryInner {
                 lib,
                 handles: HashMap::new(),
                 overwrite_mode: OverwriteMode::Ask,
@@ -435,14 +384,6 @@ impl Bit7zRepository {
         }
     }
 
-    fn send_progress(&self, update: ProgressUpdate) {
-        if let Ok(guard) = self.inner.read() {
-            if let Some(ref notifier) = guard.progress_notifier {
-                notifier.notify(&update);
-            }
-        }
-    }
-
     pub fn extract_with_progress(
         &self,
         archive: &ArchiveHandle,
@@ -451,8 +392,8 @@ impl Bit7zRepository {
         progress: ProgressSender,
     ) -> Result<(), ArchiveError> {
         let (raw_ptr, mode, cancel, paused) = {
-            let guard = self.inner.read().map_err(|_| {
-                ArchiveError::Internal("[extract_with_progress] RwLock poisoned".into())
+            let guard = self.inner.lock().map_err(|e| {
+                ArchiveError::Internal(format!("[extract_with_progress] lock poisoned: {}", e))
             })?;
             let raw = guard.handles.get(&archive.id)
                 .map(|h| h.ptr())
@@ -488,7 +429,7 @@ impl Bit7zRepository {
         })) as *mut std::ffi::c_void;
 
         let ret = unsafe {
-            // SAFETY: We hold a read lock on self.inner, so the FfiHandle at
+            // SAFETY: We hold the Mutex lock on self.inner, so the FfiHandle at
             // raw_ptr is guaranteed to remain valid for the duration of this
             // call. ManuallyDrop prevents the FfiHandle's Drop from running
             // (the handle must stay alive in the HashMap).
@@ -513,8 +454,8 @@ impl Bit7zRepository {
 
 impl ArchiveRepository for Bit7zRepository {
     fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
-        let mut guard = self.inner.write().map_err(|_| {
-            ArchiveError::Internal("[open] RwLock poisoned".into())
+        let mut guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[open] lock poisoned".into())
         })?;
         let path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal(format!("[open] path is not valid UTF-8: {}", path.display())))?;
@@ -561,8 +502,8 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn create(&self, path: &Path, format: ArchiveFormat,
               encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
-        let mut guard = self.inner.write().map_err(|_| {
-            ArchiveError::Internal("[create] RwLock poisoned".into())
+        let mut guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[create] lock poisoned".into())
         })?;
         let _path_str = path.to_str()
             .ok_or_else(|| ArchiveError::Internal(format!("[create] path is not valid UTF-8: {}", path.display())))?;
@@ -596,8 +537,8 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize)
                  -> Result<Page<ArchiveEntry>, ArchiveError> {
-        let guard = self.inner.read().map_err(|_| {
-            ArchiveError::Internal("[list_page] RwLock poisoned".into())
+        let guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[list_page] lock poisoned".into())
         })?;
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
@@ -640,8 +581,8 @@ impl ArchiveRepository for Bit7zRepository {
     }
 
     fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
-        let guard = self.inner.read().map_err(|_| {
-            ArchiveError::Internal("[get_properties] RwLock poisoned".into())
+        let guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[get_properties] lock poisoned".into())
         })?;
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
@@ -696,8 +637,8 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path, options: &ExtractOptions)
                -> Result<(), ArchiveError> {
-        let mut guard = self.inner.write().map_err(|_| {
-            ArchiveError::Internal("[extract] RwLock poisoned".into())
+        let mut guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[extract] lock poisoned".into())
         })?;
         guard.overwrite_mode = options.overwrite_mode;
         guard.cancel = Some(options.cancel.clone());
@@ -717,8 +658,8 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32)
                          -> Result<Vec<u8>, ArchiveError> {
-        let guard = self.inner.read().map_err(|_| {
-            ArchiveError::Internal("[extract_to_buffer] RwLock poisoned".into())
+        let guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[extract_to_buffer] lock poisoned".into())
         })?;
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
@@ -746,8 +687,8 @@ impl ArchiveRepository for Bit7zRepository {
     }
 
     fn plan_changes(&self, archive: &ArchiveHandle, change_set: &ChangeSet) -> Result<ExecutionPlan, ArchiveError> {
-        let guard = self.inner.read().map_err(|_| {
-            ArchiveError::Internal("[plan_changes] RwLock poisoned".into())
+        let guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[plan_changes] lock poisoned".into())
         })?;
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
@@ -762,8 +703,8 @@ impl ArchiveRepository for Bit7zRepository {
             return Ok(());
         }
 
-        let mut guard = self.inner.write().map_err(|_| {
-            ArchiveError::Internal("[apply_changes] RwLock poisoned".into())
+        let mut guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[apply_changes] lock poisoned".into())
         })?;
 
         guard.cache_state.insert(archive.id, CacheState::Dirty);
@@ -800,8 +741,8 @@ impl ArchiveRepository for Bit7zRepository {
     }
 
     fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
-        let guard = self.inner.read().map_err(|_| {
-            ArchiveError::Internal("[test] RwLock poisoned".into())
+        let guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[test] lock poisoned".into())
         })?;
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
@@ -893,8 +834,8 @@ impl ArchiveRepository for Bit7zRepository {
     }
 
     fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> {
-        let guard = self.inner.read().map_err(|_| {
-            ArchiveError::Internal("[list_directory] RwLock poisoned".into())
+        let guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[list_directory] lock poisoned".into())
         })?;
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
@@ -933,7 +874,7 @@ impl ArchiveRepository for Bit7zRepository {
     }
 
     fn close(&self, archive: &ArchiveHandle) {
-        if let Ok(mut guard) = self.inner.write() {
+        if let Ok(mut guard) = self.inner.lock() {
             guard.handles.remove(&archive.id);
             guard.cache_state.remove(&archive.id);
         }
