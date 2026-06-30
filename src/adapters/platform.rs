@@ -99,7 +99,7 @@ pub fn pick_archive_file() -> Option<std::path::PathBuf> {
     const OFN_PATHMUSTEXIST: u32 = 0x00000800;
 
     #[link(name = "comdlg32")]
-    extern "system" {
+    unsafe extern "system" {
         fn GetOpenFileNameW(ofn: *mut OPENFILENAMEW) -> i32;
     }
 
@@ -201,7 +201,7 @@ pub fn pick_folder() -> Option<std::path::PathBuf> {
     const BIF_SHAREABLE: u32 = 0x8000;
 
     #[link(name = "shell32")]
-    extern "system" {
+    unsafe extern "system" {
         fn SHBrowseForFolderW(lpbi: *const BROWSEINFOW) -> isize;
         fn SHGetPathFromIDListW(pidl: isize, pszPath: *mut u16) -> i32;
         fn CoTaskMemFree(pv: isize);
@@ -286,7 +286,7 @@ pub fn pick_files() -> Option<Vec<std::path::PathBuf>> {
     }
 
     #[link(name = "comdlg32")]
-    extern "system" {
+    unsafe extern "system" {
         fn GetOpenFileNameW(ofn: *mut OPENFILENAMEW) -> i32;
     }
 

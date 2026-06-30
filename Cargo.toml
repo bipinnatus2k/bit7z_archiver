@@ -1,7 +1,7 @@
 [package]
 name = "bit7z_archiver"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Cross-platform compressed file viewer and editor"
 license = "MIT"
 

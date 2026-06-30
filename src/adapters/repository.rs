@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(target_os = "windows")]
-extern "system" {
+unsafe extern "system" {
     fn MessageBoxW(hWnd: *mut std::ffi::c_void, lpText: *const u16, lpCaption: *const u16, uType: u32) -> i32;
 }
 
@@ -433,7 +433,7 @@ impl Bit7zRepository {
             // raw_ptr is guaranteed to remain valid for the duration of this
             // call. ManuallyDrop prevents the FfiHandle's Drop from running
             // (the handle must stay alive in the HashMap).
-            let reader = std::mem::ManuallyDrop::new(bit7z::ArchiveReader::from_raw(raw_ptr as usize));
+            let reader = std::mem::ManuallyDrop::new(bit7z::ArchiveReader::from_raw(bit7z::Handle::from_raw(raw_ptr)));
             reader.extract_to_cb(
                 indices,
                 dest_str,
@@ -495,7 +495,7 @@ impl ArchiveRepository for Bit7zRepository {
         let mut handle = ArchiveHandle::new_reader()
             .with_path(path.to_path_buf());
         handle.set_encryption_info(is_header_encrypted, has_encrypted_items);
-        guard.handles.insert(handle.id, bit7z::FfiHandle::reader(raw as *mut std::ffi::c_void));
+        guard.handles.insert(handle.id, bit7z::FfiHandle::reader(raw.as_ptr()));
         guard.cache_state.insert(handle.id, CacheState::Dirty);
         Ok(handle)
     }
@@ -531,7 +531,7 @@ impl ArchiveRepository for Bit7zRepository {
         let handle = ArchiveHandle::new_writer()
             .with_path(path.to_path_buf())
             .with_format(format);
-        guard.handles.insert(handle.id, bit7z::FfiHandle::writer(raw as *mut std::ffi::c_void));
+        guard.handles.insert(handle.id, bit7z::FfiHandle::writer(raw.as_ptr()));
         Ok(handle)
     }
 
@@ -730,7 +730,7 @@ impl ArchiveRepository for Bit7zRepository {
 
         match bit7z::ArchiveReader::open(&guard.lib, &archive_path_str, None) {
             Ok(reader) => {
-                guard.handles.insert(archive.id, bit7z::FfiHandle::reader(reader.into_raw() as *mut std::ffi::c_void));
+                guard.handles.insert(archive.id, bit7z::FfiHandle::reader(reader.into_raw().as_ptr()));
             }
             Err(_) => {
                 guard.handles.remove(&archive.id);

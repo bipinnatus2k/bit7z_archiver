@@ -98,7 +98,9 @@ unsafe extern "system" fn tray_wndproc(
     msg: u32, wparam: windows_sys::Win32::Foundation::WPARAM,
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
-    windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
+    // SAFETY: Called from the window procedure callback; safe as long as the
+    // window class was properly registered with the same WNDPROC signature.
+    unsafe { windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
 

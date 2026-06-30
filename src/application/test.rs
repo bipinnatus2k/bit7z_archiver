@@ -45,7 +45,7 @@ impl TestEntriesUseCase {
             file_total: u64,
             error: Option<String>,
         ) {
-            if let Some(ref tx) = progress {
+            if let Some(tx) = progress {
                 let _ = tx.send(ProgressUpdate {
                     file_current: 0,
                     file_total,
