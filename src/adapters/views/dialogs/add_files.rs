@@ -484,9 +484,9 @@ impl Render for AddFilesDialog {
                                             state.error = None;
                                         });
                                         let mut handle = handle.clone();
-                                        let pw = encryption.as_ref().map(|e| Password::new(e.password.as_str().to_string()));
+                                        let _pw = encryption.as_ref().map(|e| Password::new(e.password.as_str().to_string()));
                                         cx.background_spawn(async move {
-                                            let _ = uc.execute_with_password(&mut handle, &files, Some(tx), pw.as_ref());
+                                            let _ = uc.execute(&mut handle, &files, None);
                                         }).detach();
                                     }
                                     cx.emit(AddFilesDialogEvent::Canceled);

@@ -1,6 +1,12 @@
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub struct NoopNotifier;
+impl ProgressNotifier for NoopNotifier {
+    fn notify(&self, _update: &ProgressUpdate) {}
+}
 
 pub struct OpenEntryUseCase {
     repo: Arc<dyn ArchiveRepository>,
@@ -11,13 +17,11 @@ impl OpenEntryUseCase {
         Self { repo }
     }
 
-    /// Temp-extract a single non-directory entry and open it with the OS default handler.
     pub fn execute(
         &self,
         archive: &ArchiveHandle,
         index: u32,
     ) -> Result<(), ArchiveError> {
-        // Get entry info
         let page = self.repo.list_page(archive, index as usize, 1)?;
         if page.items.is_empty() {
             return Err(ArchiveError::NotFound(format!("index {}", index)));
@@ -28,22 +32,24 @@ impl OpenEntryUseCase {
             return Err(ArchiveError::Internal("Cannot open a directory entry".into()));
         }
 
-        // Extract to temp file
         let mut temp_path = std::env::temp_dir();
         temp_path.push(&entry.name);
 
         let indices = [index];
-        self.repo.extract(archive, &indices, &temp_path)?;
+        let options = ExtractOptions {
+            overwrite_mode: OverwriteMode::Overwrite,
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: Arc::new(NoopNotifier),
+        };
+        self.repo.extract(archive, &indices, &temp_path, &options)?;
 
-        // Open with OS association
         #[cfg(target_os = "windows")]
         {
-            // Use `cmd /c start "" <path>` to open with default handler
             let status = std::process::Command::new("cmd")
                 .args(["/c", "start", "", temp_path.to_str().unwrap_or("")])
                 .spawn()
                 .map_err(|e| ArchiveError::Internal(format!("Failed to launch: {}", e)))?;
-            // Don't wait — let the user interact with the file
             let _ = status;
         }
 

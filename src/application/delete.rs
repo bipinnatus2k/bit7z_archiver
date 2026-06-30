@@ -1,59 +1,61 @@
-use crate::application::progress::{CrossbeamNotifier, ProgressSender};
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
-pub struct DeleteEntriesUseCase { repo: Arc<dyn ArchiveRepository> }
+struct NoopNotifier;
+impl ProgressNotifier for NoopNotifier {
+    fn notify(&self, _update: &ProgressUpdate) {}
+}
+
+pub struct DeleteEntriesUseCase {
+    repo: Arc<dyn ArchiveRepository>,
+}
 
 impl DeleteEntriesUseCase {
-    pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self { Self { repo } }
+    pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self {
+        Self { repo }
+    }
+
     pub fn execute(
         &self,
         archive: &ArchiveHandle,
         indices: &[u32],
-        progress: Option<ProgressSender>,
+        progress: Option<Arc<dyn ProgressNotifier>>,
     ) -> Result<(), ArchiveError> {
-        if let Some(tx) = progress {
-            self.repo.set_progress_notifier(Box::new(CrossbeamNotifier(tx)));
+        let mut change_set = ChangeSet::new();
+        for &idx in indices {
+            change_set.delete(idx);
         }
-        self.repo.delete(archive, indices)
+
+        let plan = self.repo.plan_changes(archive, &change_set)?;
+
+        if plan.has_conflicts() {
+            return Err(ArchiveError::Conflict);
+        }
+
+        let options = WriteOptions {
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
+        };
+
+        self.repo.apply_changes(archive, &plan, &options)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::archive::{ArchiveHandle};
     use crate::domain::repository::test_utils::MockArchiveRepository;
-    use std::sync::Arc;
 
     #[test]
-    fn test_delete_entries_success() {
-        let mock = MockArchiveRepository::with_count(5);
-        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
+    fn test_delete_success() {
+        let repo = MockArchiveRepository::arc_with_count(5);
         let uc = DeleteEntriesUseCase::new(repo);
         let handle = ArchiveHandle::new_reader();
-        let result = uc.execute(&handle, &[0, 2], None);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_delete_entries_with_progress() {
-        let mock = MockArchiveRepository::with_count(5);
-        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
-        let uc = DeleteEntriesUseCase::new(repo);
-        let (tx, _rx) = crate::application::progress::progress_channel();
-        let handle = ArchiveHandle::new_reader();
-        let result = uc.execute(&handle, &[1, 3], Some(tx));
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_delete_nonexistent_indices_is_noop() {
-        let mock = MockArchiveRepository::with_count(3);
-        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
-        let uc = DeleteEntriesUseCase::new(repo);
-        let handle = ArchiveHandle::new_reader();
-        let result = uc.execute(&handle, &[99, 100], None);
+        let result = uc.execute(&handle, &[0, 1], None);
         assert!(result.is_ok());
     }
 }

@@ -1,4 +1,5 @@
 use crate::adapters::bit7z;
+use crate::application::plan::{ExecutionPlan, plan_changes};
 use crate::application::progress::{ProgressNotifier, ProgressSender, ProgressUpdate};
 use crate::domain::archive::*;
 use crate::domain::repository::*;
@@ -11,6 +12,12 @@ use std::sync::{Arc, Mutex, RwLock};
 #[cfg(target_os = "windows")]
 extern "system" {
     fn MessageBoxW(hWnd: *mut std::ffi::c_void, lpText: *const u16, lpCaption: *const u16, uType: u32) -> i32;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheState {
+    Valid,
+    Dirty,
 }
 
 fn format_bytes(bytes: u64) -> String {
@@ -190,6 +197,130 @@ fn detect_writer_format(path: &Path) -> bit7z::WriterFormat {
         .unwrap_or(bit7z::WriterFormat::SevenZip)
 }
 
+fn read_all_entries(raw: *mut std::ffi::c_void) -> Vec<ArchiveEntry> {
+    let list = unsafe { crate::ffi::bit7z_reader_items(raw as *mut _) };
+    if list.is_null() {
+        return Vec::new();
+    }
+    let count = unsafe { crate::ffi::bit7z_item_list_count(list as *mut _) };
+    let mut entries = Vec::with_capacity(count as usize);
+
+    for i in 0..count {
+        use std::ffi::CStr;
+        let p = unsafe { crate::ffi::bit7z_item_list_path(list as *mut _, i) };
+        let path_s = if p.is_null() { String::new() }
+                     else { unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() } };
+        let name_s = path_s.rsplit('/').next().unwrap_or(&path_s).to_string();
+        let size = unsafe { crate::ffi::bit7z_item_list_size(list as *mut _, i) };
+        let csize = unsafe { crate::ffi::bit7z_item_list_packed_size(list as *mut _, i) };
+        let is_dir = unsafe { crate::ffi::bit7z_item_list_is_dir(list as *mut _, i) != 0 };
+        let is_enc = unsafe { crate::ffi::bit7z_item_list_is_encrypted(list as *mut _, i) != 0 };
+
+        let mut entry = ArchiveEntry {
+            name: name_s, path: path_s,
+            size, compressed_size: csize,
+            is_directory: is_dir, is_encrypted: is_enc,
+            original_index: i,
+            ..Default::default()
+        };
+        populate_item_details(&mut entry, list as *mut std::ffi::c_void, i);
+        entries.push(entry);
+    }
+
+    unsafe { crate::ffi::bit7z_item_list_free(list as *mut _); }
+    entries
+}
+
+fn execute_with_editor(
+    lib: &bit7z::Library,
+    path: &str,
+    format: bit7z::WriterFormat,
+    plan: &ExecutionPlan,
+    _cancel: &Arc<AtomicBool>,
+    _paused: &Arc<AtomicBool>,
+) -> Result<(), ArchiveError> {
+    let editor = bit7z::Editor::open(lib, path, format, None)
+        .map_err(|e| ArchiveError::Internal(format!("editor open: {}", e)))?;
+
+    let mut sorted_deletes = plan.deletes.clone();
+    sorted_deletes.sort_unstable_by(|a, b| b.cmp(a));
+    for &idx in &sorted_deletes {
+        editor.delete(idx)
+            .map_err(|e| ArchiveError::Internal(format!("delete: {}", e)))?;
+    }
+
+    for &(idx, ref new_path) in &plan.renames {
+        editor.rename(idx, new_path)
+            .map_err(|e| ArchiveError::Internal(format!("rename: {}", e)))?;
+    }
+
+    editor.apply()
+        .map_err(|e| ArchiveError::Internal(format!("apply: {}", e)))?;
+
+    if !plan.adds.is_empty() || !plan.updates.is_empty() {
+        let writer = bit7z::Writer::open(lib, path, format, None)
+            .map_err(|e| ArchiveError::Internal(format!("writer open after editor: {}", e)))?;
+        writer.set_update_mode(bit7z::UpdateMode::Append);
+
+        for (fs_path, _arc_path) in &plan.adds {
+            let path_str = fs_path.to_str()
+                .ok_or_else(|| ArchiveError::Internal("invalid path".into()))?;
+            writer.add_file(path_str)
+                .map_err(|e| ArchiveError::Internal(format!("add: {}", e)))?;
+        }
+
+        for (fs_path, _arc_path) in &plan.updates {
+            let path_str = fs_path.to_str()
+                .ok_or_else(|| ArchiveError::Internal("invalid path".into()))?;
+            writer.add_file(path_str)
+                .map_err(|e| ArchiveError::Internal(format!("update: {}", e)))?;
+        }
+
+        writer.compress_to(path)
+            .map_err(|e| ArchiveError::Internal(format!("compress after editor: {}", e)))?;
+    }
+
+    Ok(())
+}
+
+fn execute_with_writer(
+    lib: &bit7z::Library,
+    path: &str,
+    format: bit7z::WriterFormat,
+    plan: &ExecutionPlan,
+    _cancel: &Arc<AtomicBool>,
+    _paused: &Arc<AtomicBool>,
+) -> Result<(), ArchiveError> {
+    let writer = bit7z::Writer::open(lib, path, format, None)
+        .map_err(|e| ArchiveError::Internal(format!("writer open: {}", e)))?;
+
+    let has_updates = !plan.updates.is_empty();
+    writer.set_update_mode(if has_updates {
+        bit7z::UpdateMode::Update
+    } else {
+        bit7z::UpdateMode::Append
+    });
+
+    for (fs_path, _arc_path) in &plan.adds {
+        let path_str = fs_path.to_str()
+            .ok_or_else(|| ArchiveError::Internal("invalid path".into()))?;
+        writer.add_file(path_str)
+            .map_err(|e| ArchiveError::Internal(format!("add: {}", e)))?;
+    }
+
+    for (fs_path, _arc_path) in &plan.updates {
+        let path_str = fs_path.to_str()
+            .ok_or_else(|| ArchiveError::Internal("invalid path".into()))?;
+        writer.add_file(path_str)
+            .map_err(|e| ArchiveError::Internal(format!("update: {}", e)))?;
+    }
+
+    writer.compress_to(path)
+        .map_err(|e| ArchiveError::Internal(format!("compress: {}", e)))?;
+
+    Ok(())
+}
+
 /// Populate extended fields on an ArchiveEntry using the FFI item accessors.
 fn populate_item_details(entry: &mut ArchiveEntry, list: *mut std::ffi::c_void, index: u32) {
     entry.crc = Some(unsafe { crate::ffi::bit7z_item_list_crc(list as *mut _, index) });
@@ -263,12 +394,6 @@ fn populate_item_details(entry: &mut ArchiveEntry, list: *mut std::ffi::c_void, 
     }
 }
 
-/// Internal state protected by a single `RwLock`.
-///
-/// Using one lock instead of five independent `Mutex`es eliminates
-/// deadlock risk from inconsistent lock ordering and ensures that
-/// multi-step operations (close reader → open writer → write → reopen reader)
-/// are atomic with respect to other threads.
 struct RepositoryInner {
     lib: bit7z::Library,
     handles: HashMap<u64, bit7z::FfiHandle>,
@@ -276,6 +401,7 @@ struct RepositoryInner {
     cancel: Option<Arc<AtomicBool>>,
     paused: Option<Arc<AtomicBool>>,
     progress_notifier: Option<Box<dyn ProgressNotifier>>,
+    cache_state: HashMap<u64, CacheState>,
 }
 
 /// FFI-backed implementation of ArchiveRepository.
@@ -304,6 +430,7 @@ impl Bit7zRepository {
                 cancel: None,
                 paused: None,
                 progress_notifier: None,
+                cache_state: HashMap::new(),
             }),
         }
     }
@@ -385,30 +512,6 @@ impl Bit7zRepository {
 }
 
 impl ArchiveRepository for Bit7zRepository {
-    fn set_progress_notifier(&self, notifier: Box<dyn ProgressNotifier>) {
-        if let Ok(mut guard) = self.inner.write() {
-            guard.progress_notifier = Some(notifier);
-        }
-    }
-
-    fn set_overwrite_mode(&self, mode: OverwriteMode) {
-        if let Ok(mut guard) = self.inner.write() {
-            guard.overwrite_mode = mode;
-        }
-    }
-
-    fn set_cancel_flag(&self, cancel: Arc<AtomicBool>) {
-        if let Ok(mut guard) = self.inner.write() {
-            guard.cancel = Some(cancel);
-        }
-    }
-
-    fn set_pause_flag(&self, paused: Arc<AtomicBool>) {
-        if let Ok(mut guard) = self.inner.write() {
-            guard.paused = Some(paused);
-        }
-    }
-
     fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
         let mut guard = self.inner.write().map_err(|_| {
             ArchiveError::Internal("[open] RwLock poisoned".into())
@@ -452,6 +555,7 @@ impl ArchiveRepository for Bit7zRepository {
             .with_path(path.to_path_buf());
         handle.set_encryption_info(is_header_encrypted, has_encrypted_items);
         guard.handles.insert(handle.id, bit7z::FfiHandle::reader(raw as *mut std::ffi::c_void));
+        guard.cache_state.insert(handle.id, CacheState::Dirty);
         Ok(handle)
     }
 
@@ -590,38 +694,23 @@ impl ArchiveRepository for Bit7zRepository {
         })
     }
 
-    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path)
+    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path, options: &ExtractOptions)
                -> Result<(), ArchiveError> {
-        let guard = self.inner.read().map_err(|_| {
+        let mut guard = self.inner.write().map_err(|_| {
             ArchiveError::Internal("[extract] RwLock poisoned".into())
         })?;
-        let raw = guard.handles.get(&archive.id)
-            .map(|h| h.ptr())
-            .ok_or_else(|| ArchiveError::Internal(format!("[extract] handle {} not found", archive.id)))?;
-        let dest_str = dest.to_str().ok_or_else(|| {
-            ArchiveError::Internal(format!("[extract] destination path is not valid UTF-8: {}", dest.display()))
-        })?;
-        let c_dest = std::ffi::CString::new(dest_str).map_err(|e| ArchiveError::Internal(format!("[extract] CString conversion failed for '{}': {}", dest.display(), e)))?;
-        let ret: i32 = unsafe {
-            crate::ffi::bit7z_reader_extract_to(
-                raw as *mut _, indices.as_ptr(), indices.len() as u32, c_dest.as_ptr(),
-            )
-        };
-        if ret != 0 { Err(ArchiveError::Internal(format!("[extract] bit7z_reader_extract_to returned {} for archive id {}", ret, archive.id))) }
-        else { Ok(()) }
-    }
+        guard.overwrite_mode = options.overwrite_mode;
+        guard.cancel = Some(options.cancel.clone());
+        guard.paused = Some(options.paused.clone());
+        guard.progress_notifier = Some(Box::new(crate::application::progress::CrossbeamNotifier(
+            crossbeam::channel::unbounded().0
+        )));
+        drop(guard);
 
-    fn extract_with_progress(
-        &self,
-        archive: &ArchiveHandle,
-        indices: &[u32],
-        dest: &Path,
-        notifier: &dyn crate::domain::repository::ProgressNotifier,
-    ) -> Result<(), ArchiveError> {
         let (tx, rx) = crossbeam::channel::unbounded();
         let result = self.extract_with_progress(archive, indices, dest, tx);
         while let Ok(update) = rx.try_recv() {
-            notifier.notify(&update);
+            options.notifier.notify(&update);
         }
         result
     }
@@ -656,183 +745,58 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(result)
     }
 
-    fn add(&self, archive: &ArchiveHandle, files: &[std::path::PathBuf], password: Option<&Password>)
-           -> Result<(), ArchiveError> {
-        let mut guard = self.inner.write().map_err(|_| {
-            ArchiveError::Internal("[add] RwLock poisoned".into())
-        })?;
-
-        let archive_path = archive.path.clone()
-            .ok_or_else(|| ArchiveError::Internal(format!("[add] no path in archive handle {}", archive.id)))?;
-        let archive_path_str = archive_path.to_str()
-            .ok_or_else(|| ArchiveError::Internal(format!("[add] archive path is not valid UTF-8: {}", archive_path.display())))?
-            .to_string();
-
-        // Remove old handle (drops the FfiHandle, calling the C destructor).
-        guard.handles.remove(&archive.id);
-
-        let format = detect_writer_format(&archive_path);
-        // let pw_str = password.map(|p| p.as_str().to_string());
-
-        // Write phase: open writer, add files, compress, close writer.
-        let has_encrypted = {
-            let writer = bit7z::Writer::open(&guard.lib, &archive_path_str, format, password.as_deref())
-                .map_err(|e| ArchiveError::Internal(format!("[add] failed to open writer for '{}': {}", archive_path_str, e)))?;
-            writer.set_update_mode(bit7z::UpdateMode::Append);
-
-            for path in files {
-                let path_str = path.to_str()
-                    .ok_or_else(|| ArchiveError::Internal(format!("[add] file path is not valid UTF-8: {}", path.display())))?;
-                if path.is_dir() {
-                    writer.add_directory(path_str)
-                        .map_err(|e| ArchiveError::Internal(format!("[add] failed to add directory '{}': {}", path_str, e)))?;
-                } else {
-                    writer.add_file(path_str)
-                        .map_err(|e| ArchiveError::Internal(format!("[add] failed to add file '{}': {}", path_str, e)))?;
-                }
-            }
-
-            writer.compress_to(&archive_path_str)
-                .map_err(|e| ArchiveError::Internal(format!("[add] compress_to failed for '{}': {}", archive_path_str, e)))?;
-            // writer is dropped here, calling bit7z_writer_close
-
-            // Re-open the reader so the handle remains valid.
-            let reader = bit7z::ArchiveReader::open(&guard.lib, &archive_path_str, password)
-                .map_err(|e| ArchiveError::Internal(format!("[add] failed to re-open reader after adding files to '{}': {}", archive_path_str, e)))?;
-            let encrypted = reader.has_encrypted_items();
-            guard.handles.insert(archive.id, bit7z::FfiHandle::reader(reader.into_raw() as *mut std::ffi::c_void));
-            encrypted
-        };
-
-        // Drop the write lock before sending progress.
-        drop(guard);
-
-        self.send_progress(ProgressUpdate {
-            file_current: files.len() as u64,
-            file_total: files.len() as u64,
-            current_file: None,
-            items_done: files.len() as u64,
-            items_total: files.len() as u64,
-            bytes_done: 0,
-            bytes_total: 0,
-            error: None,
-        });
-
-        let _ = has_encrypted; // The caller's ArchiveHandle metadata is not updated here;
-                                // the caller should re-query if needed.
-
-        Ok(())
-    }
-
-    fn add_file_to_path(&self, archive: &ArchiveHandle, file_path: &Path, archive_path: &str, password: Option<&Password>)
-                        -> Result<(), ArchiveError> {
-        let mut guard = self.inner.write().map_err(|_| {
-            ArchiveError::Internal("[add_file_to_path] RwLock poisoned".into())
-        })?;
-
-        let archive_file_path = archive.path.clone()
-            .ok_or_else(|| ArchiveError::Internal(format!("[add_file_to_path] no path in archive handle {}", archive.id)))?;
-        let archive_path_str = archive_file_path.to_str()
-            .ok_or_else(|| ArchiveError::Internal(format!("[add_file_to_path] archive path is not valid UTF-8: {}", archive_file_path.display())))?
-            .to_string();
-
-        guard.handles.remove(&archive.id);
-
-        let format = detect_writer_format(&archive_file_path);
-        // let pw_str = password.map(|p| p.as_str().to_string());
-
-        {
-            let writer = bit7z::Writer::open(&guard.lib, &archive_path_str, format, password.as_deref())
-                .map_err(|e| ArchiveError::Internal(format!("[add_file_to_path] failed to open writer for '{}': {}", archive_path_str, e)))?;
-            writer.set_update_mode(bit7z::UpdateMode::Append);
-
-            let fs_path = file_path.to_str()
-                .ok_or_else(|| ArchiveError::Internal(format!("[add_file_to_path] file path is not valid UTF-8: {}", file_path.display())))?;
-            writer.add_items(&[(fs_path, archive_path)])
-                .map_err(|e| ArchiveError::Internal(format!("[add_file_to_path] failed to add items to '{}': {}", archive_path_str, e)))?;
-
-            writer.compress_to(&archive_path_str)
-                .map_err(|e| ArchiveError::Internal(format!("[add_file_to_path] compress_to failed for '{}': {}", archive_path_str, e)))?;
-        }
-
-        let reader = bit7z::ArchiveReader::open(&guard.lib, &archive_path_str, password)
-            .map_err(|e| ArchiveError::Internal(format!("[add_file_to_path] failed to re-open reader for '{}': {}", archive_path_str, e)))?;
-        let has_encrypted = reader.has_encrypted_items();
-        guard.handles.insert(archive.id, bit7z::FfiHandle::reader(reader.into_raw() as *mut std::ffi::c_void));
-        let _ = has_encrypted;
-        Ok(())
-    }
-
-    fn delete(&self, archive: &ArchiveHandle, indices: &[u32])
-               -> Result<(), ArchiveError> {
-        let mut guard = self.inner.write().map_err(|_| {
-            ArchiveError::Internal("[delete] RwLock poisoned".into())
-        })?;
-        let archive_path = archive.path.as_ref()
-            .ok_or_else(|| ArchiveError::Internal(format!("[delete] no path in archive handle {}", archive.id)))?;
-        let archive_path_str = archive_path.to_str()
-            .ok_or_else(|| ArchiveError::Internal(format!("[delete] archive path is not valid UTF-8: {}", archive_path.display())))?;
-        let format = detect_writer_format(archive_path);
-
-        let editor = bit7z::Editor::open(&guard.lib, archive_path_str, format, None)
-            .map_err(|e| ArchiveError::Internal(format!("[delete] failed to open editor for '{}': {}", archive_path_str, e)))?;
-
-        let mut sorted: Vec<u32> = indices.to_vec();
-        sorted.sort_unstable_by(|a, b| b.cmp(a));
-
-        let total = sorted.len() as u64;
-        for (i, &index) in sorted.iter().enumerate() {
-            editor.delete(index).map_err(|e| ArchiveError::Internal(format!("[delete] failed to delete index {} from '{}': {}", index, archive_path_str, e)))?;
-            drop(guard);
-            self.send_progress(ProgressUpdate {
-                file_current: i as u64 + 1,
-                file_total: total,
-                current_file: None,
-                items_done: i as u64 + 1,
-                items_total: total,
-                bytes_done: 0,
-                bytes_total: 0,
-                error: None,
-            });
-            guard = self.inner.write().map_err(|_| {
-                ArchiveError::Internal("[delete] RwLock poisoned on re-acquire".into())
-            })?;
-        }
-
-        editor.apply().map_err(|e| ArchiveError::Internal(format!("[delete] editor.apply() failed for '{}': {}", archive_path_str, e)))?;
-        Ok(())
-    }
-
-    fn rename(&self, archive: &ArchiveHandle, index: u32, new_name: &str)
-              -> Result<(), ArchiveError> {
-        let guard = self.inner.write().map_err(|_| {
-            ArchiveError::Internal("[rename] RwLock poisoned".into())
+    fn plan_changes(&self, archive: &ArchiveHandle, change_set: &ChangeSet) -> Result<ExecutionPlan, ArchiveError> {
+        let guard = self.inner.read().map_err(|_| {
+            ArchiveError::Internal("[plan_changes] RwLock poisoned".into())
         })?;
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
-            .ok_or_else(|| ArchiveError::Internal(format!("[rename] handle {} not found", archive.id)))?;
-        let archive_path = archive.path.as_ref()
-            .ok_or_else(|| ArchiveError::Internal(format!("[rename] no path in archive handle {}", archive.id)))?;
+            .ok_or_else(|| ArchiveError::Internal(format!("[plan_changes] handle {} not found", archive.id)))?;
+
+        let snapshot = read_all_entries(raw);
+        Ok(plan_changes(&snapshot, change_set))
+    }
+
+    fn apply_changes(&self, archive: &ArchiveHandle, plan: &ExecutionPlan, options: &WriteOptions) -> Result<(), ArchiveError> {
+        if !plan.has_writes() {
+            return Ok(());
+        }
+
+        let mut guard = self.inner.write().map_err(|_| {
+            ArchiveError::Internal("[apply_changes] RwLock poisoned".into())
+        })?;
+
+        guard.cache_state.insert(archive.id, CacheState::Dirty);
+        guard.cancel = Some(options.cancel.clone());
+        guard.paused = Some(options.paused.clone());
+
+        let archive_path = archive.path.clone()
+            .ok_or_else(|| ArchiveError::Internal(format!("[apply_changes] no path in archive handle {}", archive.id)))?;
         let archive_path_str = archive_path.to_str()
-            .ok_or_else(|| ArchiveError::Internal(format!("[rename] archive path is not valid UTF-8: {}", archive_path.display())))?;
-        let format = detect_writer_format(archive_path);
+            .ok_or_else(|| ArchiveError::Internal(format!("[apply_changes] path is not valid UTF-8: {}", archive_path.display())))?
+            .to_string();
 
-        let p = unsafe { crate::ffi::bit7z_item_path(raw as *mut _, index) };
-        let current_path = if p.is_null() { String::new() }
-            else { unsafe { std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned() } };
+        guard.handles.remove(&archive.id);
 
-        let new_path = if let Some(slash_pos) = current_path.rfind('/') {
-            format!("{}/{}", &current_path[..slash_pos], new_name)
+        let format = detect_writer_format(&archive_path);
+        let needs_editor = !plan.deletes.is_empty() || !plan.renames.is_empty();
+
+        let result = if needs_editor {
+            execute_with_editor(&guard.lib, &archive_path_str, format, plan, &options.cancel, &options.paused)
         } else {
-            new_name.to_string()
+            execute_with_writer(&guard.lib, &archive_path_str, format, plan, &options.cancel, &options.paused)
         };
 
-        let editor = bit7z::Editor::open(&guard.lib, archive_path_str, format, None)
-            .map_err(|e| ArchiveError::Internal(format!("[rename] failed to open editor for '{}': {}", archive_path_str, e)))?;
-        editor.rename(index, &new_path)
-            .map_err(|e| ArchiveError::Internal(format!("[rename] failed to rename index {} to '{}' in '{}': {}", index, new_path, archive_path_str, e)))?;
-        editor.apply().map_err(|e| ArchiveError::Internal(format!("[rename] editor.apply() failed for '{}': {}", archive_path_str, e)))?;
-        Ok(())
+        match bit7z::ArchiveReader::open(&guard.lib, &archive_path_str, None) {
+            Ok(reader) => {
+                guard.handles.insert(archive.id, bit7z::FfiHandle::reader(reader.into_raw() as *mut std::ffi::c_void));
+            }
+            Err(_) => {
+                guard.handles.remove(&archive.id);
+            }
+        }
+
+        result
     }
 
     fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
@@ -970,9 +934,8 @@ impl ArchiveRepository for Bit7zRepository {
 
     fn close(&self, archive: &ArchiveHandle) {
         if let Ok(mut guard) = self.inner.write() {
-            // Removing the FfiHandle triggers its Drop, which calls the
-            // appropriate C destructor (bit7z_reader_close, etc.).
             guard.handles.remove(&archive.id);
+            guard.cache_state.remove(&archive.id);
         }
     }
 }
@@ -1002,20 +965,17 @@ mod tests {
         fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
             self.inner.get_properties(archive)
         }
-        fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path) -> Result<(), ArchiveError> {
-            self.inner.extract(archive, indices, dest)
+        fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path, options: &ExtractOptions) -> Result<(), ArchiveError> {
+            self.inner.extract(archive, indices, dest, options)
         }
         fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError> {
             self.inner.extract_to_buffer(archive, index)
         }
-        fn add(&self, archive: &ArchiveHandle, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError> {
-            self.inner.add(archive, files, password)
+        fn plan_changes(&self, archive: &ArchiveHandle, change_set: &ChangeSet) -> Result<ExecutionPlan, ArchiveError> {
+            self.inner.plan_changes(archive, change_set)
         }
-        fn delete(&self, archive: &ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError> {
-            self.inner.delete(archive, indices)
-        }
-        fn rename(&self, archive: &ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError> {
-            self.inner.rename(archive, index, new_name)
+        fn apply_changes(&self, archive: &ArchiveHandle, plan: &ExecutionPlan, options: &WriteOptions) -> Result<(), ArchiveError> {
+            self.inner.apply_changes(archive, plan, options)
         }
         fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
             self.inner.test(archive)

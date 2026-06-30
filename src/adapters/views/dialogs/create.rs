@@ -446,7 +446,8 @@ impl Render for CreateArchiveDialog {
                                     };
                                     if !files.is_empty() {
                                         let uc = crate::application::add_to::AddToArchiveUseCase::new(repo.clone());
-                                        let _ = uc.execute(&mut handle, &files, Some(tx));
+                                        let notifier: Option<Arc<dyn crate::domain::repository::ProgressNotifier>> = Some(Arc::new(crate::application::progress::CrossbeamNotifier(tx)));
+                                        let _ = uc.execute(&mut handle, &files, notifier);
                                     } else {
                                         drop(tx);
                                     }

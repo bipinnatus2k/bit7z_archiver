@@ -11,3 +11,5 @@ pub mod checksum;
 pub mod open_entry;
 pub mod new_folder;
 pub mod new_file;
+pub mod plan;
+pub mod modify;

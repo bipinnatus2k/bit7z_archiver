@@ -1,17 +1,18 @@
-use crate::domain::archive::{ArchiveHandle, Password};
+use crate::domain::archive::{ArchiveHandle, Password, ChangeSet};
 use crate::domain::repository::*;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
-/// Creates a new empty directory inside an archive by adding a zero-byte
-/// placeholder file at `{folder_path}/.bit7z_keep`.  bit7z implicitly creates
-/// the directory tree when the placeholder is written.  The placeholder file
-/// is intentionally left in the archive as a marker — it is harmless and
-/// occupies zero bytes compressed.
+struct NoopNotifier;
+impl ProgressNotifier for NoopNotifier {
+    fn notify(&self, _update: &ProgressUpdate) {}
+}
+
 pub fn new_folder(
     repo: Arc<dyn ArchiveRepository>,
     archive: &ArchiveHandle,
     folder_path: &str,
-    password: Option<&Password>,
+    _password: Option<&Password>,
 ) -> Result<(), ArchiveError> {
     let folder_path = folder_path.trim_end_matches('/').trim_end_matches('\\');
     if folder_path.is_empty() {
@@ -24,7 +25,23 @@ pub fn new_folder(
     std::fs::write(&temp, b"").map_err(ArchiveError::Io)?;
 
     let archive_inner_path = format!("{}/{}", folder_path, placeholder);
-    repo.add_file_to_path(archive, &temp, &archive_inner_path, password)
+
+    let mut change_set = ChangeSet::new();
+    change_set.add(temp, archive_inner_path);
+
+    let plan = repo.plan_changes(archive, &change_set)?;
+
+    if plan.has_conflicts() {
+        return Err(ArchiveError::Conflict);
+    }
+
+    let options = WriteOptions {
+        cancel: Arc::new(AtomicBool::new(false)),
+        paused: Arc::new(AtomicBool::new(false)),
+        notifier: Arc::new(NoopNotifier),
+    };
+
+    repo.apply_changes(archive, &plan, &options)
 }
 
 #[cfg(test)]

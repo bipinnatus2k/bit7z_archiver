@@ -53,7 +53,7 @@ pub fn sortable_header(
         cell = cell
             .child(label)
             .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, _window: &mut Window, app_cx: &mut App| {
-                (os)(idx, app_cx);
+                os(idx, app_cx);
             });
         row = row.child(cell);
     }

@@ -108,7 +108,6 @@ impl ChecksumDialog {
                 ];
 
                 cx.background_spawn(async move {
-                    repo.set_progress_notifier(Box::new(CrossbeamNotifier(progress_tx)));
                     let uc = CalculateChecksumUseCase::new(repo.clone());
                     let _ = uc.execute(&handle, &indices, &algos);
                     let _ = result_tx2.send(Ok(()));

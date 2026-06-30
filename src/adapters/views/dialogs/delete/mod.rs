@@ -73,10 +73,11 @@ impl DeleteDialog {
                 let view = self.view.clone();
                 let result_tx = self.result_tx.take();
 
-                repo.set_progress_notifier(Box::new(crate::application::progress::CrossbeamNotifier(tx)));
+                let notifier: Option<std::sync::Arc<dyn crate::domain::repository::ProgressNotifier>> = 
+                    Some(std::sync::Arc::new(crate::application::progress::CrossbeamNotifier(tx)));
                 cx.background_spawn(async move {
                     let uc = DeleteEntriesUseCase::new(repo);
-                    let _ = uc.execute(&mut handle, &indices, None);
+                    let _ = uc.execute(&mut handle, &indices, notifier);
                 }).detach();
 
                 cx.spawn(async move |_, cx| {

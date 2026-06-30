@@ -69,17 +69,17 @@ inline uint32_t bit7z_reader_item_count(void* reader_ptr) {
     } catch (...) { return 0; }
 }
 
-// ===== Item accessor wrappers (static buffers, single-threaded) =====
+// ===== Item accessor wrappers (thread_local buffers, thread-safe) =====
 inline const char* bit7z_item_path(void* reader_ptr, uint32_t index) {
     try {
-        static std::string s;
+        thread_local std::string s;
         s = static_cast<bit7z::BitArchiveReader*>(reader_ptr)->items()[index].path();
         return s.c_str();
     } catch (...) { return ""; }
 }
 inline const char* bit7z_item_name(void* reader_ptr, uint32_t index) {
     try {
-        static std::string s;
+        thread_local std::string s;
         s = static_cast<bit7z::BitArchiveReader*>(reader_ptr)->items()[index].name();
         return s.c_str();
     } catch (...) { return ""; }

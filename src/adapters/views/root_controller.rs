@@ -61,26 +61,36 @@ impl RootController {
         paused: Option<Arc<AtomicBool>>,
     ) -> Result<(), ArchiveError> {
         let expanded = self.expand_indices(archive, indices)?;
-        if let Some(tx) = progress {
-            self.repo.set_overwrite_mode(overwrite_mode);
-            if let Some(ref c) = cancel { self.repo.set_cancel_flag(c.clone()); }
-            if let Some(ref p) = paused { self.repo.set_pause_flag(p.clone()); }
-            let tx_end = tx.clone();
-            let _ = tx.send(ProgressUpdate {
+        
+        let (notifier, progress_tx): (Arc<dyn ProgressNotifier>, Option<ProgressSender>) = if let Some(tx) = progress {
+            let tx_start = tx.clone();
+            let _ = tx_start.send(ProgressUpdate {
                 file_current: 0, file_total: expanded.len() as u64,
                 current_file: Some(format!("Extracting {} items to {}", expanded.len(), dest.display())),
                 items_done: 0, items_total: expanded.len() as u64,
                 bytes_done: 0, bytes_total: 100,
                 error: None,
             });
-            let result = self.repo.extract_with_progress(archive, &expanded, dest, &crate::application::progress::CrossbeamNotifier(tx.clone()));
+            (Arc::new(CrossbeamNotifier(tx.clone())), Some(tx))
+        } else {
+            (Arc::new(crate::application::open_entry::NoopNotifier), None)
+        };
+
+        let options = ExtractOptions {
+            overwrite_mode,
+            cancel: cancel.unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
+            paused: paused.unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
+            notifier,
+        };
+
+        let uc = ExtractEntriesUseCase::new(self.repo.clone());
+        let result = uc.execute(archive, &expanded, dest, &options);
+
+        if let Some(ref tx) = progress_tx {
             let err_str = result.as_ref().err().map(|e| {
                 format!("Extract error (id={}, dest={}): {}", archive.id, dest.display(), e)
             });
-            if let Some(ref msg) = err_str {
-                eprintln!("{}", msg);
-            }
-            let _ = tx_end.send(crate::application::progress::ProgressUpdate {
+            let _ = tx.send(ProgressUpdate {
                 file_current: 0, file_total: 0,
                 current_file: None,
                 items_done: if result.is_ok() { expanded.len() as u64 } else { 0 },
@@ -88,11 +98,9 @@ impl RootController {
                 bytes_done: 100, bytes_total: 100,
                 error: err_str,
             });
-            result
-        } else {
-            let uc = ExtractEntriesUseCase::new(self.repo.clone());
-            uc.execute(archive, &expanded, dest)
         }
+
+        result
     }
 
     /// Expand selection to include all child items of selected directories.
@@ -148,19 +156,11 @@ impl RootController {
         archive: &ArchiveHandle,
         files: &[std::path::PathBuf],
         progress: Option<ProgressSender>,
-        password: Option<&Password>,
+        _password: Option<&Password>,
     ) -> Result<(), ArchiveError> {
+        let notifier: Option<Arc<dyn ProgressNotifier>> = progress.map(|tx| Arc::new(CrossbeamNotifier(tx)) as Arc<dyn ProgressNotifier>);
         let uc = AddToArchiveUseCase::new(self.repo.clone());
-
-        if let Some(tx) = progress {
-            self.repo.set_progress_notifier(Box::new(CrossbeamNotifier(tx)));
-        }
-
-        if let Some(pw) = password {
-            uc.execute_with_password(archive, files, None, Some(pw))
-        } else {
-            uc.execute(archive, files, None)
-        }
+        uc.execute(archive, files, notifier)
     }
 
     pub fn delete_entries(
@@ -169,11 +169,9 @@ impl RootController {
         indices: &[u32],
         progress: Option<ProgressSender>,
     ) -> Result<(), ArchiveError> {
-        if let Some(tx) = progress {
-            self.repo.set_progress_notifier(Box::new(CrossbeamNotifier(tx)));
-        }
+        let notifier: Option<Arc<dyn ProgressNotifier>> = progress.map(|tx| Arc::new(CrossbeamNotifier(tx)) as Arc<dyn ProgressNotifier>);
         let uc = DeleteEntriesUseCase::new(self.repo.clone());
-        uc.execute(archive, indices, None)
+        uc.execute(archive, indices, notifier)
     }
 
     pub fn rename_entry(
@@ -190,11 +188,8 @@ impl RootController {
         &self,
         archive: &ArchiveHandle,
         indices: Option<&[u32]>,
-        progress: Option<ProgressSender>,
+        _progress: Option<ProgressSender>,
     ) -> Result<TestResult, ArchiveError> {
-        if let Some(tx) = progress {
-            self.repo.set_progress_notifier(Box::new(CrossbeamNotifier(tx)));
-        }
         let uc = TestEntriesUseCase::new(self.repo.clone());
         uc.execute(archive, indices, None)
     }

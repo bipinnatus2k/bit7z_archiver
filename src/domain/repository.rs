@@ -1,7 +1,9 @@
 use crate::domain::archive::*;
+use crate::application::plan::ExecutionPlan;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
-/// Progress update message sent during long-running operations.
 #[derive(Debug, Clone)]
 pub struct ProgressUpdate {
     pub file_current: u64,
@@ -14,62 +16,54 @@ pub struct ProgressUpdate {
     pub error: Option<String>,
 }
 
-/// Abstraction for progress notification (domain port, adapter implements).
+impl Default for ProgressUpdate {
+    fn default() -> Self {
+        Self {
+            file_current: 0,
+            file_total: 0,
+            current_file: None,
+            items_done: 0,
+            items_total: 0,
+            bytes_done: 0,
+            bytes_total: 0,
+            error: None,
+        }
+    }
+}
+
 pub trait ProgressNotifier: Send + Sync {
     fn notify(&self, update: &ProgressUpdate);
 }
 
-/// Core repository trait for archive operations.
-/// Implementations wrap the bit7z C++ bridge.
+pub struct ExtractOptions {
+    pub overwrite_mode: OverwriteMode,
+    pub cancel: Arc<AtomicBool>,
+    pub paused: Arc<AtomicBool>,
+    pub notifier: Arc<dyn ProgressNotifier>,
+}
+
+pub struct WriteOptions {
+    pub cancel: Arc<AtomicBool>,
+    pub paused: Arc<AtomicBool>,
+    pub notifier: Arc<dyn ProgressNotifier>,
+}
+
 pub trait ArchiveRepository: Send + Sync {
     fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError>;
     fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError>;
     fn list_page(&self, archive: &ArchiveHandle, offset: usize, limit: usize) -> Result<Page<ArchiveEntry>, ArchiveError>;
     fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError>;
-    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path) -> Result<(), ArchiveError>;
+    fn extract(&self, archive: &ArchiveHandle, indices: &[u32], dest: &Path, options: &ExtractOptions) -> Result<(), ArchiveError>;
     fn extract_to_buffer(&self, archive: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError>;
-    fn add(&self, archive: &ArchiveHandle, files: &[PathBuf], password: Option<&Password>) -> Result<(), ArchiveError>;
-    fn delete(&self, archive: &ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError>;
-    fn rename(&self, archive: &ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError>;
     fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError>;
     fn close(&self, archive: &ArchiveHandle);
 
-    /// Set a progress notifier for long-running operations.
-    fn set_progress_notifier(&self, _notifier: Box<dyn ProgressNotifier>) {}
+    fn plan_changes(&self, archive: &ArchiveHandle, change_set: &ChangeSet) -> Result<ExecutionPlan, ArchiveError>;
+    fn apply_changes(&self, archive: &ArchiveHandle, plan: &ExecutionPlan, options: &WriteOptions) -> Result<(), ArchiveError>;
 
-    /// Set the overwrite mode for the next extraction.
-    fn set_overwrite_mode(&self, _mode: OverwriteMode) {}
-
-    /// Set cancel flag for the running extraction.
-    fn set_cancel_flag(&self, _cancel: std::sync::Arc<std::sync::atomic::AtomicBool>) {}
-
-    /// Set pause flag for the running extraction.
-    fn set_pause_flag(&self, _paused: std::sync::Arc<std::sync::atomic::AtomicBool>) {}
-
-    /// Extract with real-time progress callbacks.
-    /// Default falls back to plain extract (no progress).
-    fn extract_with_progress(
-        &self,
-        archive: &ArchiveHandle,
-        indices: &[u32],
-        dest: &Path,
-        _notifier: &dyn ProgressNotifier,
-    ) -> Result<(), ArchiveError> {
-        self.extract(archive, indices, dest)
-    }
-
-    /// List direct children of `path` in the archive.
-    /// `""` (empty string) lists root-level items.
-    /// Returns `NotFound` if the path doesn't exist.
     fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError>;
-
-    /// Add a single file to the archive at a specific archive-internal path.
-    fn add_file_to_path(&self, _archive: &ArchiveHandle, _file_path: &Path, _archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
-        Err(ArchiveError::UnsupportedOperation)
-    }
 }
 
-/// Domain-level errors for archive operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ArchiveError {
     #[error("File not found: {0}")]
@@ -92,6 +86,8 @@ pub enum ArchiveError {
     UnsupportedOperation,
     #[error("Archive is not writable")]
     ReadOnlyArchive,
+    #[error("Conflicts detected during operation")]
+    Conflict,
 }
 
 /// Archive-level properties from bit7z.
@@ -237,7 +233,7 @@ pub mod test_utils {
             })
         }
 
-        fn extract(&self, _archive: &ArchiveHandle, _indices: &[u32], _dest: &Path) -> Result<(), ArchiveError> {
+        fn extract(&self, _archive: &ArchiveHandle, _indices: &[u32], _dest: &Path, _options: &ExtractOptions) -> Result<(), ArchiveError> {
             Ok(())
         }
 
@@ -248,24 +244,41 @@ pub mod test_utils {
             let entries = self.entries.lock().unwrap();
             let entry = entries.iter().find(|e| e.original_index == index)
                 .ok_or_else(|| ArchiveError::NotFound(format!("index {}", index)))?;
-            // Return deterministic data: size bytes filled with index as u8
-            // This way tests can pre-compute expected CRCs
             let size = entry.size as usize;
             let fill = (index as u8).wrapping_mul(17);
             Ok(vec![fill; size.max(1)])
         }
 
-        fn add(&self, _archive: &ArchiveHandle, files: &[PathBuf], _password: Option<&Password>) -> Result<(), ArchiveError> {
+        fn plan_changes(&self, _archive: &ArchiveHandle, change_set: &ChangeSet) -> Result<ExecutionPlan, ArchiveError> {
+            let entries = self.entries.lock().unwrap();
+            Ok(crate::application::plan::plan_changes(&entries, change_set))
+        }
+
+        fn apply_changes(&self, _archive: &ArchiveHandle, plan: &ExecutionPlan, _options: &WriteOptions) -> Result<(), ArchiveError> {
             let mut entries = self.entries.lock().unwrap();
+
+            for &idx in &plan.deletes {
+                if let Some(pos) = entries.iter().position(|e| e.original_index == idx) {
+                    entries.remove(pos);
+                }
+            }
+
+            for &(idx, ref new_path) in &plan.renames {
+                if let Some(entry) = entries.iter_mut().find(|e| e.original_index == idx) {
+                    let new_name = new_path.rsplit('/').next().unwrap_or(new_path).to_string();
+                    entry.name = new_name;
+                    entry.path = new_path.clone();
+                }
+            }
+
             let next_idx = entries.len() as u32;
-            for (i, path) in files.iter().enumerate() {
-                let name = path.file_name()
+            for (i, (fs_path, archive_path)) in plan.adds.iter().enumerate() {
+                let name = fs_path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| format!("file_{}", i));
-                let path_str = name.clone();
                 entries.push(ArchiveEntry {
                     name,
-                    path: path_str,
+                    path: archive_path.clone(),
                     size: 100,
                     compressed_size: 50,
                     crc: Some(next_idx + i as u32),
@@ -273,61 +286,11 @@ pub mod test_utils {
                     ..Default::default()
                 });
             }
-            Ok(())
-        }
 
-        fn add_file_to_path(&self, _archive: &ArchiveHandle, file_path: &Path, archive_path: &str, _password: Option<&Password>) -> Result<(), ArchiveError> {
-            if file_path.exists() {
-                let name = file_path.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "unknown".into());
-                let size = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
-                let mut entries_lock = self.entries.lock().unwrap();
-                let next_idx = entries_lock.len() as u32;
-                entries_lock.push(ArchiveEntry {
-                    name: name.clone(),
-                    path: archive_path.to_string(),
-                    size,
-                    compressed_size: size / 2,
-                    crc: Some(next_idx),
-                    original_index: next_idx,
-                    ..Default::default()
-                });
-                Ok(())
-            } else {
-                Err(ArchiveError::NotFound(file_path.to_string_lossy().to_string()))
-            }
-        }
-
-        fn delete(&self, _archive: &ArchiveHandle, indices: &[u32]) -> Result<(), ArchiveError> {
-            let mut entries = self.entries.lock().unwrap();
-            let mut sorted: Vec<u32> = indices.to_vec();
-            sorted.sort_unstable_by(|a, b| b.cmp(a)); // descending
-            for idx in sorted {
-                if let Some(pos) = entries.iter().position(|e| e.original_index == idx) {
-                    entries.remove(pos);
-                }
-            }
-            // Re-index
             for (i, e) in entries.iter_mut().enumerate() {
                 e.original_index = i as u32;
             }
-            Ok(())
-        }
 
-        fn rename(&self, _archive: &ArchiveHandle, index: u32, new_name: &str) -> Result<(), ArchiveError> {
-            let mut entries = self.entries.lock().unwrap();
-            let entry = entries.iter_mut()
-                .find(|e| e.original_index == index)
-                .ok_or_else(|| ArchiveError::NotFound(format!("index {}", index)))?;
-            // Update path to match new name
-            let new_path = if let Some(slash_pos) = entry.path.rfind('/') {
-                format!("{}/{}", &entry.path[..slash_pos], new_name)
-            } else {
-                new_name.to_string()
-            };
-            entry.name = new_name.to_string();
-            entry.path = new_path;
             Ok(())
         }
 

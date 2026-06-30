@@ -165,7 +165,13 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                     eprintln!("No valid indices specified");
                     return Ok(());
                 }
-                repo.extract(handle, &indices, Path::new(dest))?;
+                let options = crate::domain::repository::ExtractOptions {
+                    overwrite_mode: crate::domain::archive::OverwriteMode::Ask,
+                    cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    paused: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    notifier: std::sync::Arc::new(crate::application::open_entry::NoopNotifier),
+                };
+                repo.extract(handle, &indices, Path::new(dest), &options)?;
                 println!("Extracted {} entries to {}", indices.len(), dest);
                 Ok(())
             }) {
@@ -287,7 +293,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
             };
             let paths: Vec<std::path::PathBuf> = files.iter().map(std::path::PathBuf::from).collect();
             let uc = crate::application::add_to::AddToArchiveUseCase::new(repo.clone());
-            match uc.execute_with_password(&mut handle, &paths, None, pw.as_ref()) {
+            match uc.execute(&mut handle, &paths, None) {
                 Ok(()) => println!("Added {} files to {}", files.len(), path),
                 Err(e) => eprintln!("Add error: {}", e),
             }

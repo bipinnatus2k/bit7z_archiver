@@ -1,5 +1,5 @@
 use crate::domain::archive::ArchiveHandle;
-use crate::domain::repository::{ArchiveRepository, ArchiveError};
+use crate::domain::repository::{ArchiveRepository, ArchiveError, ExtractOptions};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -17,8 +17,9 @@ impl ExtractEntriesUseCase {
         archive: &ArchiveHandle,
         indices: &[u32],
         dest: &Path,
+        options: &ExtractOptions,
     ) -> Result<(), ArchiveError> {
-        self.repo.extract(archive, indices, dest)
+        self.repo.extract(archive, indices, dest, options)
     }
 }
 
