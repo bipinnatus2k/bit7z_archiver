@@ -7,6 +7,7 @@ use bit7z_archiver::domain::archive::*;
 use bit7z_archiver::domain::repository::*;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// Helper: check if the real 7z DLL is available on this system.
 fn has_7z_library() -> bool {
@@ -23,6 +24,16 @@ fn create_repo() -> Option<Arc<dyn ArchiveRepository>> {
     let lib_path = platform::find_7z_library()?;
     let lib = bit7z::Library::open(lib_path.to_str()?).ok()?;
     Some(Arc::new(Bit7zRepository::new(lib)))
+}
+
+/// Helper: create ExtractOptions for tests
+fn test_extract_options() -> ExtractOptions {
+    ExtractOptions {
+        overwrite_mode: OverwriteMode::Overwrite,
+        cancel: Arc::new(AtomicBool::new(false)),
+        paused: Arc::new(AtomicBool::new(false)),
+        notifier: Arc::new(bit7z_archiver::application::open_entry::NoopNotifier),
+    }
 }
 
 // ============================================================================
@@ -224,7 +235,7 @@ mod extract {
         let f1_index = f1.original_index;
 
         let dest = common::temp_dir();
-        repo.extract(&handle, &[f1_index], &dest)
+        repo.extract(&handle, &[f1_index], &dest, &test_extract_options())
             .expect("Failed to extract f1.txt");
 
         let extracted_path = dest.join("f1.txt");
@@ -255,7 +266,7 @@ mod extract {
             .collect();
 
         let dest = common::temp_dir();
-        repo.extract(&handle, &file_indices, &dest)
+        repo.extract(&handle, &file_indices, &dest, &test_extract_options())
             .expect("Failed to extract all files");
 
         assert!(dest.join("f1.txt").exists());
@@ -531,7 +542,7 @@ mod error_handling {
             .expect("Failed to open basic.7z");
 
         let dest = common::temp_dir();
-        let result = repo.extract(&handle, &[999], &dest);
+        let result = repo.extract(&handle, &[999], &dest, &test_extract_options());
         assert!(result.is_err());
 
         repo.close(&handle);

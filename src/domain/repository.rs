@@ -267,7 +267,14 @@ pub mod test_utils {
                 if let Some(entry) = entries.iter_mut().find(|e| e.original_index == idx) {
                     let new_name = new_path.rsplit('/').next().unwrap_or(new_path).to_string();
                     entry.name = new_name;
-                    entry.path = new_path.clone();
+                    // Preserve directory prefix if the original path had one
+                    if let Some(slash_pos) = entry.path.rfind('/') {
+                        entry.path = format!("{}/{}", &entry.path[..slash_pos], new_path);
+                    } else {
+                        entry.path = new_path.clone();
+                    }
+                } else {
+                    return Err(ArchiveError::NotFound(format!("index {}", idx)));
                 }
             }
 

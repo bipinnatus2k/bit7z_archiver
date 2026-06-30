@@ -8,6 +8,7 @@ use bit7z_archiver::application::progress::progress_channel;
 use bit7z_archiver::application::test::TestEntriesUseCase;
 use bit7z_archiver::domain::archive::*;
 use bit7z_archiver::domain::repository::*;
+use bit7z_archiver::application::plan::{plan_changes, ExecutionPlan};
 
 type MockRepo = test_utils::MockArchiveRepository;
 
@@ -15,6 +16,15 @@ type MockRepo = test_utils::MockArchiveRepository;
 
 mod repo_operations {
     use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    fn test_write_options() -> WriteOptions {
+        WriteOptions {
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: Arc::new(bit7z_archiver::application::open_entry::NoopNotifier),
+        }
+    }
 
     #[test]
     fn test_add_files_increases_entry_count() {
@@ -30,8 +40,14 @@ mod repo_operations {
         ]);
         assert_eq!(repo.entry_count(), 1);
 
-        let mut handle = repo.open(Path::new("test.7z"), None).unwrap();
-        let result = repo.add(&mut handle, &[PathBuf::from("new1.txt"), PathBuf::from("new2.txt")], None);
+        let handle = repo.open(Path::new("test.7z"), None).unwrap();
+        
+        let mut change_set = ChangeSet::new();
+        change_set.add(PathBuf::from("new1.txt"), "new1.txt".into());
+        change_set.add(PathBuf::from("new2.txt"), "new2.txt".into());
+        
+        let plan = repo.plan_changes(&handle, &change_set).unwrap();
+        let result = repo.apply_changes(&handle, &plan, &test_write_options());
         assert!(result.is_ok());
         assert_eq!(repo.entry_count(), 3);
     }
@@ -45,8 +61,14 @@ mod repo_operations {
         ]);
         assert_eq!(repo.entry_count(), 3);
 
-        let mut handle = repo.open(Path::new("test.7z"), None).unwrap();
-        let result = repo.delete(&mut handle, &[0, 2]);
+        let handle = repo.open(Path::new("test.7z"), None).unwrap();
+        
+        let mut change_set = ChangeSet::new();
+        change_set.delete(0);
+        change_set.delete(2);
+        
+        let plan = repo.plan_changes(&handle, &change_set).unwrap();
+        let result = repo.apply_changes(&handle, &plan, &test_write_options());
         assert!(result.is_ok());
         assert_eq!(repo.entry_count(), 1);
 
@@ -62,8 +84,13 @@ mod repo_operations {
             ArchiveEntry { name: "old.txt".into(), path: "old.txt".into(), original_index: 0, ..Default::default() },
         ]);
 
-        let mut handle = repo.open(Path::new("test.7z"), None).unwrap();
-        let result = repo.rename(&mut handle, 0, "new.txt");
+        let handle = repo.open(Path::new("test.7z"), None).unwrap();
+        
+        let mut change_set = ChangeSet::new();
+        change_set.rename(0, "new.txt".into());
+        
+        let plan = repo.plan_changes(&handle, &change_set).unwrap();
+        let result = repo.apply_changes(&handle, &plan, &test_write_options());
         assert!(result.is_ok());
 
         let page = repo.list_page(&handle, 0, 10).unwrap();
@@ -77,8 +104,13 @@ mod repo_operations {
             ArchiveEntry { name: "old.txt".into(), path: "subdir/old.txt".into(), original_index: 0, ..Default::default() },
         ]);
 
-        let mut handle = repo.open(Path::new("test.7z"), None).unwrap();
-        let result = repo.rename(&mut handle, 0, "new.txt");
+        let handle = repo.open(Path::new("test.7z"), None).unwrap();
+        
+        let mut change_set = ChangeSet::new();
+        change_set.rename(0, "new.txt".into());
+        
+        let plan = repo.plan_changes(&handle, &change_set).unwrap();
+        let result = repo.apply_changes(&handle, &plan, &test_write_options());
         assert!(result.is_ok());
 
         let page = repo.list_page(&handle, 0, 10).unwrap();
@@ -92,8 +124,13 @@ mod repo_operations {
             ArchiveEntry { name: "f.txt".into(), path: "f.txt".into(), original_index: 0, ..Default::default() },
         ]);
 
-        let mut handle = repo.open(Path::new("test.7z"), None).unwrap();
-        let result = repo.rename(&mut handle, 99, "nope.txt");
+        let handle = repo.open(Path::new("test.7z"), None).unwrap();
+        
+        let mut change_set = ChangeSet::new();
+        change_set.rename(99, "nope.txt".into());
+        
+        let plan = repo.plan_changes(&handle, &change_set).unwrap();
+        let result = repo.apply_changes(&handle, &plan, &test_write_options());
         assert!(result.is_err());
     }
 
@@ -104,8 +141,13 @@ mod repo_operations {
             ArchiveEntry { name: "b.txt".into(), path: "b.txt".into(), original_index: 1, ..Default::default() },
         ]);
 
-        let mut handle = repo.open(Path::new("test.7z"), None).unwrap();
-        let result = repo.delete(&mut handle, &[99]);
+        let handle = repo.open(Path::new("test.7z"), None).unwrap();
+        
+        let mut change_set = ChangeSet::new();
+        change_set.delete(99);
+        
+        let plan = repo.plan_changes(&handle, &change_set).unwrap();
+        let result = repo.apply_changes(&handle, &plan, &test_write_options());
         assert!(result.is_ok());
         assert_eq!(repo.entry_count(), 2);
     }
@@ -269,20 +311,30 @@ mod test_entries {
 
 mod compress_cli {
     use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    fn test_write_options() -> WriteOptions {
+        WriteOptions {
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: Arc::new(bit7z_archiver::application::open_entry::NoopNotifier),
+        }
+    }
 
     #[test]
     fn test_create_and_list_round_trip() {
         let repo = Arc::new(MockRepo::new(vec![]));
 
         let dest = PathBuf::from("test_out.7z");
-        let mut handle = repo.create(&dest, ArchiveFormat::SevenZip, None).unwrap();
+        let handle = repo.create(&dest, ArchiveFormat::SevenZip, None).unwrap();
 
-        let files = vec![
-            PathBuf::from("a.txt"),
-            PathBuf::from("b.txt"),
-            PathBuf::from("sub/c.txt"),
-        ];
-        let result = repo.add(&mut handle, &files, None);
+        let mut change_set = ChangeSet::new();
+        change_set.add(PathBuf::from("a.txt"), "a.txt".into());
+        change_set.add(PathBuf::from("b.txt"), "b.txt".into());
+        change_set.add(PathBuf::from("sub/c.txt"), "sub/c.txt".into());
+        
+        let plan = repo.plan_changes(&handle, &change_set).unwrap();
+        let result = repo.apply_changes(&handle, &plan, &test_write_options());
         assert!(result.is_ok());
 
         let page = repo.list_page(&handle, 0, 10).unwrap();
@@ -313,7 +365,13 @@ mod compress_cli {
         let handle = repo.open(Path::new("test.7z"), None).unwrap();
 
         let dest = common::temp_dir();
-        let result = repo.extract(&handle, &[0], &dest);
+        let options = ExtractOptions {
+            overwrite_mode: OverwriteMode::Overwrite,
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: Arc::new(bit7z_archiver::application::open_entry::NoopNotifier),
+        };
+        let result = repo.extract(&handle, &[0], &dest, &options);
         assert!(result.is_ok());
     }
 }
