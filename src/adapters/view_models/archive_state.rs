@@ -204,6 +204,12 @@ impl ArchiveState {
         self.selection.iter().next().copied()
     }
 
+    /// Return the selected indices without cloning any ArchiveEntry data.
+    /// Prefer this over `selected_entries()` when only the indices are needed.
+    pub fn selected_indices(&self) -> Vec<u32> {
+        self.selection.iter().copied().collect()
+    }
+
     pub fn has_selection(&self) -> bool {
         !self.selection.is_empty()
     }

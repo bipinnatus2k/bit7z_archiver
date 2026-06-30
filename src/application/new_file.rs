@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// then after the editor closes, adds the file to the archive if it was modified.
 pub fn new_file_and_add(
     repo: Arc<dyn ArchiveRepository>,
-    archive: &mut ArchiveHandle,
+    archive: &ArchiveHandle,
     file_name: &str,
     password: Option<&Password>,
 ) -> Result<(), ArchiveError> {

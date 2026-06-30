@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// occupies zero bytes compressed.
 pub fn new_folder(
     repo: Arc<dyn ArchiveRepository>,
-    archive: &mut ArchiveHandle,
+    archive: &ArchiveHandle,
     folder_path: &str,
     password: Option<&Password>,
 ) -> Result<(), ArchiveError> {
@@ -36,32 +36,32 @@ mod tests {
     #[test]
     fn test_new_folder_success() {
         let repo = MockArchiveRepository::arc_with_count(0);
-        let mut handle = ArchiveHandle::new_reader();
-        let result = new_folder(repo, &mut handle, "newdir", None);
+        let handle = ArchiveHandle::new_reader();
+        let result = new_folder(repo, &handle, "newdir", None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_new_folder_empty_path() {
         let repo = MockArchiveRepository::arc_with_count(0);
-        let mut handle = ArchiveHandle::new_reader();
-        let result = new_folder(repo, &mut handle, "", None);
+        let handle = ArchiveHandle::new_reader();
+        let result = new_folder(repo, &handle, "", None);
         assert!(matches!(result, Err(ArchiveError::Internal(ref msg)) if msg.contains("empty")));
     }
 
     #[test]
     fn test_new_folder_nested() {
         let repo = MockArchiveRepository::arc_with_count(0);
-        let mut handle = ArchiveHandle::new_reader();
-        let result = new_folder(repo, &mut handle, "parent/child", None);
+        let handle = ArchiveHandle::new_reader();
+        let result = new_folder(repo, &handle, "parent/child", None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_new_folder_trim_trailing_slash() {
         let repo = MockArchiveRepository::arc_with_count(0);
-        let mut handle = ArchiveHandle::new_reader();
-        let result = new_folder(repo, &mut handle, "mydir/", None);
+        let handle = ArchiveHandle::new_reader();
+        let result = new_folder(repo, &handle, "mydir/", None);
         assert!(result.is_ok());
     }
 }

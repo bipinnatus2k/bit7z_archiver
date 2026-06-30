@@ -83,11 +83,7 @@ impl RootView {
                             }
                         }
                         ToolbarIntent::ExtractSelected => {
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                            let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
-                                .get(&this.state.current_path)
-                                .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
-                                .unwrap_or_default();
+                            let (indices, entries) = this.selected_entries_data();
                             if !entries.is_empty() {
                                 if let Some(ref handle) = this.state.archive {
                                     let handle = handle.clone();
@@ -127,7 +123,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                             let indices = if this.state.selection.is_empty() {
                                 None
                             } else {
-                                Some(this.state.selection.iter().copied().collect::<Vec<u32>>())
+                                Some(this.state.selected_indices())
                             };
                             let handle = this.state.archive.clone();
                             let repo = this.controller.repo();
@@ -254,11 +250,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                             // Handled by SelectionChanged -> inline preview load
                         }
                         FileListIntent::ExtractSelected => {
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                            let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
-                                .get(&this.state.current_path)
-                                .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
-                                .unwrap_or_default();
+                            let (indices, entries) = this.selected_entries_data();
                             if !entries.is_empty() {
                                 if let Some(ref handle) = this.state.archive {
                                     let handle = handle.clone();
@@ -295,7 +287,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                             }
                         }
                         FileListIntent::TestSelected => {
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let indices: Vec<u32> = this.state.selected_indices();
                             let handle = this.state.archive.clone();
                             let repo = this.controller.repo();
                             if let Some(ref h) = handle {
@@ -311,7 +303,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                         }
                         FileListIntent::DeleteSelected => {
                             let handle = this.state.archive.clone();
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let indices: Vec<u32> = this.state.selected_indices();
                             if !indices.is_empty() {
                                 let repo = this.controller.repo();
                                 cx.spawn(async move |_, cx| {
@@ -321,7 +313,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                         }
                         FileListIntent::Checksum(_algo) => {
                             let handle = this.state.archive.clone();
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                            let indices: Vec<u32> = this.state.selected_indices();
                             if !indices.is_empty() {
                                 let repo = this.controller.repo();
                                 cx.spawn(async move |_, cx| {
@@ -330,11 +322,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                             }
                         }
                         FileListIntent::ShowProperties => {
-                            let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                            let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
-                                .get(&this.state.current_path)
-                                .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
-                                .unwrap_or_default();
+                            let (_indices, entries) = this.selected_entries_data();
                             if !entries.is_empty() {
                                 cx.spawn(async move |_, cx| {
                                     crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
@@ -417,6 +405,22 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
             }
             root
         })
+    }
+
+    /// Collect the currently selected indices and their corresponding entries
+    /// from the directory cache. Returns `(indices, entries)`.
+    fn selected_entries_data(&self) -> (Vec<u32>, Vec<crate::domain::archive::ArchiveEntry>) {
+        let indices = self.state.selected_indices();
+        let entries = self.state.directory_cache
+            .get(&self.state.current_path)
+            .map(|all| {
+                all.iter()
+                    .filter(|e| indices.contains(&e.original_index))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        (indices, entries)
     }
 
     fn sync_children(&mut self, cx: &mut Context<Self>) {
@@ -611,11 +615,7 @@ impl Render for RootView {
                         }).detach();
                     }
                     "e" if cmd => {
-                        let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                        let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
-                            .get(&this.state.current_path)
-                            .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
-                            .unwrap_or_default();
+                        let (indices, entries) = this.selected_entries_data();
                         if !entries.is_empty() {
                             if let Some(ref handle) = this.state.archive {
                                 let handle = handle.clone();
@@ -672,9 +672,9 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                     "f4" => {
                         if let Some(ref h) = this.state.archive {
                             let repo = this.controller.repo();
-                            let mut handle = h.clone();
+                            let handle = h.clone();
                             cx.background_spawn(async move {
-                                let _ = crate::application::new_file::new_file_and_add(repo, &mut handle, "new_file.txt", None);
+                                let _ = crate::application::new_file::new_file_and_add(repo, &handle, "new_file.txt", None);
                             }).detach();
                         }
                     }
@@ -684,11 +684,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                         }
                     }
                     "enter" if modifiers.alt => {
-                        let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                        let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
-                            .get(&this.state.current_path)
-                            .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
-                            .unwrap_or_default();
+                        let (_indices, entries) = this.selected_entries_data();
                         if !entries.is_empty() {
                             cx.spawn(async move |_, cx| {
                                 crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
@@ -735,7 +731,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                     }
                     "Backspace" | "Delete" => {
                         let handle = this.state.archive.clone();
-                        let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                        let indices: Vec<u32> = this.state.selected_indices();
                         if !indices.is_empty() {
                             let repo = this.controller.repo();
                             cx.spawn(async move |_, cx| {
@@ -769,7 +765,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                 }
             }))
             .on_action(cx.listener(|this: &mut RootView, _: &menu::TestSelected, _window, cx| {
-                let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                let indices: Vec<u32> = this.state.selected_indices();
                 let handle = this.state.archive.clone();
                 let repo = this.controller.repo();
                 cx.spawn(async move |_, cx| {
@@ -793,11 +789,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                 this.sync_children(cx);
             }))
             .on_action(cx.listener(|this: &mut RootView, _: &menu::ShowProperties, _window, cx| {
-                let indices: Vec<u32> = this.state.selection.iter().copied().collect();
-                let entries: Vec<crate::domain::archive::ArchiveEntry> = this.state.directory_cache
-                    .get(&this.state.current_path)
-                    .map(|all| all.iter().filter(|e| indices.contains(&e.original_index)).cloned().collect())
-                    .unwrap_or_default();
+                let (_indices, entries) = this.selected_entries_data();
                 if !entries.is_empty() {
                     cx.spawn(async move |_, cx| {
                         crate::adapters::views::dialogs::properties::PropertiesDialog::open_entries(entries, cx);
@@ -827,7 +819,7 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
             .on_action(cx.listener(|this: &mut RootView, _: &menu::DeleteSelected, _window, cx| {
                 if !this.state.selection.is_empty() {
                     if let Some(ref h) = this.state.archive {
-                        let repo = this.controller.repo(); let handle = h.clone(); let indices: Vec<u32> = this.state.selection.iter().copied().collect();
+                        let repo = this.controller.repo(); let handle = h.clone(); let indices: Vec<u32> = this.state.selected_indices();
                         cx.spawn(async move |_, cx| { crate::adapters::views::dialogs::delete::DeleteDialog::open(cx, indices, handle, repo); }).detach();
                     }
                 }

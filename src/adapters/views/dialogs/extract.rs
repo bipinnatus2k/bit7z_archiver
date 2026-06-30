@@ -1,6 +1,6 @@
 use crate::domain::archive::*;
 use crate::theme::Theme;
-use crossbeam::channel::{unbounded, Receiver, Sender, TryRecvError};
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
@@ -46,7 +46,9 @@ impl SelectItem for OverwriteMode {
     }
 
     fn value(&self) -> &Self::Value {
-        &self.index()
+        // SAFETY: OverwriteMode has exactly 4 variants (0..3), matching the array bounds.
+        const VALUES: [i32; 4] = [0, 1, 2, 3];
+        &VALUES[self.index() as usize]
     }
 
     fn matches(&self, query: &str) -> bool {

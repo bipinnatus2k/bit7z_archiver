@@ -147,7 +147,6 @@ impl ArchiveFormat {
 #[derive(Debug, Clone)]
 pub struct ArchiveHandle {
     pub(crate) id: u64,
-    pub(crate) is_writer: bool,
     pub(crate) path: Option<PathBuf>,
     pub(crate) format: Option<ArchiveFormat>,
     pub(crate) is_header_encrypted: bool,
@@ -158,7 +157,6 @@ impl ArchiveHandle {
     pub fn new_reader() -> Self {
         Self {
             id: next_archive_id(),
-            is_writer: false,
             path: None,
             format: None,
             is_header_encrypted: false,
@@ -169,7 +167,6 @@ impl ArchiveHandle {
     pub fn new_writer() -> Self {
         Self {
             id: next_archive_id(),
-            is_writer: true,
             path: None,
             format: None,
             is_header_encrypted: false,
@@ -303,12 +300,12 @@ impl OverwriteMode {
         vec![OverwriteMode::Ask, OverwriteMode::Overwrite, OverwriteMode::Skip, OverwriteMode::RenameExtracted]
     }
     
-    pub fn index(&self) -> &'static i32 {
+    pub fn index(self) -> i32 {
         match self {
-            OverwriteMode::Ask => &0,
-            OverwriteMode::Overwrite => &1,
-            OverwriteMode::Skip => &2,
-            OverwriteMode::RenameExtracted => &3
+            OverwriteMode::Ask => 0,
+            OverwriteMode::Overwrite => 1,
+            OverwriteMode::Skip => 2,
+            OverwriteMode::RenameExtracted => 3,
         }
     }
 }

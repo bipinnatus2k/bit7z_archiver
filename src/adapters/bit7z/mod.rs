@@ -12,6 +12,76 @@ use autocxx::c_void;
 type Handle = usize;
 
 // ============================================================================
+// FfiHandle — RAII wrapper for C++ resource lifecycle
+// ============================================================================
+
+/// Identifies the kind of C++ resource held by an [`FfiHandle`], so that
+/// `Drop` can call the correct C destructor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandleKind {
+    Reader,
+    Writer,
+    Editor,
+}
+
+/// RAII wrapper around a raw C++ pointer stored in `Bit7zRepository.handles`.
+///
+/// When an `FfiHandle` is dropped it automatically calls the appropriate
+/// C destructor (`bit7z_reader_close`, `bit7z_writer_close`, or
+/// `bit7z_editor_close`), preventing resource leaks even on panic paths.
+pub struct FfiHandle {
+    ptr: *mut std::ffi::c_void,
+    kind: HandleKind,
+}
+
+// SAFETY: FfiHandle wraps a raw FFI pointer. The underlying C++ bit7z
+// library is thread-safe for concurrent read operations. Mutable
+// operations are serialized through the repository's RwLock.
+unsafe impl Send for FfiHandle {}
+unsafe impl Sync for FfiHandle {}
+
+impl FfiHandle {
+    pub fn reader(ptr: *mut std::ffi::c_void) -> Self {
+        Self { ptr, kind: HandleKind::Reader }
+    }
+
+    pub fn writer(ptr: *mut std::ffi::c_void) -> Self {
+        Self { ptr, kind: HandleKind::Writer }
+    }
+
+    pub fn editor(ptr: *mut std::ffi::c_void) -> Self {
+        Self { ptr, kind: HandleKind::Editor }
+    }
+
+    pub fn ptr(&self) -> *mut std::ffi::c_void {
+        self.ptr
+    }
+
+    pub fn kind(&self) -> HandleKind {
+        self.kind
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
+impl Drop for FfiHandle {
+    fn drop(&mut self) {
+        if self.ptr.is_null() {
+            return;
+        }
+        unsafe {
+            match self.kind {
+                HandleKind::Reader => crate::ffi::bit7z_reader_close(self.ptr as *mut _),
+                HandleKind::Writer => bit7z_writer_close(self.ptr as *mut _),
+                HandleKind::Editor => bit7z_editor_close(self.ptr as *mut _),
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Library
 // ============================================================================
 
@@ -412,9 +482,9 @@ impl Writer {
         Self { raw }
     }
 
-    pub fn open(lib: &Library, path: &str, format: WriterFormat, password: Option<&str>) -> Result<Self, String> {
+    pub fn open(lib: &Library, path: &str, format: WriterFormat, password: Option<&Password>) -> Result<Self, String> {
         let c_path = std::ffi::CString::new(path).map_err(|e| format!("{}", e))?;
-        let c_pw = password.and_then(|p| std::ffi::CString::new(p).ok());
+        let c_pw = password.and_then(|p| std::ffi::CString::new(p.as_str()).ok());
         let raw = unsafe {
             bit7z_writer_open(
                 lib.raw_handle() as *mut _,

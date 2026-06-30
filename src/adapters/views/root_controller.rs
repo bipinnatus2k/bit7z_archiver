@@ -66,7 +66,7 @@ impl RootController {
             if let Some(ref c) = cancel { self.repo.set_cancel_flag(c.clone()); }
             if let Some(ref p) = paused { self.repo.set_pause_flag(p.clone()); }
             let tx_end = tx.clone();
-            let _ = tx.send(crate::application::progress::ProgressUpdate {
+            let _ = tx.send(ProgressUpdate {
                 file_current: 0, file_total: expanded.len() as u64,
                 current_file: Some(format!("Extracting {} items to {}", expanded.len(), dest.display())),
                 items_done: 0, items_total: expanded.len() as u64,
@@ -145,7 +145,7 @@ impl RootController {
 
     pub fn add_files(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &ArchiveHandle,
         files: &[std::path::PathBuf],
         progress: Option<ProgressSender>,
         password: Option<&Password>,
@@ -165,7 +165,7 @@ impl RootController {
 
     pub fn delete_entries(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &ArchiveHandle,
         indices: &[u32],
         progress: Option<ProgressSender>,
     ) -> Result<(), ArchiveError> {
@@ -178,7 +178,7 @@ impl RootController {
 
     pub fn rename_entry(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &ArchiveHandle,
         index: u32,
         new_name: &str,
     ) -> Result<(), ArchiveError> {

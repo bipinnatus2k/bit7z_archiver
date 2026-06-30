@@ -60,9 +60,9 @@ mod tests {
             fn get_properties(&self, _: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> { Ok(ArchiveProperties::default()) }
             fn extract(&self, _: &ArchiveHandle, _: &[u32], _: &std::path::Path) -> Result<(), ArchiveError> { Ok(()) }
             fn extract_to_buffer(&self, _: &ArchiveHandle, _: u32) -> Result<Vec<u8>, ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
-            fn add(&self, _: &mut ArchiveHandle, _: &[std::path::PathBuf], _: Option<&Password>) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
-            fn delete(&self, _: &mut ArchiveHandle, _: &[u32]) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
-            fn rename(&self, _: &mut ArchiveHandle, _: u32, _: &str) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn add(&self, _: &ArchiveHandle, _: &[std::path::PathBuf], _: Option<&Password>) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn delete(&self, _: &ArchiveHandle, _: &[u32]) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
+            fn rename(&self, _: &ArchiveHandle, _: u32, _: &str) -> Result<(), ArchiveError> { Err(ArchiveError::UnsupportedOperation) }
             fn test(&self, _: &ArchiveHandle) -> Result<TestResult, ArchiveError> { Ok(TestResult { total: 0, passed: 0, failed: vec![] }) }
             fn list_directory(&self, _: &ArchiveHandle, _: &str) -> Result<Vec<ArchiveEntry>, ArchiveError> { Ok(vec![]) }
             fn close(&self, _: &ArchiveHandle) {}

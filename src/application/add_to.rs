@@ -10,7 +10,7 @@ impl AddToArchiveUseCase {
     pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self { Self { repo } }
     pub fn execute(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &ArchiveHandle,
         files: &[PathBuf],
         progress: Option<ProgressSender>,
     ) -> Result<(), ArchiveError> {
@@ -19,7 +19,7 @@ impl AddToArchiveUseCase {
 
     pub fn execute_with_password(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &ArchiveHandle,
         files: &[PathBuf],
         progress: Option<ProgressSender>,
         password: Option<&Password>,
@@ -51,8 +51,8 @@ mod tests {
         let uc = AddToArchiveUseCase::new(repo);
         let test_file = std::env::temp_dir().join("add_to_test_file.txt");
         std::fs::write(&test_file, b"test").unwrap();
-        let mut handle = ArchiveHandle::new_writer().with_path("test.7z".into());
-        let result = uc.execute(&mut handle, &[test_file.clone()], None);
+        let handle = ArchiveHandle::new_writer().with_path("test.7z".into());
+        let result = uc.execute(&handle, &[test_file.clone()], None);
         assert!(result.is_ok());
         let _ = std::fs::remove_file(&test_file);
     }
@@ -61,8 +61,8 @@ mod tests {
     fn test_add_to_archive_file_not_found() {
         let repo = MockArchiveRepository::arc_with_count(0);
         let uc = AddToArchiveUseCase::new(repo);
-        let mut handle = ArchiveHandle::new_writer().with_path("test.7z".into());
-        let result = uc.execute(&mut handle, &[PathBuf::from(r"Z:\nonexistent\file.txt")], None);
+        let handle = ArchiveHandle::new_writer().with_path("test.7z".into());
+        let result = uc.execute(&handle, &[PathBuf::from(r"Z:\nonexistent\file.txt")], None);
         assert!(matches!(result, Err(ArchiveError::NotFound(_))));
     }
 
@@ -73,8 +73,8 @@ mod tests {
         let test_file = std::env::temp_dir().join("add_to_progress_test.txt");
         std::fs::write(&test_file, b"progress").unwrap();
         let (tx, _rx) = crate::application::progress::progress_channel();
-        let mut handle = ArchiveHandle::new_writer().with_path("test.7z".into());
-        let result = uc.execute(&mut handle, &[test_file.clone()], Some(tx));
+        let handle = ArchiveHandle::new_writer().with_path("test.7z".into());
+        let result = uc.execute(&handle, &[test_file.clone()], Some(tx));
         assert!(result.is_ok());
         let _ = std::fs::remove_file(&test_file);
     }
@@ -85,9 +85,9 @@ mod tests {
         let uc = AddToArchiveUseCase::new(repo);
         let test_file = std::env::temp_dir().join("add_to_password_test.txt");
         std::fs::write(&test_file, b"pw test").unwrap();
-        let mut handle = ArchiveHandle::new_writer().with_path("secret.7z".into());
+        let handle = ArchiveHandle::new_writer().with_path("secret.7z".into());
         let pw = Password::new("hunter2");
-        let result = uc.execute_with_password(&mut handle, &[test_file.clone()], None, Some(&pw));
+        let result = uc.execute_with_password(&handle, &[test_file.clone()], None, Some(&pw));
         assert!(result.is_ok());
         let _ = std::fs::remove_file(&test_file);
     }
@@ -98,8 +98,8 @@ mod tests {
         let uc = AddToArchiveUseCase::new(repo);
         let test_dir = std::env::temp_dir().join("add_to_dir_test");
         std::fs::create_dir_all(&test_dir).unwrap();
-        let mut handle = ArchiveHandle::new_writer().with_path("test.7z".into());
-        let result = uc.execute(&mut handle, &[test_dir.clone()], None);
+        let handle = ArchiveHandle::new_writer().with_path("test.7z".into());
+        let result = uc.execute(&handle, &[test_dir.clone()], None);
         assert!(result.is_ok());
         let _ = std::fs::remove_dir(&test_dir);
     }

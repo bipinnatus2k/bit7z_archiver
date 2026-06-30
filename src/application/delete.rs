@@ -9,7 +9,7 @@ impl DeleteEntriesUseCase {
     pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self { Self { repo } }
     pub fn execute(
         &self,
-        archive: &mut ArchiveHandle,
+        archive: &ArchiveHandle,
         indices: &[u32],
         progress: Option<ProgressSender>,
     ) -> Result<(), ArchiveError> {
@@ -31,8 +31,8 @@ mod tests {
         let mock = MockArchiveRepository::with_count(5);
         let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
         let uc = DeleteEntriesUseCase::new(repo);
-        let mut handle = ArchiveHandle::new_reader();
-        let result = uc.execute(&mut handle, &[0, 2], None);
+        let handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&handle, &[0, 2], None);
         assert!(result.is_ok());
     }
 
@@ -42,8 +42,8 @@ mod tests {
         let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
         let uc = DeleteEntriesUseCase::new(repo);
         let (tx, _rx) = crate::application::progress::progress_channel();
-        let mut handle = ArchiveHandle::new_reader();
-        let result = uc.execute(&mut handle, &[1, 3], Some(tx));
+        let handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&handle, &[1, 3], Some(tx));
         assert!(result.is_ok());
     }
 
@@ -52,8 +52,8 @@ mod tests {
         let mock = MockArchiveRepository::with_count(3);
         let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
         let uc = DeleteEntriesUseCase::new(repo);
-        let mut handle = ArchiveHandle::new_reader();
-        let result = uc.execute(&mut handle, &[99, 100], None);
+        let handle = ArchiveHandle::new_reader();
+        let result = uc.execute(&handle, &[99, 100], None);
         assert!(result.is_ok());
     }
 }
