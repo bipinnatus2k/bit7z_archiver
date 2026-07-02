@@ -139,7 +139,6 @@ impl Default for ArchiveProperties {
 #[doc(hidden)]
 pub mod test_utils {
     use super::*;
-    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
     /// A mock repository that returns control over its behavior.

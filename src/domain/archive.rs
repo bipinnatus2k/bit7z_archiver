@@ -135,6 +135,18 @@ impl ArchiveFormat {
             ArchiveFormat::Rar => "Rar",
         }
     }
+
+    pub fn all_support_compress() -> Vec<ArchiveFormat> {
+        vec![
+            ArchiveFormat::SevenZip,
+            ArchiveFormat::Zip,
+            ArchiveFormat::Tar,
+            ArchiveFormat::TarGz,
+            ArchiveFormat::TarXz,
+            ArchiveFormat::TarBz2,
+            // ArchiveFormat::Rar => "Rar",
+        ]
+    }
 }
 
 /// Opaque handle to an opened archive.

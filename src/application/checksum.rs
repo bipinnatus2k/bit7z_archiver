@@ -4,8 +4,9 @@ use md5::{Digest, Md5};
 use sha1::Sha1;
 use sha2::Sha256;
 use std::sync::Arc;
+use serde::Deserialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize)]
 pub enum ChecksumAlgorithm {
     Crc32,
     Md5,
