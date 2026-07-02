@@ -41,6 +41,7 @@ pub struct ArchiveState {
     pub path_history: Vec<String>,
     pub selection_anchor: Option<u32>,
     pub archive_password: Option<Password>,
+    pub show_preview: bool,
 }
 
 impl ArchiveState {
@@ -59,6 +60,7 @@ impl ArchiveState {
             path_history: Vec::new(),
             selection_anchor: None,
             archive_password: None,
+            show_preview: false,
         }
     }
 
