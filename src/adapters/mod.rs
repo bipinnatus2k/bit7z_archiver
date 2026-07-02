@@ -7,3 +7,4 @@ pub mod shell;
 pub mod tray;
 pub mod platform;
 pub mod bit7z;
+pub mod notifications;

@@ -14,6 +14,7 @@ use crate::ipc::GuiCommand;
 use crossbeam::channel::unbounded;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use crate::adapters::views::utils::window::create_new_window_with_size;
 
 /// Global receiver for IPC commands from CLI.
 pub struct IpcReceiver(pub Arc<Mutex<crossbeam::channel::Receiver<GuiCommand>>>);
@@ -76,30 +77,70 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
             });
         }
 
-        // let open_path = open_path.clone();
-        // let open_password = open_password.clone();
+        let open_path2 = open_path.map(|p| {p.to_string_lossy().to_string()});
+        create_new_window_with_size(
+            "Bit7z Archiver",
+            Some(size(px(800.), px(600.))),
+            move |w,cx| {
 
-        cx.spawn(async move |cx| {
-            let bounds = cx.update(|app| {
-                WindowBounds::centered(size(px(800.), px(600.)), app)
-            });
-            cx.open_window(
-                WindowOptions {
-                    titlebar: Option::from(TitleBar::title_bar_options()),
-                    window_bounds: Some(bounds),
-                    window_background: WindowBackgroundAppearance::Opaque,
-                    window_decorations: Some(WindowDecorations::Client),
-                    ..Default::default()
-                }, |window, cx| {
-                    let prefs = &cx.global::<PreferencesGlobal>().0;
-                    let theme = Theme::from_mode(prefs.ui.theme, window);
-                    cx.set_global(theme);
+                // Set focus to the StoryRoot to enable it's actions.
+                let focus_handle = cx.focus_handle();
+                w.defer(cx, move |window, cx| {
+                    if window.focused(cx).is_none() {
+                        focus_handle.focus(window, cx);
+                    }
+                });
+                
+                let prefs = &cx.global::<PreferencesGlobal>().0;
+                let theme = Theme::from_mode(prefs.ui.theme, w);
+                cx.set_global(theme);
+                cx.bind_keys([
+                    // KeyBinding::new()
+                ]);
+                RootView::view(w, cx, open_path2.clone(), open_password)
+            },
+            cx,
+        );
 
-                    let view = RootView::new(window, cx, open_path.map(|p| p.to_string_lossy().to_string()), open_password);
-                    cx.new(|cx| Root::new(view, window, cx))
-                })
-                .expect("Failed to open window")
-        }).detach();
+        // cx.spawn(async move |cx| {
+        //     let bounds = cx.update(|app| {
+        //         WindowBounds::centered(size(px(800.), px(600.)), app)
+        //     });
+        //
+        //
+        //     cx.open_window(
+        //         WindowOptions {
+        //             titlebar: Option::from(TitleBar::title_bar_options()),
+        //             window_bounds: Some(bounds),
+        //             window_background: WindowBackgroundAppearance::Opaque,
+        //             window_decorations: Some(WindowDecorations::Client),
+        //             ..Default::default()
+        //         }, |window, cx| {
+        //             let prefs = &cx.global::<PreferencesGlobal>().0;
+        //             let theme = Theme::from_mode(prefs.ui.theme, window);
+        //             cx.set_global(theme);
+        //
+        //             cx.bind_keys(
+        //                 [
+        //
+        //                 ]
+        //             );
+        //
+        //
+        //
+        //
+        //             let view = RootView::new(window, cx, open_path.map(|p| p.to_string_lossy().to_string()), open_password);
+        //             // cx.new(|cx| Root::new(view, window, cx))
+        //             create_new_window_with_size(
+        //                 "Archive File Manager",
+        //                 Some(size(px(800.), px(600.))),
+        //                 |window, cx| cx.new(|cx| Example::new(window, cx)),,
+        //                 cx,
+        //                 view
+        //             );
+        //         })
+        //         .expect("Failed to open window")
+        // }).detach();
     });
 }
 
