@@ -8,8 +8,6 @@ use crate::adapters::views::preview_panel::PreviewPanel;
 use crate::adapters::views::root_controller::RootController;
 use crate::adapters::views::status_bar::StatusBar;
 use crate::adapters::views::toolbar::{Toolbar, ToolbarIntent};
-
-impl EventEmitter<ArchiveVmEvent> for RootView {}
 use crate::domain::repository::ArchiveError;
 use crate::gui::IpcReceiver;
 use crate::ipc::GuiCommand;
@@ -19,8 +17,10 @@ use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use gpui_component::{v_flex, Root};
 
 pub struct RootView {
+    focus_handle: FocusHandle,
     menu: Entity<Menu>,
     toolbar: Entity<Toolbar>,
     archive_browser: Entity<ArchiveBrowser>,
@@ -33,6 +33,8 @@ pub struct RootView {
     controller: RootController,
 }
 
+impl EventEmitter<ArchiveVmEvent> for RootView {}
+
 impl RootView {
     pub fn new(
         window: &mut Window,
@@ -43,12 +45,12 @@ impl RootView {
         cx.new(|cx| {
             let repo = cx.global::<crate::gui::RepoGlobal>().0.clone();
 
-            let menu = cx.new(|cx| Menu::new(cx));
+            let menu = cx.new(|cx| Menu::new(true,cx));
             let toolbar = cx.new(|_| Toolbar::new());
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(window, cx));
             let preview_panel = cx.new(|_| PreviewPanel::new());
-            let status_bar = cx.new(|_| StatusBar::new());
+            let status_bar = cx.new(|_| StatusBar::default());
 
             // Auto-open archive if provided (CLI handoff)
             let deferred_open = open_path.map(|path| {
@@ -97,8 +99,8 @@ impl RootView {
                                                 Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
                                                     let (tx, progress_rx) = crate::application::progress::progress_channel();
                                                     let cancel = Arc::new(AtomicBool::new(false));
-let paused = Arc::new(AtomicBool::new(false));
-crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
+                                                    let paused = Arc::new(AtomicBool::new(false));
+                                                    crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
                                                     let ctrl = controller.clone();
                                                     let h = handle.clone();
                                                     let dest = destination.clone();
@@ -264,8 +266,8 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                                                 Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
                                                     let (tx, progress_rx) = crate::application::progress::progress_channel();
                                                     let cancel = Arc::new(AtomicBool::new(false));
-let paused = Arc::new(AtomicBool::new(false));
-crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
+                                                    let paused = Arc::new(AtomicBool::new(false));
+                                                    crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
                                                     let ctrl = controller.clone();
                                                     let h = handle.clone();
                                                     let dest = destination.clone();
@@ -389,10 +391,13 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                 }
             }).detach();
 
+            let focus_handle = cx.focus_handle();
+
             // Settings dialog subscription is handled in the dialog creation code
 
             let controller_repo = repo.clone();
             let mut root = Self {
+                focus_handle,
                 menu, toolbar,
                 archive_browser, entry_list, preview_panel, status_bar,
                 pending_password_path: None,
@@ -405,6 +410,11 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
             }
             root
         })
+    }
+
+    pub(crate) fn view(window: &mut Window, cx: &mut App,path: Option<String>,
+            password: Option<String>) -> Entity<Self> {
+        Self::new(window, cx, path,password)
     }
 
     /// Collect the currently selected indices and their corresponding entries
@@ -554,8 +564,16 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
     }
 }
 
+impl Focusable for RootView {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
 impl Render for RootView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let dialog_layer = Root::render_dialog_layer(window, cx);
+
         // Open password dialog as independent window if pending
         if let Some(path) = self.pending_password_path.take() {
             let p = path.clone();
@@ -589,7 +607,7 @@ impl Render for RootView {
             .detach();
         }
 
-        gpui_component::v_flex().size_full().relative()
+        v_flex().size_full().relative()
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                 let modifiers = event.keystroke.modifiers;
                 let key = event.keystroke.key.clone();
@@ -629,8 +647,8 @@ impl Render for RootView {
                                                 Ok(crate::adapters::views::dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
                                                     let (tx, progress_rx) = crate::application::progress::progress_channel();
                                                     let cancel = Arc::new(AtomicBool::new(false));
-let paused = Arc::new(AtomicBool::new(false));
-crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
+                                                    let paused = Arc::new(AtomicBool::new(false));
+                                                    crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
                                                     let ctrl = controller.clone();
                                                     let h = handle.clone();
                                                     let dest = destination.clone();
@@ -847,9 +865,14 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                 }).detach();
             }))
             .on_action(cx.listener(|_: &mut RootView, _: &menu::About, _window, cx| {
-                cx.spawn(async move |_, cx| {
+                // window.open_dialog(cx, |dialog, _, _| {
+                //     dialog
+                //         .title("Welcome")
+                //         .child("This is a dialog dialog.")
+                // });
+                // cx.spawn(async move |_, cx| {
                     crate::adapters::views::dialogs::about::AboutDialog::open(cx);
-                }).detach();
+                // }).detach();
             }))
             .child(self.menu.clone())
             .child(self.toolbar.clone())
@@ -878,5 +901,6 @@ crate::adapters::views::dialogs::progress::ProgressDialog::open(cx, format!("Ext
                     )
             ))
             .child(self.status_bar.clone())
+            .children(dialog_layer)
     }
 }
