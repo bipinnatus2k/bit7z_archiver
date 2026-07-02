@@ -1,14 +1,39 @@
-use crate::application::checksum::ChecksumAlgorithm;
 use crate::adapters::view_models::archive_state::{LevelEntry, ViewStatus};
 use crate::adapters::views::components::state_view::{empty_view, error_view, loading_view};
 use crate::adapters::views::ext_table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};
+use crate::application::checksum::ChecksumAlgorithm;
 use crate::theme::Theme;
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
+use serde::Deserialize;
 
+macro_rules! emit_intents {
+    ($builder:expr, $cx:expr, $( $action:ident => $intent:expr ),+ $(,)?) => {{
+        let mut b = $builder;
+        $(
+            b = b.on_boxed_action(
+                &$action,
+                $cx.listener(|_, _, _, cx| {
+                    cx.emit($intent);
+                }),
+            );
+        )+
+        b
+    }};
+}
 
-#[derive(Debug, Clone, PartialEq)]
+macro_rules! bind_keys {
+    ($cx:expr, $ns:expr, $( $key:expr => $action:expr ),+ $(,)?) => {
+        $cx.bind_keys([
+            $( KeyBinding::new($key, $action, Some($ns)), )+
+        ])
+    };
+}
+
+#[derive(Debug, Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = archive_file_list, no_json)]
 pub enum FileListIntent {
     SelectionChanged(Vec<u32>),
     SortByColumn(u32, bool),
@@ -25,6 +50,26 @@ pub enum FileListIntent {
     Refresh,
     ShowProperties,
 }
+
+actions!(archive_file_list,[
+    SelectionChanged,
+    SortByColumn,
+    NavigateUp,
+    OpenEntry,
+    PreviewEntry,
+    ExtractSelected,
+    TestSelected,
+    RenameEntry,
+    DeleteSelected,
+    ChecksumCRC32,
+    ChecksumMD5,
+    ChecksumSHA1,
+    ChecksumSHA256,
+    SelectAll,
+    ClearSelection,
+    Refresh,
+    ShowProperties,
+]);
 
 impl EventEmitter<FileListIntent> for ArchiveFileList {}
 
@@ -86,80 +131,36 @@ impl TableDelegate for FileListTableDelegate {
         let single_selection = fl.read(cx).selection.len() == 1;
         let ready = fl.read(cx).is_ready;
 
-        let mut m = menu;
-        if has_selection {
-            let h1 = fl.clone();
-            m = m.item(PopupMenuItem::new("Open").on_click(move |_, _, cx| {
-                h1.update(cx, |_, cx| cx.emit(FileListIntent::OpenEntry));
-            }));
-            if single_selection {
-                let h2 = fl.clone();
-                m = m.item(PopupMenuItem::new("Preview").on_click(move |_, _, cx| {
-                    h2.update(cx, |_, cx| cx.emit(FileListIntent::PreviewEntry));
-                }));
-            }
-            let h3 = fl.clone();
-            m = m.item(PopupMenuItem::new("Extract...").on_click(move |_, _, cx| {
-                h3.update(cx, |_, cx| cx.emit(FileListIntent::ExtractSelected));
-            }));
-            let h_test = fl.clone();
-            m = m.item(PopupMenuItem::new("Test...").on_click(move |_, _, cx| {
-                h_test.update(cx, |_, cx| cx.emit(FileListIntent::TestSelected));
-            }));
-            m = m.separator();
-            if single_selection {
-                let h4 = fl.clone();
-                m = m.item(PopupMenuItem::new("Rename").on_click(move |_, _, cx| {
-                    h4.update(cx, |_, cx| cx.emit(FileListIntent::RenameEntry(None)));
-                }));
-            }
-            let h5 = fl.clone();
-            m = m.item(PopupMenuItem::new("Delete").on_click(move |_, _, cx| {
-                h5.update(cx, |_, cx| cx.emit(FileListIntent::DeleteSelected));
-            }));
-            m = m.separator();
-            let h_crc32 = fl.clone();
-            m = m.item(PopupMenuItem::new("CRC32").on_click(move |_, _, cx| {
-                h_crc32.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Crc32)));
-            }));
-            let h_md5 = fl.clone();
-            m = m.item(PopupMenuItem::new("MD5").on_click(move |_, _, cx| {
-                h_md5.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Md5)));
-            }));
-            let h_sha1 = fl.clone();
-            m = m.item(PopupMenuItem::new("SHA1").on_click(move |_, _, cx| {
-                h_sha1.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Sha1)));
-            }));
-            let h_sha256 = fl.clone();
-            m = m.item(PopupMenuItem::new("SHA256").on_click(move |_, _, cx| {
-                h_sha256.update(cx, |_, cx| cx.emit(FileListIntent::Checksum(ChecksumAlgorithm::Sha256)));
-            }));
-        }
-        m = m.separator();
-        let h6 = fl.clone();
-        m = m.item(PopupMenuItem::new("Select All").on_click(move |_, _, cx| {
-            h6.update(cx, |_, cx| cx.emit(FileListIntent::SelectAll));
-        }));
-        if has_selection {
-            let h7 = fl.clone();
-            m = m.item(PopupMenuItem::new("Clear Selection").on_click(move |_, _, cx| {
-                h7.update(cx, |_, cx| cx.emit(FileListIntent::ClearSelection));
-            }));
-        }
-        m = m.separator();
-        if ready {
-            let h8 = fl.clone();
-            m = m.item(PopupMenuItem::new("Refresh").on_click(move |_, _, cx| {
-                h8.update(cx, |_, cx| cx.emit(FileListIntent::Refresh));
-            }));
-        }
-        if single_selection {
-            let h9 = fl.clone();
-            m = m.item(PopupMenuItem::new("Properties").on_click(move |_, _, cx| {
-                h9.update(cx, |_, cx| cx.emit(FileListIntent::ShowProperties));
-            }));
-        }
-        m
+        menu
+        .when(has_selection,|m| {
+            m
+                .menu("Open",Box::new(OpenEntry))
+                .when(single_selection,|m| {
+                    m.menu("Preview",Box::new(PreviewEntry))
+                })
+                .menu("Extract",Box::new(ExtractSelected))
+                .menu("Test",Box::new(TestSelected))
+                .separator()
+                .menu("Rename",Box::new(RenameEntry))
+                .menu("Delete", Box::new(DeleteSelected))
+                .separator()
+                .item(PopupMenuItem::submenu("Checksum", PopupMenu::build(_window, cx, |menu, _window, _cx| {
+                    menu.menu("CRC32",Box::new(ChecksumCRC32))
+                        .menu("MD5",Box::new(ChecksumMD5))
+                        .menu("SHA-1", Box::new(ChecksumSHA1))
+                        .menu("SHA-256", Box::new(ChecksumSHA256))
+                })))
+        })
+            .separator()
+            .menu("Select All",Box::new(SelectAll))
+            .when(has_selection, |m|{
+                m.menu("Clear Selection", Box::new(ClearSelection))
+            })
+            .separator()
+            .when(ready, |m|{
+                m.menu("Refresh", Box::new(Refresh))
+            })
+            .menu("Properties", Box::new(ShowProperties))
     }
 
     fn render_td(&mut self, row_ix: usize, col_ix: usize, _: &mut Window, _: &mut Context<TableState<Self>>) -> impl IntoElement {
@@ -167,7 +168,6 @@ impl TableDelegate for FileListTableDelegate {
         let col = &self.columns[col_ix];
 
         match col.key.as_ref() {
-            // "id" => row.display_name.to_string(),
             "name" => row.display_name.clone(),
             "size" => row.size.to_string(),
             "packed" => row.compressed_size.to_string(),
@@ -188,6 +188,10 @@ impl TableDelegate for FileListTableDelegate {
             _ => "".to_string(),
         }
     }
+
+    fn render_empty(&mut self, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
+        empty_view(cx,"")
+    }
 }
 
 pub struct ArchiveFileList {
@@ -197,10 +201,19 @@ pub struct ArchiveFileList {
     current_path: String,
     is_ready: bool,
     table_state: Entity<TableState<FileListTableDelegate>>,
+    focus_handle: FocusHandle,
 }
 
 impl ArchiveFileList {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+
+        bind_keys!(cx, "archive_file_list",
+            "ctrl-a" => SelectAll,
+            "ctrl-o" => OpenEntry,
+            "ctrl-m" => RenameEntry,
+            "ctrl-d" => DeleteSelected,
+            "ctrl-p" => ShowProperties,
+        );
         let columns = vec![
             Column::new("name", "Name").width(300.).sortable(),
             Column::new("size", "Size").width(80.).sortable(),
@@ -248,9 +261,12 @@ impl ArchiveFileList {
             }
         }).detach();
 
+        let focus_handle = cx.focus_handle();
+        focus_handle.focus(window,cx);
 
 
-        Self { entries: vec![], selection: std::collections::HashSet::new(), status: ViewStatus::Empty, current_path: String::new(), is_ready: false, table_state }
+
+        Self { entries: vec![], selection: std::collections::HashSet::new(), status: ViewStatus::Empty, current_path: String::new(), is_ready: false, table_state, focus_handle }
     }
 
     pub fn select_all_entries(&mut self, cx: &mut Context<Self>) {
@@ -288,7 +304,27 @@ impl Render for ArchiveFileList {
             .w_full()
             // .flex_1()
             .border_b_1()
-            .border_color(theme.border);
+            .border_color(theme.border)
+            .key_context("archive_file_list")
+            .track_focus(&self.focus_handle);
+
+        let base = emit_intents!(base, cx,
+            NavigateUp => FileListIntent::NavigateUp,
+            OpenEntry => FileListIntent::OpenEntry,
+            PreviewEntry => FileListIntent::PreviewEntry,
+            ExtractSelected => FileListIntent::ExtractSelected,
+            TestSelected => FileListIntent::TestSelected,
+            RenameEntry => FileListIntent::RenameEntry(None),
+            DeleteSelected => FileListIntent::DeleteSelected,
+            SelectAll => FileListIntent::SelectAll,
+            ClearSelection => FileListIntent::ClearSelection,
+            Refresh => FileListIntent::Refresh,
+            ShowProperties => FileListIntent::ShowProperties,
+            ChecksumCRC32 => FileListIntent::Checksum(ChecksumAlgorithm::Crc32),
+            ChecksumMD5 => FileListIntent::Checksum(ChecksumAlgorithm::Md5),
+            ChecksumSHA1 => FileListIntent::Checksum(ChecksumAlgorithm::Sha1),
+            ChecksumSHA256 => FileListIntent::Checksum(ChecksumAlgorithm::Sha256),
+        );
 
         match &self.status {
             ViewStatus::Empty => {

@@ -1,9 +1,12 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::sidebar::{Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem};
-use gpui_component::{h_flex, v_flex, IconName};
+use gpui_component::button::Button;
+use gpui_component::input::{InputEvent, InputState};
+use gpui_component::sidebar::{
+    Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem,
+    SidebarToggleButton,
+};
+use gpui_component::{Icon, IconName, h_flex};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -67,53 +70,50 @@ impl Render for ArchiveBrowser {
         let sidebar = Sidebar::new("archive-browser")
             .collapsible(true)
             .collapsed(collapsed)
-            .border_0()
+            // .border_0()
             .header(
-                v_flex()
-                    .w_full()
-                    .gap_3()
-                    .child(
-                        SidebarHeader::new().w_full().child(
+                SidebarHeader::new().w_full().when_else(
+                    !collapsed,
+                    |el| {
+                        el.child(
                             h_flex()
-                                .child(
-                                    Button::new("collapse")
-                                        .icon(IconName::FolderOpen)
-                                        .ghost()
-                                        // .small()
-                                        .on_click({
-                                            let this = self_handle.clone();
-                                            move |click_event: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                                if click_event.click_count() == 2 {
-                                                    this.update(cx, |this, cx| {
-                                                        this.toggle_collapsed(cx)
-                                                    });
-                                                }
-
-                                            }
-                                        }),
-                                )
-                                .when(!collapsed, |this| this.gap_2().child("File Explorer")),
-                        ),
-                    )
-                    .when(!collapsed,|this| this.w_full().child(Input::new(&self.input_state).rounded_2xl().bordered(false))),
+                                .gap_2()
+                                .child(Button::new("icon").icon(IconName::Folder))
+                                .child("Explorer"),
+                        )
+                    },
+                    |el| el.child(Icon::new(IconName::Menu)),
+                ),
+                // .when(!collapsed, |this| this.gap_2().child("File Explorer")),
+                // ),
             )
+            // .child()
+            // .when(!collapsed,|this| this.w_full().child(Input::new(&self.input_state).rounded_2xl().bordered(false))),
             .child(
-                SidebarGroup::new("Folders").child(SidebarMenu::new().children(
-                    self.subdirs.iter().cloned().map(|name| {
-                        let h = self_handle.clone();
-                        SidebarMenuItem::new(name.clone())
-                            .icon(IconName::Folder)
-                            .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                h.update(cx, |_, cx| {
-                                    cx.emit(BrowserIntent::NavigateInto(name.clone()))
-                                });
-                            })
-                    }),
+                SidebarGroup::new("Explorer").child(SidebarMenu::new().child(
+                    SidebarMenuItem::new("Folder")
+                        .icon(IconName::Folder)
+                        // .collapsed(self.collapsed)
+                        .children(self.subdirs.iter().cloned().map(
+                        |name| {
+                            let h = self_handle.clone();
+                            SidebarMenuItem::new(name.clone())
+                                .icon(IconName::Folder)
+                                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                    h.update(cx, |_, cx| {
+                                        cx.emit(BrowserIntent::NavigateInto(name.clone()))
+                                    });
+                                })
+                        },
+                    )),
                 )),
             )
-            .when(!self.recent_files.is_empty(), |sidebar| {
-                sidebar.child(
-                    SidebarGroup::new("Recent Files").child(SidebarMenu::new().children(
+            // .when(!self.recent_files.is_empty(), |sidebar| {
+            //     sidebar
+                    .child(
+                    SidebarGroup::new("Fast Access").child(SidebarMenu::new()
+                        .child(SidebarMenuItem::new("Recent Files").icon(IconName::Sun)
+                        .children(
                         self.recent_files.iter().cloned().map(|path| {
                             let h = self_handle.clone();
                             let file_name = Path::new(&path)
@@ -128,9 +128,22 @@ impl Render for ArchiveBrowser {
                                     });
                                 })
                         }),
-                    )),
+                    ))
+                        .child(SidebarMenuItem::new("Collection").icon(IconName::Star))),
                 )
-            });
+            // })
+            .footer(
+                SidebarFooter::new().child(
+                    SidebarToggleButton::new()
+                        .collapsed(self.collapsed)
+                        .on_click({
+                            let this = self_handle.clone();
+                            move |_click_event: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                this.update(cx, |this, cx| this.toggle_collapsed(cx));
+                            }
+                        }),
+                ),
+            );
 
         sidebar.w(relative(1.))
     }
