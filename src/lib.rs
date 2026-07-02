@@ -1,4 +1,5 @@
 pub mod theme;
+pub mod design;
 pub mod domain;
 pub mod ffi;
 pub mod gui;
