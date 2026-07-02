@@ -8,21 +8,7 @@ use gpui_component::progress::Progress;
 use gpui_component::{h_flex, v_flex, Sizable};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
+use humansize::{format_size, BINARY};
 
 pub enum ProgressEvent {
     Canceled,
@@ -186,7 +172,7 @@ impl Render for ProgressDialog {
                     .child(
                         h_flex()
                             .justify_between()
-                            .child(div().text_sm().text_color(theme.muted).child(format!("Total: {} / {}", format_bytes(self.current), format_bytes(self.total))))
+                            .child(div().text_sm().text_color(theme.muted).child(format!("Total: {} / {}", format_size(self.current,BINARY), format_size(self.total,BINARY))))
                             .child(div().text_sm().text_color(theme.muted).child(format!("{:.0}%", total_pct))),
                     )
                     .child(Progress::new("total").value(total_pct)),
@@ -199,7 +185,7 @@ impl Render for ProgressDialog {
                         .child(
                             h_flex()
                                 .justify_between()
-                                .child(div().text_sm().text_color(theme.muted).child(format!("File: {} / {}", format_bytes(self.file_current), format_bytes(self.file_total))))
+                                .child(div().text_sm().text_color(theme.muted).child(format!("File: {} / {}", format_size(self.file_current,BINARY), format_size(self.file_total,BINARY))))
                                 .child(div().text_sm().text_color(theme.muted).child(format!("{:.0}%", file_pct))),
                         )
                         .child(Progress::new("file").value(file_pct).small().color(theme.selection)),

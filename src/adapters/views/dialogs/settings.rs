@@ -4,7 +4,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::setting::{Settings, SettingPage, SettingGroup, SettingItem, SettingField};
 use std::sync::{Arc, Mutex};
-use gpui_component::v_flex;
+use gpui_component::{h_flex, v_flex, TitleBar};
 
 type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
 
@@ -34,6 +34,11 @@ impl SettingsDialog {
         cx.spawn(async move |cx| {
             let _ = cx.open_window(
                 WindowOptions {
+                    titlebar: TitlebarOptions {
+                        title: Some(SharedString::from("Settings")),
+                        appears_transparent: false,
+                        traffic_light_position: None,
+                    }.into(),
                     window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                         point(px(150.), px(150.)),
                         size(px(480.), px(500.)),
@@ -41,6 +46,7 @@ impl SettingsDialog {
                     window_background: WindowBackgroundAppearance::Opaque,
                     window_decorations: Some(WindowDecorations::Client),
                     focus: true,
+                    // kind: WindowKind::Dialog,
                     ..Default::default()
                 },
                 move |window, cx| {
@@ -65,9 +71,6 @@ impl SettingsDialog {
 impl Render for SettingsDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let prefs = self.prefs.clone();
-        // let window_width = window.bounds().size.width;
-        // let dialog_width = if window_width < px(640.) { px(400.) } else { px(720.) };
-        // let dialog_height = if window_width < px(640.) { px(480.) } else { px(540.) };
 
         v_flex()
             .size_full()
@@ -86,7 +89,9 @@ impl Render for SettingsDialog {
                                             "Minimize to tray",
                                             SettingField::switch(
                                                 move |_| prefs.ui.minimize_to_tray,
-                                                |_val, _| {},
+                                                |_val, _| {
+                                                    
+                                                },
                                             )
                                         )
                                         .description("Keep the application running in the system tray when minimized."),
@@ -231,7 +236,7 @@ impl Render for SettingsDialog {
             )
             // Action buttons
             .child(
-                div().flex().flex_row().justify_end().gap_2().pt_2()
+                h_flex().justify_end().gap_2().pt_2()
                     .child(
                         Button::new("cancel")
                             .label("Cancel")

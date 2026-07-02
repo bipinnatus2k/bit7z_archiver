@@ -3,6 +3,7 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::progress::Progress;
 use gpui_component::{h_flex, v_flex};
+use gpui_component::label::Label;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChecksumViewIntent {
@@ -45,10 +46,10 @@ impl ChecksumDialogView {
 }
 
 impl Render for ChecksumDialogView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.global::<Theme>();
 
-        v_flex().p_4().gap_3().w(px(520.)).h(px(420.))
+        v_flex().p_4().gap_3().size_full()
             .child(match &self.phase {
                 ChecksumPhase::Idle { total, algorithm } => {
                     v_flex().gap_3()
@@ -75,16 +76,14 @@ impl Render for ChecksumDialogView {
                 ChecksumPhase::Complete { results } => {
                     v_flex().gap_3()
                         .child(div().font_weight(FontWeight::BOLD).text_lg().child("Checksum Results"))
-                        .children(results.iter().map(|(name, _, hash)| {
-                            h_flex().gap_2().px_1().py_1().text_sm()
-                                .child(div().font_weight(FontWeight::BOLD).child(name.clone()))
-                                .child(div().text_color(theme.muted).child(": "))
-                                .child(div().child(hash.clone()))
-                                .into_any_element()
+                        .children(results.iter().map(|(name, _a, hash)| {
+                            Label::new(name).secondary(hash).into_element()
                         }))
                         .child(div().flex_1())
                         .child(h_flex().justify_end()
-                            .child(Button::new("close").primary().label("Close").on_click(cx.listener(|_, _, _, cx| cx.emit(ChecksumViewIntent::Close)))))
+                            .child(Button::new("close").primary().label("Close").on_click(cx.listener(|_a, click_event, window, cx| {
+                                window.remove_window();
+                            }))))
                 }
                 ChecksumPhase::Error(msg) => {
                     v_flex().gap_3()

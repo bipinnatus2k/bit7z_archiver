@@ -3,6 +3,7 @@ use crate::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::v_flex;
 
 pub struct ChecksumResultDialog {
     pub results: Vec<ChecksumResult>,
@@ -25,7 +26,7 @@ impl Render for ChecksumResultDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.global::<Theme>().clone();
 
-        div().flex().flex_col().gap_3().p_4().w(px(520.))
+        v_flex().gap_3().p_4().w(px(520.))
             .child(div().font_weight(FontWeight::BOLD).text_lg().child("Checksums"))
             .child(
                 div().flex().flex_col().gap_2().max_h(px(400.)).overflow_y_scrollbar()

@@ -1,7 +1,7 @@
 mod view;
 
 use crate::application::checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
-use crate::application::progress::{progress_channel, CrossbeamNotifier};
+use crate::application::progress::progress_channel;
 use crate::domain::archive::*;
 use crate::domain::repository::*;
 use crossbeam::channel::{unbounded, Receiver, Sender};
@@ -38,6 +38,7 @@ impl ChecksumDialog {
             window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(px(200.), px(200.)), size(px(560.), px(480.))))),
             window_background: WindowBackgroundAppearance::Opaque,
             window_decorations: Some(WindowDecorations::Client),
+            focus: true,
             ..Default::default()
         };
         cx.spawn(async move |cx| {
@@ -95,7 +96,7 @@ impl ChecksumDialog {
                 let view = self.view.clone();
                 let repo = self.repo.clone();
                 let _result_tx = self.result_tx.take();
-                let (progress_tx, progress_rx) = progress_channel();
+                let (_progress_tx, progress_rx) = progress_channel();
                 let (result_tx2, result_rx2) = unbounded::<Result<(), ArchiveError>>();
                 let handle = self.handle.clone().unwrap();
                 let indices = self.indices.clone();

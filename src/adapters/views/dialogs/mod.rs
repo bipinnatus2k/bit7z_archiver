@@ -10,3 +10,4 @@ pub mod properties;
 pub mod settings;
 pub mod test;
 pub mod test_results;
+pub mod checksum_result;

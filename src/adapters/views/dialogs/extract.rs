@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use crate::domain::archive::*;
 use crate::theme::Theme;
 use crossbeam::channel::{unbounded, Receiver, Sender};
@@ -15,7 +16,7 @@ pub struct ExtractDialog {
     pub destination: String,
     pub preserve_paths: bool,
     pub entries_count: usize,
-    pub overwrite_mode: OverwriteMode,
+    pub overwrite_mode: Entity<SelectState<Vec<OverwriteSelect>>>,
     // pub show_overwrite_dropdown: bool,
     pub keep_broken: bool,
     result_tx: Option<Sender<ExtractDialogEvent>>,
@@ -34,37 +35,57 @@ pub enum ExtractDialogEvent {
 
 impl EventEmitter<ExtractDialogEvent> for ExtractDialog {}
 
-impl SelectItem for OverwriteMode {
-    type Value = i32;
+#[derive(Debug, Clone)]
+struct OverwriteSelect {
+    overwrite_mode: OverwriteMode,
+    // label: SharedString
+}
+
+impl SelectItem for OverwriteSelect {
+    type Value = OverwriteMode;
 
     fn title(&self) -> SharedString {
-        self.label().into()
-    }
-
-    fn display_title(&self) -> Option<gpui::AnyElement> {
-        Some(format!("{} ({})", self.label(), self.index()).into_any_element())
+        self.overwrite_mode.label().into()
     }
 
     fn value(&self) -> &Self::Value {
         // SAFETY: OverwriteMode has exactly 4 variants (0..3), matching the array bounds.
-        const VALUES: [i32; 4] = [0, 1, 2, 3];
-        &VALUES[self.index() as usize]
+        &self.overwrite_mode
     }
 
-    fn matches(&self, query: &str) -> bool {
-        self.label().to_lowercase().contains(&query.to_lowercase())
-    }
+}
+
+fn selectable_overwrite() -> Vec<OverwriteSelect> {
+    vec![
+        OverwriteSelect {
+            overwrite_mode: OverwriteMode::Ask,
+        },
+        OverwriteSelect {
+            overwrite_mode: OverwriteMode::Overwrite,
+        },
+        OverwriteSelect {
+            overwrite_mode: OverwriteMode::Skip,
+        },
+        OverwriteSelect {
+            overwrite_mode: OverwriteMode::RenameExtracted,
+        }
+    ]
 }
 
 impl ExtractDialog {
-    fn new(entries: Vec<ArchiveEntry>, result_tx: Sender<ExtractDialogEvent>) -> Self {
+    fn new(window: &mut Window, cx: &mut App, entries: Vec<ArchiveEntry>, result_tx: Sender<ExtractDialogEvent>) -> Self {
         let count = entries.len();
+
+        let state = cx.new(|cx| {
+            SelectState::new(selectable_overwrite(), Some(IndexPath::default()), window, cx)
+        });
+
         Self {
             entries,
             destination: String::new(),
             preserve_paths: true,
             entries_count: count,
-            overwrite_mode: OverwriteMode::Ask,
+            overwrite_mode: state,
             // show_overwrite_dropdown: false,
             keep_broken: false,
             result_tx: Some(result_tx),
@@ -85,7 +106,7 @@ impl ExtractDialog {
                     ..Default::default()
                 },
                 move |window, cx| {
-                    let dialog = cx.new(|_cx| ExtractDialog::new(entries, tx));
+                    let dialog = cx.new(|cx| ExtractDialog::new(window,cx,entries, tx));
                     cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
                 },
             );
@@ -105,16 +126,14 @@ impl ExtractDialog {
 impl Render for ExtractDialog {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let can_extract = !self.destination.is_empty();
-        let theme = cx.global::<Theme>().clone();
+
         let input = cx.new(|cx2| {
             InputState::new(window, cx2)
                 .placeholder("Select destination folder...")
                 .default_value(&self.destination)
         });
-        let state = cx.new(|cx| {
-            SelectState::new(OverwriteMode::all(), Some(IndexPath::default()), window, cx)
-        });
 
+        let theme = cx.global::<Theme>().clone();
         v_flex()
             .gap_3()
             .p_4()
@@ -165,7 +184,7 @@ impl Render for ExtractDialog {
             )
             // Overwrite mode dropdown
             .child(
-                Select::new(&state)
+                Select::new(&self.overwrite_mode)
                     .cleanable(false)
                     .title_prefix("Overwrite mode: "),
             )
@@ -202,14 +221,15 @@ impl Render for ExtractDialog {
                             .primary()
                             .child("Extract")
                             .when(can_extract, |el| {
-                                el.on_click(cx.listener(|this, _e, window, _cx| {
+                                el.on_click(cx.listener(|this, _e, window, cx| {
+
                                     this.finish(
                                         ExtractDialogEvent::ExtractRequested {
                                             destination: std::path::PathBuf::from(
                                                 &this.destination,
                                             ),
                                             preserve_paths: this.preserve_paths,
-                                            overwrite_mode: this.overwrite_mode,
+                                            overwrite_mode: *this.overwrite_mode.borrow().read(cx).selected_value().unwrap(),
                                             keep_broken: this.keep_broken,
                                         },
                                         window,
