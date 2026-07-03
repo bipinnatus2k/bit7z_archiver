@@ -869,38 +869,329 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b71798fca2c1fe1086445a7258a4bc81e6e49dcd24c8d0dd9a1e57395b603f51"
 
 [[package]]
-name = "bit7z_archiver"
+name = "bit7z-app"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "bit7z-infra-bit7z",
+ "bit7z-infra-persistence",
+ "bit7z-infra-platform",
+ "bit7z-infra-shell",
+ "bit7z-infra-tray",
+ "bit7z-pres-theme",
+ "bit7z-rt-cli",
+ "bit7z-rt-gui",
+ "bit7z-rt-instance",
+ "bit7z-rt-ipc",
+ "bit7z-rt-worker",
+ "clap",
+]
+
+[[package]]
+name = "bit7z-app-archive"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bit7z-domain",
+ "bit7z-ffi",
+ "crossbeam",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bit7z-app-checksum"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "crc32fast",
+ "crossbeam",
+ "md-5",
+ "serde",
+ "sha1",
+ "sha2",
+]
+
+[[package]]
+name = "bit7z-app-preview"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "crossbeam",
+]
+
+[[package]]
+name = "bit7z-app-test"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "bit7z-infra-progress",
+ "crc32fast",
+ "crossbeam",
+]
+
+[[package]]
+name = "bit7z-domain"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bit7z-ffi"
+version = "0.1.0"
+dependencies = [
+ "autocxx",
+ "autocxx-build",
+ "chrono",
+ "cxx",
+ "log",
+ "miette",
+]
+
+[[package]]
+name = "bit7z-infra-bit7z"
+version = "0.1.0"
+dependencies = [
+ "autocxx",
+ "bit7z-domain",
+ "bit7z-ffi",
+ "crossbeam",
+]
+
+[[package]]
+name = "bit7z-infra-events"
+version = "0.1.0"
+dependencies = [
+ "bit7z-app-checksum",
+ "bit7z-domain",
+]
+
+[[package]]
+name = "bit7z-infra-persistence"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "autocxx",
- "autocxx-build",
+ "bit7z-domain",
+ "bit7z-ffi",
+ "bit7z-infra-bit7z",
+ "bit7z-infra-platform",
+ "bit7z-infra-progress",
  "chrono",
- "clap",
- "crc32fast",
  "crossbeam",
- "cxx",
  "directories",
+ "humansize",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bit7z-infra-platform"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "rfd",
+]
+
+[[package]]
+name = "bit7z-infra-progress"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "crossbeam",
+]
+
+[[package]]
+name = "bit7z-infra-shell"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "thiserror 2.0.18",
+ "windows-sys 0.59.0",
+ "winreg 0.52.0",
+ "zbus 4.4.0",
+]
+
+[[package]]
+name = "bit7z-infra-tray"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "crossbeam",
+ "gpui",
+ "tracing",
+ "windows-sys 0.59.0",
+ "zbus 4.4.0",
+]
+
+[[package]]
+name = "bit7z-pres-components"
+version = "0.1.0"
+dependencies = [
+ "bit7z-pres-theme",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
+name = "bit7z-pres-dialogs"
+version = "0.1.0"
+dependencies = [
+ "bit7z-app-archive",
+ "bit7z-app-checksum",
+ "bit7z-app-test",
+ "bit7z-domain",
+ "bit7z-infra-events",
+ "bit7z-infra-platform",
+ "bit7z-infra-progress",
+ "bit7z-pres-theme",
+ "bit7z-pres-view-models",
+ "bit7z-rt-globals",
+ "chrono",
+ "crossbeam",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "humansize",
+ "serde",
+]
+
+[[package]]
+name = "bit7z-pres-theme"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "gpui",
+ "gpui_platform",
+]
+
+[[package]]
+name = "bit7z-pres-view-models"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "bit7z-infra-events",
+ "bit7z-infra-progress",
+ "bit7z-infra-tray",
+ "chrono",
+ "crossbeam",
+ "gpui",
+]
+
+[[package]]
+name = "bit7z-pres-views"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bit7z-app-archive",
+ "bit7z-app-checksum",
+ "bit7z-app-preview",
+ "bit7z-app-test",
+ "bit7z-domain",
+ "bit7z-infra-events",
+ "bit7z-infra-platform",
+ "bit7z-infra-progress",
+ "bit7z-pres-components",
+ "bit7z-pres-dialogs",
+ "bit7z-pres-theme",
+ "bit7z-pres-view-models",
+ "bit7z-rt-globals",
+ "bit7z-rt-ipc",
+ "chrono",
+ "crossbeam",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "humansize",
+ "log",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "bit7z-rt-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bit7z-app-archive",
+ "bit7z-app-checksum",
+ "bit7z-app-preview",
+ "bit7z-app-test",
+ "bit7z-domain",
+ "bit7z-infra-persistence",
+ "bit7z-infra-progress",
+ "bit7z-infra-shell",
+ "clap",
+ "crossbeam",
+ "humansize",
+]
+
+[[package]]
+name = "bit7z-rt-globals"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "bit7z-rt-ipc",
+ "crossbeam",
+ "gpui",
+]
+
+[[package]]
+name = "bit7z-rt-gui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bit7z-domain",
+ "bit7z-infra-bit7z",
+ "bit7z-infra-events",
+ "bit7z-infra-persistence",
+ "bit7z-infra-platform",
+ "bit7z-infra-tray",
+ "bit7z-pres-components",
+ "bit7z-pres-theme",
+ "bit7z-pres-view-models",
+ "bit7z-pres-views",
+ "bit7z-rt-globals",
+ "bit7z-rt-ipc",
+ "crossbeam",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
- "humansize",
- "log",
- "md-5",
- "miette",
- "rfd",
- "secrecy",
+]
+
+[[package]]
+name = "bit7z-rt-instance"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "bit7z-rt-ipc"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
- "sha1",
- "sha2",
- "smallvec",
- "thiserror 2.0.18",
- "tracing",
- "windows-sys 0.59.0",
- "winreg 0.52.0",
- "zbus 4.4.0",
+]
+
+[[package]]
+name = "bit7z-rt-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bit7z-domain",
+ "bit7z-rt-ipc",
+ "crossbeam",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

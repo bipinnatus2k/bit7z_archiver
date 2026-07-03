@@ -1,0 +1,20 @@
+[package]
+name = "bit7z-infra-persistence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bit7z-domain = { path = "../../domain" }
+bit7z-ffi = { path = "../../ffi" }
+bit7z-infra-bit7z = { path = "../bit7z" }
+bit7z-infra-platform = { path = "../platform" }
+bit7z-infra-progress = { path = "../progress" }
+autocxx = "0.30"
+crossbeam = "0.8"
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+humansize = "2"
+directories = "6"
+thiserror = "2"
+anyhow = "1"

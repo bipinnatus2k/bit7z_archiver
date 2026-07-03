@@ -1,57 +1,37 @@
-[package]
-name = "bit7z_archiver"
+[workspace]
+resolver = "2"
+members = [
+    "crates/domain",
+    "crates/application/archive",
+    "crates/application/checksum",
+    "crates/application/test",
+    "crates/application/preview",
+    "crates/ffi",
+    "crates/infrastructure/bit7z",
+    "crates/infrastructure/persistence",
+    "crates/infrastructure/platform",
+    "crates/infrastructure/shell",
+    "crates/infrastructure/tray",
+    "crates/infrastructure/events",
+    "crates/infrastructure/progress",
+    "crates/presentation/theme",
+    "crates/presentation/view-models",
+    "crates/presentation/components",
+    "crates/presentation/views",
+    "crates/presentation/dialogs",
+    "crates/runtime/globals",
+    "crates/runtime/ipc",
+    "crates/runtime/instance",
+    "crates/runtime/worker",
+    "crates/runtime/cli",
+    "crates/runtime/gui",
+    "crates/runtime/app-bin",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "Cross-platform compressed file viewer and editor"
 license = "MIT"
-
-[dependencies]
-autocxx = "0.30"
-gpui = { git = "https://github.com/zed-industries/zed" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features =[ "runtime_shaders"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component" }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
-cxx = "1.0"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
-secrecy = { version = "0.10", features = ["serde"] }
-clap = { version = "4", features = ["derive"] }
-crossbeam = "0.8"
-rfd = "0.15"
-directories = "6"
-tracing = "0.1"
-#tracing-subscriber = "0.3"
-anyhow = "1"
-chrono = { version = "0.4", features = ["serde"] }
-humansize = "2"
-log = "0.4"
-md-5 = "0.10"
-sha2 = "0.10"
-sha1 = "0.10"
-crc32fast = "1.4"
-smallvec = "1.15.2"
 
 [profile.dev]
 debug = 1
-
-[build-dependencies]
-autocxx-build = "0.30"
-miette = { version = "5", features = ["fancy"] }
-chrono = { version = "0.4", features = ["serde"] }
-log = "0.4"
-
-[target.'cfg(target_os = "windows")'.dependencies]
-winreg = "0.52"
-windows-sys = { version = "0.59", features = [
-    "Win32_Foundation",
-    "Win32_System_Threading",
-    "Win32_UI_Shell_Common",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_Security",
-    "Win32_Graphics_Gdi",
-    "Win32_System_EventNotificationService"
-] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-zbus = "4"

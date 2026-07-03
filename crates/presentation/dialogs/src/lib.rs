@@ -1,0 +1,13 @@
+pub mod about;
+pub mod add_files;
+pub mod checksum;
+pub mod checksum_result;
+pub mod create;
+pub mod delete;
+pub mod extract;
+pub mod password;
+pub mod progress;
+pub mod properties;
+pub mod settings;
+pub mod test;
+pub mod test_results;

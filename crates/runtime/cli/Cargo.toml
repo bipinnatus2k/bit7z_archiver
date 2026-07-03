@@ -1,0 +1,19 @@
+[package]
+name = "bit7z-rt-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bit7z-domain = { path = "../../domain" }
+bit7z-app-archive = { path = "../../application/archive" }
+bit7z-app-checksum = { path = "../../application/checksum" }
+bit7z-app-preview = { path = "../../application/preview" }
+bit7z-app-test = { path = "../../application/test" }
+bit7z-infra-persistence = { path = "../../infrastructure/persistence" }
+bit7z-infra-progress = { path = "../../infrastructure/progress" }
+bit7z-infra-shell = { path = "../../infrastructure/shell" }
+clap = { version = "4", features = ["derive"] }
+humansize = "2"
+crossbeam = "0.8"
+anyhow = "1"

@@ -1,0 +1,18 @@
+[package]
+name = "bit7z-rt-instance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Security",
+    "Win32_Graphics_Gdi",
+    "Win32_System_EventNotificationService"
+] }

@@ -1,0 +1,31 @@
+[package]
+name = "bit7z-pres-views"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bit7z-domain = { path = "../../domain" }
+bit7z-pres-theme = { path = "../theme" }
+bit7z-pres-view-models = { path = "../view-models" }
+bit7z-pres-components = { path = "../components" }
+bit7z-pres-dialogs = { path = "../dialogs" }
+bit7z-app-archive = { path = "../../application/archive" }
+bit7z-app-preview = { path = "../../application/preview" }
+bit7z-app-test = { path = "../../application/test" }
+bit7z-app-checksum = { path = "../../application/checksum" }
+bit7z-infra-events = { path = "../../infrastructure/events" }
+bit7z-infra-platform = { path = "../../infrastructure/platform" }
+bit7z-infra-progress = { path = "../../infrastructure/progress" }
+bit7z-rt-ipc = { path = "../../runtime/ipc" }
+bit7z-rt-globals = { path = "../../runtime/globals" }
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui-component = { git = "https://github.com/longbridge/gpui-component" }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
+crossbeam = "0.8"
+humansize = "2"
+serde = { version = "1", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+anyhow = "1"
+thiserror = "2"

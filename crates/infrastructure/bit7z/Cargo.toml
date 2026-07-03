@@ -1,0 +1,11 @@
+[package]
+name = "bit7z-infra-bit7z"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bit7z-domain = { path = "../../domain" }
+bit7z-ffi = { path = "../../ffi" }
+autocxx = "0.30"
+crossbeam = "0.8"

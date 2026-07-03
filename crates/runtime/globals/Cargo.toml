@@ -1,0 +1,11 @@
+[package]
+name = "bit7z-rt-globals"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bit7z-domain = { path = "../../domain" }
+bit7z-rt-ipc = { path = "../ipc" }
+gpui = { git = "https://github.com/zed-industries/zed" }
+crossbeam = "0.8"
