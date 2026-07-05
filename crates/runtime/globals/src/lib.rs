@@ -5,7 +5,7 @@ use bit7z_domain::repository::ArchiveRepository;
 use bit7z_rt_ipc::GuiCommand;
 
 /// Global receiver for IPC commands from CLI.
-pub struct IpcReceiver(pub Arc<Mutex<crossbeam::channel::Receiver<GuiCommand>>>);
+pub struct IpcReceiver(pub Arc<Mutex<crossbeam_channel::Receiver<GuiCommand>>>);
 impl Global for IpcReceiver {}
 
 /// Global wrapper for Preferences (avoids gpui::Global in domain).

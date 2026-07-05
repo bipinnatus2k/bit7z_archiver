@@ -20,5 +20,3 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_EventNotificationService"
 ] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-zbus = "4"

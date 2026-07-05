@@ -1,6 +1,6 @@
 use crate::{ArchiveReader, Library, Writer, WriterCompressionLevel, WriterFormat};
 use crate::UpdateMode;
-use crossbeam::channel::{Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender};
 use std::ffi::{CStr, c_char, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -200,7 +200,7 @@ pub fn spawn_compress(
             cancel,
             pause,
             event_tx: event_tx.clone(),
-            conflict_rx: crossbeam::channel::bounded(1).1, // dummy, never used
+            conflict_rx: crossbeam_channel::bounded(1).1, // dummy, never used
         };
 
         let result = unsafe {
@@ -229,7 +229,7 @@ pub fn spawn_compress(
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use crossbeam::channel::{Receiver, Sender};
+    use crossbeam_channel::{Receiver, Sender};
     use std::ffi::CString;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -254,8 +254,8 @@ mod tests {
 
     #[test]
     fn test_progress_sends_event() {
-        let (tx, rx) = crossbeam::channel::unbounded();
-        let (_, conflict_rx) = crossbeam::channel::bounded(1);
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let (_, conflict_rx) = crossbeam_channel::bounded(1);
         let ctx = make_ctx(tx, conflict_rx);
 
         let result = progress_trampoline(42, 100, as_ctx_ptr(&ctx));
@@ -274,8 +274,8 @@ mod tests {
 
     #[test]
     fn test_progress_cancel_returns_zero() {
-        let (tx, _) = crossbeam::channel::unbounded();
-        let (_, conflict_rx) = crossbeam::channel::bounded(1);
+        let (tx, _) = crossbeam_channel::unbounded();
+        let (_, conflict_rx) = crossbeam_channel::bounded(1);
         let mut ctx = make_ctx(tx, conflict_rx);
         ctx.cancel = Arc::new(AtomicBool::new(true));
 
@@ -285,8 +285,8 @@ mod tests {
 
     #[test]
     fn test_progress_unpause_after_pause() {
-        let (tx, rx) = crossbeam::channel::unbounded();
-        let (_, conflict_rx) = crossbeam::channel::bounded(1);
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let (_, conflict_rx) = crossbeam_channel::bounded(1);
         let pause = Arc::new(AtomicBool::new(true));
         let ctx = WorkerCtx {
             cancel: Arc::new(AtomicBool::new(false)),
@@ -319,8 +319,8 @@ mod tests {
 
     #[test]
     fn test_file_sends_event() {
-        let (tx, rx) = crossbeam::channel::unbounded();
-        let (_, conflict_rx) = crossbeam::channel::bounded(1);
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let (_, conflict_rx) = crossbeam_channel::bounded(1);
         let ctx = make_ctx(tx, conflict_rx);
         let path = CString::new("dir/file.txt").unwrap();
 
@@ -339,8 +339,8 @@ mod tests {
 
     #[test]
     fn test_overwrite_sends_conflict_event() {
-        let (tx, rx) = crossbeam::channel::unbounded();
-        let (conflict_tx, conflict_rx) = crossbeam::channel::bounded(1);
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let (conflict_tx, conflict_rx) = crossbeam_channel::bounded(1);
         let ctx = make_ctx(tx, conflict_rx);
         let src = CString::new("old.txt").unwrap();
         let dest = CString::new("/out/old.txt").unwrap();
@@ -377,8 +377,8 @@ mod tests {
 
     #[test]
     fn test_overwrite_skip_returns_one() {
-        let (tx, _rx) = crossbeam::channel::unbounded();
-        let (conflict_tx, conflict_rx) = crossbeam::channel::bounded(1);
+        let (tx, _rx) = crossbeam_channel::unbounded();
+        let (conflict_tx, conflict_rx) = crossbeam_channel::bounded(1);
         let ctx = make_ctx(tx, conflict_rx);
         let src = CString::new("f.txt").unwrap();
         let dest = CString::new("/out/f.txt").unwrap();
@@ -415,8 +415,8 @@ mod tests {
 
     #[test]
     fn test_conflict_response_roundtrip() {
-        let (event_tx, event_rx) = crossbeam::channel::unbounded();
-        let (conflict_tx, conflict_rx) = crossbeam::channel::bounded(1);
+        let (event_tx, event_rx) = crossbeam_channel::unbounded();
+        let (conflict_tx, conflict_rx) = crossbeam_channel::bounded(1);
         let ctx = make_ctx(event_tx, conflict_rx);
 
         let src = CString::new("a.zip").unwrap();
@@ -447,9 +447,9 @@ mod tests {
 
     #[test]
     fn test_conflict_response_channel_full_then_block() {
-        let (tx, _rx) = crossbeam::channel::unbounded();
+        let (tx, _rx) = crossbeam_channel::unbounded();
         // bounded(1) means only one response queued
-        let (conflict_tx, conflict_rx) = crossbeam::channel::bounded(1);
+        let (conflict_tx, conflict_rx) = crossbeam_channel::bounded(1);
         let ctx = make_ctx(tx, conflict_rx);
         let src = CString::new("x").unwrap();
         let dest = CString::new("y").unwrap();
@@ -473,8 +473,8 @@ mod tests {
 
     #[test]
     fn test_overwrite_disconnected_channel_returns_one() {
-        let (tx, _rx) = crossbeam::channel::unbounded();
-        let (conflict_tx, conflict_rx) = crossbeam::channel::bounded::<ConflictAction>(1);
+        let (tx, _rx) = crossbeam_channel::unbounded();
+        let (conflict_tx, conflict_rx) = crossbeam_channel::bounded::<ConflictAction>(1);
         drop(conflict_tx); // disconnect so recv() fails
 
         let ctx = make_ctx(tx, conflict_rx);

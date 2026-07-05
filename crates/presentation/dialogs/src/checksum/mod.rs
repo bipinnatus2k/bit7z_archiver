@@ -4,7 +4,7 @@ use bit7z_app_checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
 use bit7z_infra_progress::progress_channel;
 use bit7z_domain::archive::*;
 use bit7z_domain::repository::*;
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use gpui::*;
 use std::sync::Arc;
 use view::{ChecksumDialogView, ChecksumViewIntent};

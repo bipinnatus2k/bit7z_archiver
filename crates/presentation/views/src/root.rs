@@ -11,7 +11,7 @@ use crate::toolbar::{Toolbar, ToolbarIntent};
 use bit7z_domain::repository::ArchiveError;
 use bit7z_rt_globals::IpcReceiver;
 use bit7z_rt_ipc::GuiCommand;
-use crossbeam::channel::unbounded;
+use crossbeam_channel::unbounded;
 use gpui::*;
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use std::path::Path;
@@ -90,7 +90,7 @@ impl RootView {
                                     let busy = indices.clone();
                                     cx.spawn(async move |_, cx| {
                                         let rx = bit7z_pres_dialogs::extract::ExtractDialog::open(entries, cx);
-                                        use crossbeam::channel::TryRecvError;
+                                        use crossbeam_channel::TryRecvError;
                                         loop {
                                             match rx.try_recv() {
                                                 Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
@@ -253,7 +253,7 @@ impl RootView {
                                     let busy = indices.clone();
                                     cx.spawn(async move |_, cx| {
                                         let rx = bit7z_pres_dialogs::extract::ExtractDialog::open(entries, cx);
-                                        use crossbeam::channel::TryRecvError;
+                                        use crossbeam_channel::TryRecvError;
                                         loop {
                                             match rx.try_recv() {
                                                 Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
@@ -561,7 +561,7 @@ impl Render for RootView {
             let p = path.clone();
             cx.spawn(async move |this, cx| {
                 let rx = PasswordDialog::open(path, cx);
-                use crossbeam::channel::TryRecvError;
+                use crossbeam_channel::TryRecvError;
                 loop {
                     match rx.try_recv() {
                         Ok(result) => {
@@ -623,7 +623,7 @@ impl Render for RootView {
                                 let busy = indices.clone();
                                 cx.spawn(async move |_, cx| {
                                     let rx = bit7z_pres_dialogs::extract::ExtractDialog::open(entries, cx);
-                                    use crossbeam::channel::TryRecvError;
+                                    use crossbeam_channel::TryRecvError;
                                     loop {
                                         match rx.try_recv() {
                                                 Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {

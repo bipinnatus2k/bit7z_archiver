@@ -7,6 +7,4 @@ license.workspace = true
 [dependencies]
 bit7z-domain = { path = "../../domain" }
 bit7z-ffi = { path = "../../ffi" }
-crossbeam = "0.8"
-thiserror = "2"
-anyhow = "1"
+

@@ -1,6 +1,6 @@
 use bit7z_domain::archive::*;
 use bit7z_pres_theme::Theme;
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};

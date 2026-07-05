@@ -645,11 +645,11 @@ impl ArchiveRepository for Bit7zRepository {
         guard.cancel = Some(options.cancel.clone());
         guard.paused = Some(options.paused.clone());
         guard.progress_notifier = Some(Box::new(bit7z_infra_progress::CrossbeamNotifier(
-            crossbeam::channel::unbounded().0
+            crossbeam_channel::unbounded().0
         )));
         drop(guard);
 
-        let (tx, rx) = crossbeam::channel::unbounded();
+        let (tx, rx) = crossbeam_channel::unbounded();
         let result = self.extract_with_progress(archive, indices, dest, tx);
         while let Ok(update) = rx.try_recv() {
             options.notifier.notify(&update);

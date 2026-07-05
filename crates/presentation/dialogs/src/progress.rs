@@ -1,7 +1,7 @@
 use bit7z_domain::repository::ProgressUpdate;
 use bit7z_infra_progress::ProgressReceiver;
 use bit7z_pres_theme::Theme;
-use crossbeam::channel::{TryRecvError, unbounded, Receiver};
+use crossbeam_channel::{TryRecvError, unbounded, Receiver};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::Button;

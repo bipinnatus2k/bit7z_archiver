@@ -5,7 +5,7 @@ pub mod linux;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
-use crossbeam::channel::{Sender, Receiver};
+use crossbeam_channel::{Sender, Receiver};
 use gpui::Global;
 use std::sync::Arc;
 
@@ -33,8 +33,8 @@ pub struct TrayManager {
 
 impl TrayManager {
     pub fn new() -> Self {
-        let (cmd_tx, cmd_rx) = crossbeam::channel::unbounded();
-        let (event_tx, event_rx) = crossbeam::channel::unbounded();
+        let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded();
+        let (event_tx, event_rx) = crossbeam_channel::unbounded();
         std::thread::spawn(move || {
             #[cfg(target_os = "windows")]
             windows::run_tray_loop_windows(cmd_rx, event_tx);

@@ -15,10 +15,10 @@ bit7z-infra-events = { path = "../../infrastructure/events" }
 bit7z-infra-platform = { path = "../../infrastructure/platform" }
 bit7z-infra-progress = { path = "../../infrastructure/progress" }
 bit7z-rt-globals = { path = "../../runtime/globals" }
-gpui = { git = "https://github.com/zed-industries/zed" }
-gpui-component = { git = "https://github.com/longbridge/gpui-component" }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
-crossbeam = "0.8"
+gpui = { workspace = true }
+gpui-component = { workspace = true }
+gpui-component-assets = { workspace = true }
+crossbeam-channel = "0.5"
 humansize = "2"
 serde = { version = "1", features = ["derive"] }
-chrono = { version = "0.4", features = ["serde"] }
+

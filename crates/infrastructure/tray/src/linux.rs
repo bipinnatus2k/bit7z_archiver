@@ -1,5 +1,5 @@
 use super::{TrayCommand, TrayEvent};
-use crossbeam::channel::{Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use zbus::blocking::Connection;
 use zbus::dbus_interface;
@@ -129,10 +129,10 @@ pub fn run_tray_loop_linux(cmd_rx: Receiver<TrayCommand>, event_tx: Sender<TrayE
                 let _ = emit_new_tool_tip(&conn);
             }
             Ok(_) => {}
-            Err(crossbeam::channel::TryRecvError::Empty) => {
+            Err(crossbeam_channel::TryRecvError::Empty) => {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            Err(crossbeam::channel::TryRecvError::Disconnected) => break,
+            Err(crossbeam_channel::TryRecvError::Disconnected) => break,
         }
     }
 

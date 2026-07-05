@@ -1,6 +1,6 @@
 use bit7z_infra_tray::TrayCommand;
 use bit7z_infra_progress::ProgressReceiver;
-use crossbeam::channel::{Sender, TryRecvError};
+use crossbeam_channel::{Sender, TryRecvError};
 use gpui::*;
 use std::sync::{Arc, Mutex};
 
@@ -184,7 +184,7 @@ impl ProgressState {
 mod tests {
     use super::ProgressState;
     use bit7z_domain::repository::ProgressUpdate;
-    use crossbeam::channel;
+    use crossbeam_channel;
 
     fn channel_pair() -> (channel::Sender<ProgressUpdate>, channel::Receiver<ProgressUpdate>) {
         channel::unbounded()

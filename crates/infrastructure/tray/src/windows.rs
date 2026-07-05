@@ -1,5 +1,5 @@
 use super::{TrayCommand, TrayEvent};
-use crossbeam::channel::{Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender};
 
 pub fn run_tray_loop_windows(cmd_rx: Receiver<TrayCommand>, event_tx: Sender<TrayEvent>) {
     use std::ffi::OsStr;

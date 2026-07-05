@@ -8,4 +8,4 @@ license.workspace = true
 bit7z-domain = { path = "../../domain" }
 bit7z-ffi = { path = "../../ffi" }
 autocxx = "0.30"
-crossbeam = "0.8"
+crossbeam-channel = "0.5"

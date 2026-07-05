@@ -15,5 +15,4 @@ bit7z-infra-progress = { path = "../../infrastructure/progress" }
 bit7z-infra-shell = { path = "../../infrastructure/shell" }
 clap = { version = "4", features = ["derive"] }
 humansize = "2"
-crossbeam = "0.8"
-anyhow = "1"
+

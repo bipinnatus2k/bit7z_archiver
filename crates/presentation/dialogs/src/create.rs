@@ -1,6 +1,6 @@
 use bit7z_domain::archive::*;
 use bit7z_pres_theme::Theme;
-use crossbeam::channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::Disableable;

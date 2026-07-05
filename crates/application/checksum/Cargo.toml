@@ -11,4 +11,4 @@ sha2 = "0.10"
 sha1 = "0.10"
 crc32fast = "1.4"
 serde = { version = "1", features = ["derive"] }
-crossbeam = "0.8"
+

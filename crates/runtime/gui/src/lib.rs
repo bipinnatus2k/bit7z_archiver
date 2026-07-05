@@ -12,7 +12,7 @@ use bit7z_pres_views::utils::window::create_new_window_with_size;
 use bit7z_pres_components::ext_table;
 use bit7z_rt_ipc::GuiCommand;
 use bit7z_rt_globals::{IpcReceiver, PreferencesGlobal, RepoGlobal, PreferencesRepoGlobal};
-use crossbeam::channel::unbounded;
+use crossbeam_channel::unbounded;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 

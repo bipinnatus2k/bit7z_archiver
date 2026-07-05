@@ -6,4 +6,4 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-crossbeam = "0.8"
+

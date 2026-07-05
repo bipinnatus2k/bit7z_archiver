@@ -17,9 +17,8 @@ bit7z-infra-platform = { path = "../../infrastructure/platform" }
 bit7z-infra-tray = { path = "../../infrastructure/tray" }
 bit7z-infra-events = { path = "../../infrastructure/events" }
 bit7z-rt-ipc = { path = "../ipc" }
-gpui = { git = "https://github.com/zed-industries/zed" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["runtime_shaders"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component" }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
-crossbeam = "0.8"
-anyhow = "1"
+gpui = { workspace = true }
+gpui_platform = { workspace = true }
+gpui-component = { workspace = true }
+gpui-component-assets = { workspace = true }
+crossbeam-channel = "0.5"

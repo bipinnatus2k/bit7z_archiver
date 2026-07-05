@@ -1,5 +1,5 @@
 use bit7z_domain::preferences::*;
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::setting::{Settings, SettingPage, SettingGroup, SettingItem, SettingField};
