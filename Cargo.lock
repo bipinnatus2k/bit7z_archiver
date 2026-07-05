@@ -1040,6 +1040,7 @@ dependencies = [
  "bit7z-infra-events",
  "bit7z-infra-platform",
  "bit7z-infra-progress",
+ "bit7z-pres-components",
  "bit7z-pres-theme",
  "bit7z-pres-view-models",
  "bit7z-rt-globals",
