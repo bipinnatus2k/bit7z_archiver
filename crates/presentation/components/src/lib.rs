@@ -1,6 +1,7 @@
 pub mod state_view;
 pub mod table;
 pub mod virtual_list;
+pub mod window_dialog;
 
 pub mod ext_table;
 pub use ext_table::*;
