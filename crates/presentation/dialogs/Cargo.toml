@@ -8,6 +8,7 @@ license.workspace = true
 bit7z-domain = { path = "../../domain" }
 bit7z-pres-theme = { path = "../theme" }
 bit7z-pres-view-models = { path = "../view-models" }
+bit7z-pres-components = { path = "../components" }
 bit7z-app-archive = { path = "../../application/archive" }
 bit7z-app-checksum = { path = "../../application/checksum" }
 bit7z-app-test = { path = "../../application/test" }
