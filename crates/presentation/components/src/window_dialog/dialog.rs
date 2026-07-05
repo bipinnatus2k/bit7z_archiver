@@ -1,11 +1,10 @@
 use gpui::{
     App, AppContext, AsyncApp, Bounds, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, Pixels, Render, SharedString, Size, Styled, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, div,
-    px, size,
+    IntoElement, ParentElement, Pixels, Render, SharedString, Size, Styled, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, px,
+    size,
 };
 use gpui_component::{Root, TitleBar, v_flex};
-use bit7z_pres_theme::Theme;
 
 // ---------------------------------------------------------------------------
 // Re-export gpui-component's dialog sub-components for convenience.
@@ -119,31 +118,18 @@ impl<E: Render> Focusable for WindowDialogEntity<E> {
 }
 
 impl<E: Render> Render for WindowDialogEntity<E> {
-    fn render(&mut self, _window: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
-        let theme = cx.global::<Theme>();
+    fn render(&mut self, _window: &mut Window, _cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let p = px(16.);
 
-        // Dialog card — same visual as gpui-component Dialog but without
-        // overlay, anchored positioning, and animation.
+        // No card wrapper — the window frame itself provides the boundary.
+        // The content entity fills the window directly with uniform padding.
         v_flex()
             .id("window-dialog")
             .size_full()
             .key_context(DIALOG_CTX)
             .track_focus(&self.focus_handle)
-            .bg(theme.card_bg)
-            .border_1()
-            .border_color(theme.border)
-            .rounded(px(theme.radius_lg))
-            .min_h_24()
-            .pt(p)
-            .pb(p)
-            .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .px(p)
-                    .child(self.content.clone()),
-            )
+            .p(p)
+            .child(self.content.clone())
     }
 }
 

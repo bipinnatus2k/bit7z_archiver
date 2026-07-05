@@ -1,18 +1,16 @@
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::v_flex;
 use bit7z_pres_components::window_dialog::{
-    DialogFooter, DialogHeader, DialogTitle,
-    open_window_dialog, WindowDialogOptions,
-    CloseAction,
+    DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    open_window_dialog, WindowDialogOptions, CloseAction,
 };
 
 pub struct AboutContent;
 
 impl Render for AboutContent {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.global::<bit7z_pres_theme::Theme>().clone();
-
-        gpui_component::v_flex()
+        v_flex()
             .size_full()
             .gap(px(12.))
             .child(
@@ -20,40 +18,36 @@ impl Render for AboutContent {
                     .child(DialogTitle::new().child("About bit7z Archiver")),
             )
             .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .child("bit7z Archiver"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted)
-                            .child(format!("v{}", env!("CARGO_PKG_VERSION"))),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted)
-                            .child(format!("{}", env!("CARGO_PKG_DESCRIPTION"))),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted)
-                            .child(format!("{}", env!("CARGO_PKG_LICENSE"))),
-                    ),
+                DialogContent::new().child(
+                    v_flex()
+                        // .items_center()
+                        // .justify_center()
+                        .h_full()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_lg()
+                                .font_weight(FontWeight::BOLD)
+                                .child("bit7z Archiver"),
+                        )
+                        .child(
+                            DialogDescription::new()
+                                .child(format!("v{}", env!("CARGO_PKG_VERSION"))),
+                        )
+                        .child(
+                            DialogDescription::new()
+                                .child(format!("{}", env!("CARGO_PKG_DESCRIPTION"))),
+                        )
+                        .child(
+                            DialogDescription::new()
+                                .child(format!("LICENSE: {}", env!("CARGO_PKG_LICENSE"))),
+                        ),
+                ),
             )
             .child(
-                DialogFooter::new().justify_center().child(
+                DialogFooter::new()
+                // .justify_center()
+                .child(
                     Button::new("ok")
                         .label("OK")
                         .primary()
