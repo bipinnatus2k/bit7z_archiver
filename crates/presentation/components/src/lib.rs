@@ -8,4 +8,5 @@ pub use ext_table::*;
 
 pub(crate) fn init(cx: &mut gpui::App) {
     ext_table::init(cx);
+    window_dialog::init(cx);
 }

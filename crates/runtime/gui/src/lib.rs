@@ -9,7 +9,7 @@ use bit7z_infra_tray::{TrayManager, TrayGlobal};
 use bit7z_pres_view_models::progress_vm::ProgressState;
 use bit7z_pres_views::root::RootView;
 use bit7z_pres_views::utils::window::create_new_window_with_size;
-use bit7z_pres_components::ext_table;
+use bit7z_pres_components::{ext_table, window_dialog};
 use bit7z_rt_ipc::GuiCommand;
 use bit7z_rt_globals::{IpcReceiver, PreferencesGlobal, RepoGlobal, PreferencesRepoGlobal};
 use crossbeam_channel::unbounded;
@@ -24,6 +24,7 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
     gpui_platform::application().with_assets(Assets).run(move |cx: &mut App| {
         gpui_component::init(cx);
         ext_table::init(cx);
+        window_dialog::init(cx);
         let prefs_repo = bit7z_infra_persistence::preferences_json::JsonPreferencesRepository::new();
         let prefs = prefs_repo.load().unwrap_or_default();
 

@@ -1,9 +1,11 @@
 use gpui::{
-    App, AppContext, AsyncApp, Bounds, Entity, FocusHandle, Focusable, IntoElement,
-    ParentElement, Pixels, Render, SharedString, Size, Styled, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowDecorations, WindowKind, WindowOptions, div, px, size,
+    App, AppContext, AsyncApp, Bounds, Entity, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, KeyBinding, ParentElement, Pixels, Render, SharedString, Size, Styled, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, div,
+    px, size,
 };
 use gpui_component::{Root, TitleBar, v_flex};
+use bit7z_pres_theme::Theme;
 
 // ---------------------------------------------------------------------------
 // Re-export gpui-component's dialog sub-components for convenience.
@@ -84,11 +86,26 @@ impl WindowDialogOptions {
 }
 
 // ---------------------------------------------------------------------------
-// WindowDialogEntity — wraps a content Entity in a dialog frame.
+// WindowDialogEntity — wraps a content Entity in a dialog card.
 //
-// The content entity renders the full dialog interior (header, body, footer)
-// and is re-rendered fresh every frame via its Entity handle.
+// Renders the same visual card as gpui-component's Dialog (background,
+// border, rounded corners, padding) but WITHOUT the overlay, anchored
+// positioning, and animations that only make sense for same-window
+// modal overlays.
+//
+// The content entity is rendered fresh every frame via Entity::clone().
 // ---------------------------------------------------------------------------
+
+const DIALOG_CTX: &str = "WindowDialog";
+
+gpui::actions!(window_dialog, [CloseWindowDialog, ConfirmWindowDialog]);
+
+pub fn init(cx: &mut App) {
+    cx.bind_keys([
+        gpui::KeyBinding::new("escape", CloseWindowDialog, Some(DIALOG_CTX)),
+        gpui::KeyBinding::new("enter", ConfirmWindowDialog, Some(DIALOG_CTX)),
+    ]);
+}
 
 struct WindowDialogEntity<E: Render> {
     focus_handle: FocusHandle,
@@ -102,14 +119,31 @@ impl<E: Render> Focusable for WindowDialogEntity<E> {
 }
 
 impl<E: Render> Render for WindowDialogEntity<E> {
-    fn render(&mut self, _window: &mut Window, _cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = cx.global::<Theme>();
         let p = px(16.);
 
+        // Dialog card — same visual as gpui-component Dialog but without
+        // overlay, anchored positioning, and animation.
         v_flex()
+            .id("window-dialog")
             .size_full()
+            .key_context(DIALOG_CTX)
+            .track_focus(&self.focus_handle)
+            .bg(theme.card_bg)
+            .border_1()
+            .border_color(theme.border)
+            .rounded(px(theme.radius_lg))
+            .min_h_24()
             .pt(p)
             .pb(p)
-            .child(div().flex_1().overflow_hidden().px(p).child(self.content.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .px(p)
+                    .child(self.content.clone()),
+            )
     }
 }
 
@@ -120,8 +154,9 @@ impl<E: Render> Render for WindowDialogEntity<E> {
 /// Open a dialog in an independent window.
 ///
 /// The `build` closure receives the new window's [`Window`] and [`App`] and
-/// returns a content entity that will be rendered each frame inside a
-/// padded dialog frame.
+/// returns a content entity.  That entity is rendered each frame inside a
+/// dialog card (border, rounded corners, background) without any overlay
+/// or anchored positioning.
 ///
 /// # Example
 ///
