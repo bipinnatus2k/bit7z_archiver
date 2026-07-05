@@ -1,8 +1,7 @@
 use gpui::{
-    AnyElement, App, AppContext, AsyncApp, Bounds, FocusHandle, Focusable, IntoElement,
+    App, AppContext, AsyncApp, Bounds, Entity, FocusHandle, Focusable, IntoElement,
     ParentElement, Pixels, Render, SharedString, Size, Styled, Window, WindowBackgroundAppearance,
     WindowBounds, WindowDecorations, WindowKind, WindowOptions, div, px, size,
-    prelude::FluentBuilder,
 };
 use gpui_component::{Root, TitleBar, v_flex};
 
@@ -18,13 +17,10 @@ pub use gpui_component::dialog::{
 // Close action
 // ---------------------------------------------------------------------------
 
-/// Controls how the dialog window is closed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
 pub enum CloseAction {
-    /// Call `window.remove_window()`.
     RemoveWindow,
-    /// Call `window.close_dialog()` via gpui-component's dialog system.
     CloseDialog,
 }
 
@@ -32,7 +28,6 @@ pub enum CloseAction {
 // Window options
 // ---------------------------------------------------------------------------
 
-/// Configuration for opening a dialog in an independent window.
 #[derive(Clone)]
 pub struct WindowDialogOptions {
     pub title: SharedString,
@@ -81,33 +76,32 @@ impl WindowDialogOptions {
             focus: true,
             ..Default::default()
         };
-
         if let (Some(w), Some(h)) = (self.min_width, self.min_height) {
             opts.window_min_size = Some(Size { width: w, height: h });
         }
-
         opts
     }
 }
 
 // ---------------------------------------------------------------------------
-// Entity that owns and renders the dialog layout inside its own window.
+// WindowDialogEntity — wraps a content Entity in a dialog frame.
+//
+// The content entity renders the full dialog interior (header, body, footer)
+// and is re-rendered fresh every frame via its Entity handle.
 // ---------------------------------------------------------------------------
 
-struct WindowDialogEntity {
+struct WindowDialogEntity<E: Render> {
     focus_handle: FocusHandle,
-    header: Option<AnyElement>,
-    footer: Option<AnyElement>,
-    children: Vec<AnyElement>,
+    content: Entity<E>,
 }
 
-impl Focusable for WindowDialogEntity {
+impl<E: Render> Focusable for WindowDialogEntity<E> {
     fn focus_handle(&self, _cx: &gpui::App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for WindowDialogEntity {
+impl<E: Render> Render for WindowDialogEntity<E> {
     fn render(&mut self, _window: &mut Window, _cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let p = px(16.);
 
@@ -115,110 +109,32 @@ impl Render for WindowDialogEntity {
             .size_full()
             .pt(p)
             .pb(p)
-            .gap(p.max(px(8.)))
-            .when_some(self.header.take(), |this, h| this.child(div().px(p).child(h)))
-            .child(div().flex_1().overflow_hidden().px(p).children(std::mem::take(&mut self.children)))
-            .when_some(self.footer.take(), |this, f| this.child(div().px(p).child(f)))
+            .child(div().flex_1().overflow_hidden().px(p).child(self.content.clone()))
     }
 }
 
 // ---------------------------------------------------------------------------
-// Builder handle passed to the user's closure.
-// ---------------------------------------------------------------------------
-
-/// A temporary handle provided to the `build` closure of
-/// [`open_window_dialog`].  Populate header, footer, and content children.
-pub struct WindowDialogHandle<'a> {
-    header: &'a mut Option<AnyElement>,
-    footer: &'a mut Option<AnyElement>,
-    children: &'a mut Vec<AnyElement>,
-}
-
-impl<'a> WindowDialogHandle<'a> {
-    pub fn header(&mut self, el: impl IntoElement) -> &mut Self {
-        *self.header = Some(el.into_any_element());
-        self
-    }
-
-    pub fn footer(&mut self, el: impl IntoElement) -> &mut Self {
-        *self.footer = Some(el.into_any_element());
-        self
-    }
-
-    pub fn child(&mut self, el: impl IntoElement) -> &mut Self {
-        self.children.push(el.into_any_element());
-        self
-    }
-
-    pub fn children(&mut self, els: impl IntoIterator<Item: IntoElement>) -> &mut Self {
-        self.children.extend(els.into_iter().map(|e| e.into_any_element()));
-        self
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Internal: open a window with the dialog builder pattern.
-// ---------------------------------------------------------------------------
-
-fn open_dialog_window_impl<F>(
-    window: &mut Window,
-    cx: &mut App,
-    title: &str,
-    build: F,
-) -> gpui::Entity<gpui_component::Root>
-where
-    F: FnOnce(&mut WindowDialogHandle, &mut Window, &mut App),
-{
-    window.set_window_title(title);
-
-    let mut header: Option<AnyElement> = None;
-    let mut footer: Option<AnyElement> = None;
-    let mut children: Vec<AnyElement> = Vec::new();
-
-    let mut handle = WindowDialogHandle {
-        header: &mut header,
-        footer: &mut footer,
-        children: &mut children,
-    };
-    build(&mut handle, window, cx);
-
-    let entity = cx.new(|cx| WindowDialogEntity {
-        focus_handle: cx.focus_handle(),
-        header,
-        footer,
-        children,
-    });
-
-    cx.new(|cx| Root::new(entity, window, cx))
-}
-
-// ---------------------------------------------------------------------------
-// Public API — synchronous (&mut App)
+// Public API
 // ---------------------------------------------------------------------------
 
 /// Open a dialog in an independent window.
 ///
-/// This overload takes `&mut App` directly and is suitable for action
-/// listeners, menu handlers, and other synchronous contexts.
-///
-/// The `build` closure receives a [`WindowDialogHandle`] for setting
-/// header, footer, and content children.  The window is created with the
-/// given [`WindowDialogOptions`].
+/// The `build` closure receives the new window's [`Window`] and [`App`] and
+/// returns a content entity that will be rendered each frame inside a
+/// padded dialog frame.
 ///
 /// # Example
 ///
 /// ```ignore
-/// open_window_dialog(cx, opts, |dlg, _, cx| {
-///     dlg.header(DialogHeader::new().child(DialogTitle::new().child("About")))
-///        .footer(DialogFooter::new().child(Button::new("ok").label("OK")));
-/// });
+/// open_window_dialog(cx, opts, |_window, cx| cx.new(|_| AboutContent));
 /// ```
-pub fn open_window_dialog<F>(
+pub fn open_window_dialog<E, F>(
     cx: &mut App,
     options: WindowDialogOptions,
     build: F,
 ) where
-    F: FnOnce(&mut WindowDialogHandle, &mut Window, &mut App) + 'static,
+    E: Render + 'static,
+    F: FnOnce(&mut Window, &mut App) -> Entity<E> + 'static,
 {
     let title = options.title.clone();
     let dialog_size = options.dialog_size();
@@ -226,34 +142,43 @@ pub fn open_window_dialog<F>(
     let win_opts = options.build_window_options(bounds);
 
     let _ = cx.open_window(win_opts, move |window, cx| {
-        open_dialog_window_impl(window, cx, &title, build)
+        window.set_window_title(&title);
+        let content = build(window, cx);
+        entity_in_window(content, window, cx)
     });
 }
 
-// ---------------------------------------------------------------------------
-// Public API — asynchronous (&mut AsyncApp)
-// ---------------------------------------------------------------------------
-
-/// Open a dialog in an independent window from an async context.
-///
-/// This overload is useful inside `cx.spawn()` blocks where only
-/// `&mut AsyncApp` is available.
-pub fn open_window_dialog_async<F>(
+/// Same as [`open_window_dialog`] but accepts `&mut AsyncApp`.
+pub fn open_window_dialog_async<E, F>(
     cx: &mut AsyncApp,
     options: WindowDialogOptions,
     build: F,
 ) where
-    F: FnOnce(&mut WindowDialogHandle, &mut Window, &mut App) + 'static,
+    E: Render + 'static,
+    F: FnOnce(&mut Window, &mut App) -> Entity<E> + 'static,
 {
-    let title = options.title.clone();
-    let dialog_size = options.dialog_size();
-
     cx.spawn(async move |cx| {
-        let bounds = cx.update(|app| WindowBounds::Windowed(Bounds::centered(None, dialog_size, app)));
+        let dialog_size = options.dialog_size();
+        let bounds = cx.update(|app| options.centered_bounds(dialog_size, app));
+        let title = options.title.clone();
         let win_opts = options.build_window_options(bounds);
 
         let _ = cx.open_window(win_opts, move |window, cx| {
-            open_dialog_window_impl(window, cx, &title, build)
+            window.set_window_title(&title);
+            let content = build(window, cx);
+            entity_in_window(content, window, cx)
         });
     }).detach();
+}
+
+fn entity_in_window<E: Render>(
+    content: Entity<E>,
+    window: &mut Window,
+    cx: &mut App,
+) -> gpui::Entity<gpui_component::Root> {
+    let entity = cx.new(|cx| WindowDialogEntity {
+        focus_handle: cx.focus_handle(),
+        content,
+    });
+    cx.new(|cx| Root::new(entity, window, cx))
 }

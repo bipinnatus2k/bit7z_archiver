@@ -6,6 +6,66 @@ use bit7z_pres_components::window_dialog::{
     CloseAction,
 };
 
+pub struct AboutContent;
+
+impl Render for AboutContent {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.global::<bit7z_pres_theme::Theme>().clone();
+
+        gpui_component::v_flex()
+            .size_full()
+            .gap(px(12.))
+            .child(
+                DialogHeader::new()
+                    .child(DialogTitle::new().child("About bit7z Archiver")),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(FontWeight::BOLD)
+                            .child("bit7z Archiver"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted)
+                            .child(format!("v{}", env!("CARGO_PKG_VERSION"))),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted)
+                            .child(format!("{}", env!("CARGO_PKG_DESCRIPTION"))),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted)
+                            .child(format!("{}", env!("CARGO_PKG_LICENSE"))),
+                    ),
+            )
+            .child(
+                DialogFooter::new().justify_center().child(
+                    Button::new("ok")
+                        .label("OK")
+                        .primary()
+                        .cursor_pointer()
+                        .on_click(|_, window, _cx| {
+                            window.remove_window();
+                        }),
+                ),
+            )
+    }
+}
+
 pub struct AboutDialog;
 
 impl AboutDialog {
@@ -23,58 +83,7 @@ impl AboutDialog {
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Opaque,
             },
-            |dlg, _window, cx| {
-                let theme = cx.global::<bit7z_pres_theme::Theme>().clone();
-
-                dlg.header(
-                    DialogHeader::new()
-                        .child(DialogTitle::new().child("About bit7z Archiver")),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .justify_center()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::BOLD)
-                                .child("bit7z Archiver"),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.muted)
-                                .child(format!("v{}", env!("CARGO_PKG_VERSION"))),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.muted)
-                                .child(format!("{}", env!("CARGO_PKG_DESCRIPTION"))),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.muted)
-                                .child(format!("{}", env!("CARGO_PKG_LICENSE"))),
-                        ),
-                )
-                .footer(
-                    DialogFooter::new().justify_center().child(
-                        Button::new("ok")
-                            .label("OK")
-                            .primary()
-                            .cursor_pointer()
-                            .on_click(|_, window, _cx| {
-                                window.remove_window();
-                            }),
-                    ),
-                );
-            },
+            |_window, cx| cx.new(|_| AboutContent),
         );
     }
 }
