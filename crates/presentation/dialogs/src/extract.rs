@@ -1,25 +1,20 @@
-use std::borrow::Borrow;
 use bit7z_domain::archive::*;
-use bit7z_pres_theme::Theme;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::checkbox::Checkbox;
+use gpui_component::Disableable;
 use gpui_component::input::{Input, InputState};
-use gpui_component::label::Label;
 use gpui_component::select::{Select, SelectItem, SelectState};
-use gpui_component::{v_flex, Icon, IconName, IndexPath, StyledExt};
+use gpui_component::v_flex;
+use gpui_component::{Icon, IconName, IndexPath};
+use std::sync::{Arc, Mutex};
+use bit7z_pres_components::window_dialog::{
+    open_window_dialog_async, CloseAction, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    WindowDialogOptions,
+};
 
-pub struct ExtractDialog {
-    pub entries: Vec<ArchiveEntry>,
-    pub destination: String,
-    pub preserve_paths: bool,
-    pub entries_count: usize,
-    pub overwrite_mode: Entity<SelectState<Vec<OverwriteSelect>>>,
-    pub keep_broken: bool,
-    result_tx: Option<Sender<ExtractDialogEvent>>,
-}
+type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
 
 #[derive(Debug, Clone)]
 pub enum ExtractDialogEvent {
@@ -32,7 +27,7 @@ pub enum ExtractDialogEvent {
     Canceled,
 }
 
-impl EventEmitter<ExtractDialogEvent> for ExtractDialog {}
+impl EventEmitter<ExtractDialogEvent> for ExtractContent {}
 
 #[derive(Debug, Clone)]
 struct OverwriteSelect {
@@ -60,14 +55,27 @@ fn selectable_overwrite() -> Vec<OverwriteSelect> {
     ]
 }
 
-impl ExtractDialog {
-    fn new(window: &mut Window, cx: &mut App, entries: Vec<ArchiveEntry>, result_tx: Sender<ExtractDialogEvent>) -> Self {
-        let count = entries.len();
+struct ExtractContent {
+    entries: Vec<ArchiveEntry>,
+    destination: String,
+    preserve_paths: bool,
+    entries_count: usize,
+    overwrite_mode: Entity<SelectState<Vec<OverwriteSelect>>>,
+    keep_broken: bool,
+    result_tx: SharedSender<ExtractDialogEvent>,
+}
 
+impl ExtractContent {
+    fn new(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        entries: Vec<ArchiveEntry>,
+        event_tx: SharedSender<ExtractDialogEvent>,
+    ) -> Self {
         let state = cx.new(|cx| {
             SelectState::new(selectable_overwrite(), Some(IndexPath::default()), window, cx)
         });
-
+        let count = entries.len();
         Self {
             entries,
             destination: String::new(),
@@ -75,44 +83,23 @@ impl ExtractDialog {
             entries_count: count,
             overwrite_mode: state,
             keep_broken: false,
-            result_tx: Some(result_tx),
+            result_tx: event_tx,
         }
     }
 
-    pub fn open(entries: Vec<ArchiveEntry>, cx: &mut AsyncApp) -> Receiver<ExtractDialogEvent> {
-        let (tx, rx) = unbounded::<ExtractDialogEvent>();
-        cx.spawn(async move |cx| {
-            let _ = cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                        point(px(100.), px(100.)),
-                        size(px(560.), px(400.)),
-                    ))),
-                    window_background: WindowBackgroundAppearance::Opaque,
-                    window_decorations: Some(WindowDecorations::Client),
-                    ..Default::default()
-                },
-                move |window, cx| {
-                    let dialog = cx.new(|cx| ExtractDialog::new(window,cx,entries, tx));
-                    cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
-                },
-            );
-        })
-        .detach();
-        rx
-    }
-
-    fn finish(&mut self, event: ExtractDialogEvent, window: &mut Window) {
-        if let Some(tx) = self.result_tx.take() {
-            let _ = tx.send(event);
+    fn emit(&self, event: ExtractDialogEvent, window: &mut Window) {
+        if let Ok(guard) = self.result_tx.lock() {
+            if let Some(ref tx) = *guard {
+                let _ = tx.send(event);
+            }
         }
         window.remove_window();
     }
 }
 
-impl Render for ExtractDialog {
+impl Render for ExtractContent {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let can_extract = !self.destination.is_empty();
+        let h = cx.entity();
 
         let input = cx.new(|cx2| {
             InputState::new(window, cx2)
@@ -120,104 +107,145 @@ impl Render for ExtractDialog {
                 .default_value(&self.destination)
         });
 
-        let theme = cx.global::<Theme>().clone();
         v_flex()
-            .gap_3()
-            .p_4()
-            .w_full()
-            .child(Label::new("Extract").font_black())
-            .child(div().text_sm().text_color(theme.muted).child(format!(
-                "{} entr{} selected",
-                self.entries_count,
-                if self.entries_count == 1 { "y" } else { "ies" }
-            )))
+            .size_full()
+            .gap(px(12.))
             .child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::BOLD)
-                    .child("Destination"),
+                DialogHeader::new()
+                    .child(DialogTitle::new().child("Extract")),
             )
             .child(
-                Input::new(&input).suffix(
-                    Button::new("BrowsePath")
-                        .icon(Icon::new(IconName::FolderOpen))
-                        .ghost()
-                        .cursor_pointer()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _e, window2, cx| {
-                                if let Some(path) = bit7z_infra_platform::pick_folder() {
-                                    this.destination = path.to_string_lossy().to_string();
-                                    input.update(cx, |state, cx2| {
-                                        state.set_value(path.to_string_lossy(), window2, cx2)
-                                    });
+                DialogContent::new().child(
+                    v_flex()
+                        .gap_3()
+                        .child(div().text_base().font_weight(FontWeight::BOLD).child("Extract"))
+                        .child(div().text_sm().child(format!(
+                            "{} entr{} selected",
+                            self.entries_count,
+                            if self.entries_count == 1 { "y" } else { "ies" }
+                        )))
+                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Destination"))
+                        .child(
+                            Input::new(&input).suffix(
+                                Button::new("BrowsePath")
+                                    .icon(Icon::new(IconName::FolderOpen))
+                                    .ghost()
+                                    .cursor_pointer()
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(move |this, _e, window2, cx| {
+                                            if let Some(path) = bit7z_infra_platform::pick_folder() {
+                                                this.destination = path.to_string_lossy().to_string();
+                                                input.update(cx, |state, cx2| {
+                                                    state.set_value(path.to_string_lossy(), window2, cx2)
+                                                });
+                                                cx.notify();
+                                            }
+                                        }),
+                                    ),
+                            ),
+                        )
+                        .child(
+                            Checkbox::new("dirStructure")
+                                .checked(self.preserve_paths)
+                                .label("Preserve directory structure")
+                                .cursor_pointer()
+                                .on_click(cx.listener(|this, _e, _window, cx| {
+                                    this.preserve_paths = !this.preserve_paths;
                                     cx.notify();
-                                }
-                            }),
+                                })),
+                        )
+                        .child(
+                            Select::new(&self.overwrite_mode)
+                                .cleanable(false)
+                                .title_prefix("Overwrite mode: "),
+                        )
+                        .child(
+                            Checkbox::new("keepBroken")
+                                .checked(self.keep_broken)
+                                .label("Keep broken files")
+                                .cursor_pointer()
+                                .on_click(cx.listener(|this, _e, _window, cx| {
+                                    this.keep_broken = !this.keep_broken;
+                                    cx.notify();
+                                })),
                         ),
                 ),
             )
             .child(
-                Checkbox::new("dirStructure")
-                    .checked(self.preserve_paths)
-                    .label("Preserve directory structure")
-                    .cursor_pointer()
-                    .on_click(cx.listener(|this, _e, _window, cx| {
-                        this.preserve_paths = !this.preserve_paths;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                Select::new(&self.overwrite_mode)
-                    .cleanable(false)
-                    .title_prefix("Overwrite mode: "),
-            )
-            .child(
-                Checkbox::new("keepBroken")
-                    .checked(self.keep_broken)
-                    .label("Keep broken files")
-                    .cursor_pointer()
-                    .on_click(cx.listener(|this, _e, _window, cx| {
-                        this.keep_broken = !this.keep_broken;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .justify_end()
-                    .gap_2()
-                    .pt_2()
+                DialogFooter::new().justify_end().gap_2()
                     .child(
                         Button::new("cancel")
-                            .cursor_pointer()
-                            .child("Cancel")
-                            .on_click(cx.listener(|this, _e, window, _cx| {
-                                this.finish(ExtractDialogEvent::Canceled, window);
-                            })),
+                            .label("Cancel")
+                            .on_click({
+                                let h = h.clone();
+                                move |_, window, cx| {
+                                    h.update(cx, |this, cx| {
+                                        this.emit(ExtractDialogEvent::Canceled, window);
+                                    });
+                                }
+                            }),
                     )
                     .child(
-                        Button::new("extract")
-                            .cursor_pointer()
-                            .primary()
-                            .child("Extract")
-                            .when(can_extract, |el| {
-                                el.on_click(cx.listener(|this, _e, window, cx| {
-                                    this.finish(
-                                        ExtractDialogEvent::ExtractRequested {
-                                            destination: std::path::PathBuf::from(
-                                                &this.destination,
-                                            ),
-                                            preserve_paths: this.preserve_paths,
-                                            overwrite_mode: *this.overwrite_mode.borrow().read(cx).selected_value().unwrap(),
-                                            keep_broken: this.keep_broken,
-                                        },
-                                        window,
-                                    );
-                                }))
-                            }),
+                        if !self.destination.is_empty() {
+                            Button::new("extract")
+                                .label("Extract")
+                                .primary()
+                                .on_click({
+                                    let h = h.clone();
+                                    move |_, window, cx| {
+                                        h.update(cx, |this, cx| {
+                                            let ev = ExtractDialogEvent::ExtractRequested {
+                                                destination: std::path::PathBuf::from(&this.destination),
+                                                preserve_paths: this.preserve_paths,
+                                                overwrite_mode: *this.overwrite_mode.read(cx).selected_value().unwrap(),
+                                                keep_broken: this.keep_broken,
+                                            };
+                                            this.emit(ev, window);
+                                        });
+                                    }
+                                })
+                                .into_any_element()
+                        } else {
+                            Button::new("extract")
+                                .label("Extract")
+                                .primary()
+                                .disabled(true)
+                                .into_any_element()
+                        },
                     ),
             )
+    }
+}
+
+pub struct ExtractDialog;
+
+impl ExtractDialog {
+    pub fn open(
+        entries: Vec<ArchiveEntry>,
+        cx: &mut AsyncApp,
+    ) -> Receiver<ExtractDialogEvent> {
+        let (tx, rx) = unbounded::<ExtractDialogEvent>();
+        let event_tx: SharedSender<ExtractDialogEvent> = Arc::new(Mutex::new(Some(tx)));
+        let et = event_tx.clone();
+
+        open_window_dialog_async(
+            cx,
+            WindowDialogOptions {
+                title: "Extract".into(),
+                width: px(560.),
+                height: Some(px(460.)),
+                min_width: None,
+                min_height: None,
+                kind: WindowKind::Dialog,
+                close_action: CloseAction::RemoveWindow,
+                window_decorations: Some(WindowDecorations::Client),
+                window_background: WindowBackgroundAppearance::Opaque,
+            },
+            move |window, cx| {
+                cx.new(|cx| ExtractContent::new(window, cx, entries.clone(), et))
+            },
+        );
+        rx
     }
 }
