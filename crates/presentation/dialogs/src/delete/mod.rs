@@ -1,23 +1,18 @@
-mod view;
-
 use bit7z_app_archive::delete::DeleteEntriesUseCase;
 use bit7z_infra_progress::progress_channel;
 use bit7z_domain::archive::*;
 use bit7z_domain::repository::*;
 use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::v_flex;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use view::{DeleteDialogView, DeleteViewIntent};
-
 use bit7z_pres_components::window_dialog::{
-    open_window_dialog_async, WindowDialogOptions, CloseAction,
+    open_window_dialog_async, CloseAction, DialogContent, DialogDescription, DialogFooter,
+    DialogHeader, DialogTitle, WindowDialogOptions,
 };
 
-pub struct DeleteDialog {
-    view: Entity<DeleteDialogView>,
-    indices: Vec<u32>,
-    handle: ArchiveHandle,
-    repo: Arc<dyn ArchiveRepository>,
-}
+pub struct DeleteDialog;
 
 impl DeleteDialog {
     pub fn open(
@@ -26,12 +21,13 @@ impl DeleteDialog {
         handle: ArchiveHandle,
         repo: Arc<dyn ArchiveRepository>,
     ) {
+        let count = indices.len();
         open_window_dialog_async(
             cx,
             WindowDialogOptions {
                 title: "Delete Entries".into(),
                 width: px(420.),
-                height: Some(px(220.)),
+                height: Some(px(200.)),
                 min_width: None,
                 min_height: None,
                 kind: WindowKind::Dialog,
@@ -39,72 +35,103 @@ impl DeleteDialog {
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Opaque,
             },
-            |window, cx| {
-                let view = cx.new(|_cx| DeleteDialogView::new(indices.len() as u64));
-                let view_handle = view.clone();
-                let dlg = cx.new(|_cx| Self { view, indices, handle, repo });
-                let dlg_handle = dlg.clone();
-                cx.subscribe::<DeleteDialogView, DeleteViewIntent>(
-                    &view_handle,
-                    move |_, intent, cx| {
-                        dlg_handle.update(cx, |d, cx| d.handle_intent(intent.clone(), cx));
-                    },
-                )
-                .detach();
-                dlg
+            move |_window, cx| {
+                cx.new(move |cx| DeleteContent::new(count, indices, handle, repo, cx))
             },
         );
     }
+}
 
-    fn handle_intent(&mut self, intent: DeleteViewIntent, cx: &mut Context<Self>) {
-        match intent {
-            DeleteViewIntent::Confirm => {
-                self.view.update(cx, |v, _| {
-                    v.set_processing(0, self.indices.len() as u64, "Deleting entries...")
-                });
+struct DeleteContent {
+    count: usize,
+    indices: Vec<u32>,
+    handle: ArchiveHandle,
+    repo: Arc<dyn ArchiveRepository>,
+}
 
-                let indices = self.indices.clone();
-                let mut handle = self.handle.clone();
-                let repo = self.repo.clone();
-                let (tx, rx) = progress_channel();
-                let view = self.view.clone();
+impl DeleteContent {
+    fn new(
+        count: usize,
+        indices: Vec<u32>,
+        handle: ArchiveHandle,
+        repo: Arc<dyn ArchiveRepository>,
+        _cx: &mut Context<Self>,
+    ) -> Self {
+        Self { count, indices, handle, repo }
+    }
 
-                let notifier: Option<
-                    Arc<dyn bit7z_domain::repository::ProgressNotifier>,
-                > = Some(Arc::new(bit7z_infra_progress::CrossbeamNotifier(tx)));
-                cx.background_spawn(async move {
-                    let uc = DeleteEntriesUseCase::new(repo);
-                    let _ = uc.execute(&mut handle, &indices, notifier);
-                })
-                .detach();
+    fn on_delete(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.remove_window();
 
-                cx.spawn(async move |_, cx| {
-                    loop {
-                        if let Ok(update) = rx.try_recv() {
-                            view.update(cx, |v, _| {
-                                v.set_processing(
-                                    update.items_done,
-                                    update.items_total,
-                                    &update.current_file.unwrap_or_default(),
-                                )
-                            });
-                            if update.items_done >= update.items_total || update.error.is_some() {
-                                break;
-                            }
-                        }
-                        cx.background_spawn(std::future::ready(())).await;
-                    }
-                    view.update(cx, |v, _| v.set_complete());
-                })
-                .detach();
-            }
-            DeleteViewIntent::Cancel | DeleteViewIntent::Close => {}
-        }
+        let indices = self.indices.clone();
+        let mut handle = self.handle.clone();
+        let repo = self.repo.clone();
+        let (tx, rx) = progress_channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_clone = cancel.clone();
+        let progress_title = format!("Deleting {} entries...", indices.len());
+
+        cx.spawn(async move |_this, cx| {
+            // Open the progress window first, then run the delete task.
+            crate::progress::ProgressDialog::open(cx, progress_title, rx, Some(cancel_clone), None);
+
+            let notifier: Option<Arc<dyn ProgressNotifier>> =
+                Some(Arc::new(bit7z_infra_progress::CrossbeamNotifier(tx)));
+            let uc = DeleteEntriesUseCase::new(repo);
+            let _ = uc.execute(&mut handle, &indices, notifier);
+        })
+        .detach();
     }
 }
 
-impl Render for DeleteDialog {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        self.view.clone()
+impl Render for DeleteContent {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let h = cx.entity();
+        let count = self.count;
+
+        v_flex()
+            .size_full()
+            .gap(px(12.))
+            .child(
+                DialogHeader::new()
+                    .child(DialogTitle::new().child("Delete Entries")),
+            )
+            .child(
+                DialogContent::new().child(
+                    v_flex()
+                        .h_full()
+                        .gap_3()
+                        .child(DialogDescription::new().child(format!(
+                            "Are you sure you want to delete {} entr{}?",
+                            count,
+                            if count == 1 { "y" } else { "ies" },
+                        )))
+                        .child(
+                            DialogDescription::new()
+                                .child("This action cannot be undone."),
+                        ),
+                ),
+            )
+            .child(
+                DialogFooter::new().justify_end().gap_2()
+                    .child(
+                        Button::new("cancel")
+                            .label("Cancel")
+                            .on_click(move |_, window, _| {
+                                window.remove_window();
+                            }),
+                    )
+                    .child(
+                        Button::new("delete")
+                            .label("Delete")
+                            .danger()
+                            .on_click({
+                                let h = h.clone();
+                                move |_, window, cx| {
+                                    h.update(cx, |this, cx| this.on_delete(window, cx));
+                                }
+                            }),
+                    ),
+            )
     }
 }
