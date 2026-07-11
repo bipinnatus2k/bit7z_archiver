@@ -1,6 +1,10 @@
-use bit7z_pres_theme::Theme;
 use gpui::*;
-use gpui_component::h_flex;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::progress::Progress;
+use gpui_component::{h_flex, v_flex};
+use bit7z_pres_components::window_dialog::{
+    DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeleteViewIntent {
@@ -15,7 +19,6 @@ pub enum DeletePhase {
     Idle { count: u64 },
     Processing { current: u64, total: u64, message: String },
     Complete,
-    #[allow(dead_code)]
     Error(String),
 }
 
@@ -35,56 +38,99 @@ impl DeleteDialogView {
     pub fn set_complete(&mut self) {
         self.phase = DeletePhase::Complete;
     }
-
-    #[allow(dead_code)]
-    pub fn set_error(&mut self, msg: &str) {
-        self.phase = DeletePhase::Error(msg.to_string());
-    }
 }
 
 impl Render for DeleteDialogView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.global::<Theme>();
+        let handle = cx.entity();
 
-        div().flex().flex_col().gap_3().p_4().w(px(400.))
-            .child(match &self.phase {
-                DeletePhase::Idle { count } => {
-                    div().flex().flex_col().gap_3()
-                        .child(div().font_weight(FontWeight::BOLD).text_lg().child("Delete Entries"))
-                        .child(div().text_sm().child(format!("Are you sure you want to delete {} entr{}?", count, if *count == 1 { "y" } else { "ies" })))
-                        .child(div().text_sm().text_color(theme.muted).child("This action cannot be undone."))
-                        .child(h_flex().justify_end().gap_2()
-                            .child(div().px_3().py_1().rounded_md().cursor_pointer().child("Cancel")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(DeleteViewIntent::Cancel))))
-                            .child(div().px_3().py_1().rounded_md().bg(theme.error).cursor_pointer().child("Delete")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(DeleteViewIntent::Confirm)))))
-                }
-                DeletePhase::Processing { current, total, message } => {
-                    let pct = if *total > 0 { (*current as f64 / *total as f64 * 100.0) as u32 } else { 0 };
-                    div().flex().flex_col().gap_3()
-                        .child(div().font_weight(FontWeight::BOLD).child("Deleting..."))
-                        .child(div().text_sm().child(message.clone()))
-                        .child(div().flex().flex_row().gap_2().items_center()
-                            .child(div().flex_1().h(px(20.)).bg(theme.surface).rounded_md().overflow_hidden()
-                                .child(div().h_full().bg(theme.primary).rounded_md().w(px(pct as f32 * 4.0))))
-                            .child(div().text_sm().child(format!("{}%", pct))))
-                }
-                DeletePhase::Complete => {
-                    div().flex().flex_col().gap_3()
-                        .child(div().font_weight(FontWeight::BOLD).child("Delete Complete"))
-                        .child(div().text_sm().child("Selected entries have been deleted."))
-                        .child(h_flex().justify_end()
-                            .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Close")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(DeleteViewIntent::Close)))))
-                }
-                DeletePhase::Error(msg) => {
-                    div().flex().flex_col().gap_3()
-                        .child(div().font_weight(FontWeight::BOLD).text_color(theme.error).child("Error"))
+        v_flex()
+            .size_full()
+            .gap(px(12.))
+            .child(
+                DialogHeader::new()
+                    .child(DialogTitle::new().child("Delete Entries")),
+            )
+            .child(
+                DialogContent::new().child(match &self.phase {
+                    DeletePhase::Idle { count } => v_flex()
+                        .h_full()
+                        .gap_3()
+                        .child(DialogDescription::new().child(format!(
+                            "Are you sure you want to delete {} entr{}?",
+                            count,
+                            if *count == 1 { "y" } else { "ies" }
+                        )))
+                        .child(
+                            DialogDescription::new()
+                                .child("This action cannot be undone."),
+                        )
+                        .into_any_element(),
+                    DeletePhase::Processing { current, total, message } => {
+                        let pct = if *total > 0 {
+                            (*current as f64 / *total as f64 * 100.0) as f32
+                        } else {
+                            0.0
+                        };
+                        v_flex()
+                            .h_full()
+                            .gap_2()
+                            .child(div().text_sm().child(message.clone()))
+                            .child(Progress::new("delete-progress").value(pct))
+                            .child(div().text_sm().child(format!("{}/{}", current, total)))
+                            .into_any_element()
+                    }
+                    DeletePhase::Complete => v_flex()
+                        .h_full()
+                        .gap_3()
+                        .child(
+                            DialogDescription::new()
+                                .child("Selected entries have been deleted."),
+                        )
+                        .into_any_element(),
+                    DeletePhase::Error(msg) => v_flex()
+                        .h_full()
+                        .gap_3()
                         .child(div().text_sm().child(msg.clone()))
-                        .child(h_flex().justify_end()
-                            .child(div().px_3().py_1().rounded_md().bg(theme.primary).cursor_pointer().child("Close")
-                                .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _window, cx| cx.emit(DeleteViewIntent::Close)))))
-                }
-            })
+                        .into_any_element(),
+                }),
+            )
+            .child(DialogFooter::new().justify_end().gap_2().child(match &self.phase {
+                DeletePhase::Idle { .. } => h_flex()
+                    .gap_2()
+                    .child(
+                        Button::new("cancel")
+                            .label("Cancel")
+                            .on_click({
+                                let h = handle.clone();
+                                move |_, _, cx| h.update(cx, |_, cx| cx.emit(DeleteViewIntent::Cancel))
+                            }),
+                    )
+                    .child(
+                        Button::new("delete")
+                            .label("Delete")
+                            .danger()
+                            .on_click({
+                                let h = handle.clone();
+                                move |_, _, cx| h.update(cx, |_, cx| cx.emit(DeleteViewIntent::Confirm))
+                            }),
+                    )
+                    .into_any_element(),
+                DeletePhase::Processing { .. } => Button::new("cancel-processing")
+                    .label("Cancel")
+                    .on_click({
+                        let h = handle.clone();
+                        move |_, _, cx| h.update(cx, |_, cx| cx.emit(DeleteViewIntent::Cancel))
+                    })
+                    .into_any_element(),
+                DeletePhase::Complete | DeletePhase::Error(_) => Button::new("close")
+                    .label("Close")
+                    .primary()
+                    .on_click({
+                        let h = handle.clone();
+                        move |_, _, cx| h.update(cx, |_, cx| cx.emit(DeleteViewIntent::Close))
+                    })
+                    .into_any_element(),
+            }))
     }
 }
