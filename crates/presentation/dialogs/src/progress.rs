@@ -1,19 +1,19 @@
 use bit7z_domain::repository::ProgressUpdate;
 use bit7z_infra_progress::ProgressReceiver;
-use crossbeam_channel::{TryRecvError, Receiver};
-use gpui::*;
-use gpui::prelude::FluentBuilder;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::progress::Progress;
-use gpui_component::{h_flex, v_flex, Sizable};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use humansize::{format_size, BINARY};
 use bit7z_pres_components::window_dialog::{
     open_window_dialog_async, CloseAction, DialogContent, DialogHeader, DialogTitle,
     WindowDialogOptions,
 };
-
+use crossbeam_channel::{Receiver, TryRecvError};
+use gpui::prelude::FluentBuilder;
+use gpui::*;
+use gpui_component::button::Button;
+use gpui_component::dialog::{DialogClose, DialogFooter};
+use gpui_component::progress::Progress;
+use gpui_component::{h_flex, v_flex, Disableable, Sizable};
+use humansize::{format_size, BINARY};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 pub struct ProgressDialog {
     pub title: String,
     pub message: String,
@@ -21,10 +21,11 @@ pub struct ProgressDialog {
     pub total: u64,
     pub file_current: u64,
     pub file_total: u64,
-    pub is_complete: bool,
+    pub is_all_complete: bool,
+    pub is_cancel: bool,
     pub error: Option<String>,
     rx: Receiver<ProgressUpdate>,
-    cancel: Option<Arc<AtomicBool>>,
+    canceled: Option<Arc<AtomicBool>>,
     paused: Option<Arc<AtomicBool>>,
     is_paused: bool,
 }
@@ -38,10 +39,11 @@ impl ProgressDialog {
             total: 1,
             file_current: 0,
             file_total: 0,
-            is_complete: false,
+            is_all_complete: false,
+            is_cancel: false,
             error: None,
             rx,
-            cancel: None,
+            canceled: None,
             paused: None,
             is_paused: false,
         }
@@ -51,7 +53,7 @@ impl ProgressDialog {
         cx: &mut AsyncApp,
         title: String,
         rx: ProgressReceiver,
-        cancel: Option<Arc<AtomicBool>>,
+        canceled: Option<Arc<AtomicBool>>,
         paused: Option<Arc<AtomicBool>>,
     ) {
         open_window_dialog_async(
@@ -68,9 +70,12 @@ impl ProgressDialog {
                 window_background: WindowBackgroundAppearance::Opaque,
             },
             move |_window, cx| {
-                let mut dlg = cx.new(|_cx| ProgressDialog::new(title, rx));
-                if let Some(c) = cancel {
-                    dlg.update(cx, |d, _| d.cancel = Some(c));
+                let dlg = cx.new(|_cx| ProgressDialog::new(title, rx));
+                if let Some(c) = canceled {
+                    dlg.update(cx, |d, _| {
+                        d.is_cancel = true;
+                        d.canceled = Some(c)
+                    });
                 }
                 if let Some(p) = paused {
                     dlg.update(cx, |d, _| d.paused = Some(p));
@@ -85,7 +90,7 @@ impl ProgressDialog {
                         let done = poll.update(cx, |d, cx| {
                             d.poll_updates();
                             cx.notify();
-                            d.is_complete
+                            d.is_all_complete
                         });
                         if done {
                             break;
@@ -106,8 +111,9 @@ impl ProgressDialog {
     }
 
     fn do_cancel(&mut self) {
-        if let Some(ref cancel) = self.cancel {
-            cancel.store(true, Ordering::Relaxed);
+        self.is_cancel = true;
+        if let Some(ref canceled) = self.canceled {
+            canceled.store(true, Ordering::Relaxed);
         }
     }
 
@@ -128,12 +134,12 @@ impl ProgressDialog {
                     });
                     if let Some(ref err) = update.error {
                         self.error = Some(err.clone());
-                        self.is_complete = true;
+                        self.is_all_complete = true;
                     }
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    self.is_complete = true;
+                    self.is_all_complete = true;
                     break;
                 }
             }
@@ -155,7 +161,7 @@ impl Render for ProgressDialog {
         } else {
             0.0
         };
-        let msg = if self.is_complete {
+        let msg = if self.is_all_complete {
             if self.error.is_some() {
                 "Failed".to_string()
             } else {
@@ -168,76 +174,74 @@ impl Render for ProgressDialog {
         v_flex()
             .size_full()
             .gap(px(8.))
-            .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child(self.title.clone())),
-            )
+            .child(DialogHeader::new().child(DialogTitle::new().child(self.title.clone())))
             .child(
                 DialogContent::new().child(
                     v_flex()
                         .gap_3()
                         .child(
-                            v_flex()
-                                .gap_1()
-                                .child(
-                                    h_flex()
-                                        .justify_between()
-                                        .child(div().text_sm().child(msg))
-                                        .child(div().text_sm().child(format!("{:.0}%", total_pct))),
-                                )
-                                .child(Progress::new("total").value(total_pct)),
+                            h_flex()
+                                .justify_between()
+                                .child(div().text_sm().child(msg))
+                                .child(div().text_sm().child(format!("{:.0}%", total_pct))),
                         )
-                        .when(!self.is_complete, |el| {
-                            el.child(
-                                v_flex()
-                                    .gap_1()
-                                    .child(
-                                        h_flex()
-                                            .justify_between()
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .child(format!("File: {} / {}", format_size(self.file_current, BINARY), format_size(self.file_total, BINARY))),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .child(format!("{:.0}%", file_pct)),
-                                            ),
-                                    )
-                                    .child(Progress::new("file").value(file_pct).small()),
-                            )
-                        })
-                        .when(!self.is_complete && self.cancel.is_some(), |el| {
-                            el.child(
-                                h_flex()
-                                    .gap_2()
-                                    .justify_end()
-                                    .child(
-                                        Button::new("pause")
-                                            .label(if self.is_paused { "Resume" } else { "Pause" })
-                                            .on_click(
-                                                cx.listener(|this, _, _, _| this.toggle_pause()),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new("cancel")
-                                            .label("Cancel")
-                                            .on_click(
-                                                cx.listener(|this, _, _, _| this.do_cancel()),
-                                            ),
-                                    ),
-                            )
-                        })
-                        .when(self.error.is_some(), |el| {
-                            el.child(
-                                div()
-                                    .text_sm()
-                                    .child(self.error.clone().unwrap_or_default()),
-                            )
-                        }),
+                        .child(Progress::new("total").value(total_pct).w_full())
+                        .child(
+                            h_flex()
+                                .justify_between()
+                                .child(div().text_sm().child(format!(
+                                    "File: {} / {}",
+                                    format_size(self.file_current, BINARY),
+                                    format_size(self.file_total, BINARY)
+                                )))
+                                .child(div().text_sm().child(format!("{:.0}%", file_pct))),
+                        )
+                        .child(Progress::new("file").value(file_pct).small()),
                 ),
             )
+            .child(
+                DialogFooter::new()
+                    // 已完成 已取消 -> do nothing
+                    // 已完成 未取消 -> show finish, hide pause
+                    // 未完成 未取消 -> show and progress
+                    // 未完成 已取消 -> show and all disable
+                    // .when(!self.is_complete && self.cancel.is_some(), |el| {
+                        .child(
+                            Button::new("pause")
+                                .disabled(self.is_all_complete || self.is_cancel)
+                                .label(if self.is_paused { "Resume" } else { "Pause" })
+                                .on_click(cx.listener(|this, _, _, _| this.toggle_pause())),
+                        )
+                    // })
+                    .child(
+                        DialogClose::new()
+                            .when_else(!self.is_all_complete && !self.is_cancel, |el| {
+                                el
+                                .child(
+                                    Button::new("background")
+                                        .label("Background")
+                                        .on_click(cx.listener(|_, _, window, _| {
+                                            window.remove_window();
+                                        })),
+                                )
+                                .child(
+                                    Button::new("cancel")
+                                        .label("Cancel")
+                                        .disabled(self.is_cancel)
+                                        .on_click(cx.listener(|this, _, _, _| this.do_cancel())),
+                                )
+                            }, |el| {
+                                el.child(
+                                    Button::new("finish")
+                                        .label("Finish")
+                                        // .disabled(!self.is_complete || self.canceled.is_none())
+                                        .on_click(cx.listener(|_, _click_event, window, cx| {
+                                            window.remove_window()
+                                        })),
+                                )
+                            }),
+                    )
 
+            )
     }
 }
