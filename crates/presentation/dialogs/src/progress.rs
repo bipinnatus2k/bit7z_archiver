@@ -1,5 +1,6 @@
 use bit7z_domain::repository::ProgressUpdate;
 use bit7z_infra_progress::ProgressReceiver;
+use bit7z_infra_tray::{TrayCommand, TrayGlobal, TrayManager};
 use bit7z_pres_components::window_dialog::{
     open_window_dialog_async, CloseAction, DialogContent, DialogHeader, DialogTitle,
     WindowDialogOptions,
@@ -14,6 +15,7 @@ use gpui_component::{h_flex, v_flex, Disableable, Sizable};
 use humansize::{format_size, BINARY};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
 pub struct ProgressDialog {
     pub title: String,
     pub message: String,
@@ -28,6 +30,8 @@ pub struct ProgressDialog {
     canceled: Option<Arc<AtomicBool>>,
     paused: Option<Arc<AtomicBool>>,
     is_paused: bool,
+    is_background: bool,
+    tray: Option<Arc<TrayManager>>,
 }
 
 impl ProgressDialog {
@@ -46,6 +50,8 @@ impl ProgressDialog {
             canceled: None,
             paused: None,
             is_paused: false,
+            is_background: false,
+            tray: None,
         }
     }
 
@@ -89,10 +95,12 @@ impl ProgressDialog {
                         .await;
                         let done = poll.update(cx, |d, cx| {
                             d.poll_updates();
+                            d.update_tray();
                             cx.notify();
                             d.is_all_complete
                         });
                         if done {
+                            let _ = poll.update(cx, |d, _| d.finalize_tray());
                             break;
                         }
                     }
@@ -114,6 +122,34 @@ impl ProgressDialog {
         self.is_cancel = true;
         if let Some(ref canceled) = self.canceled {
             canceled.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn send_to_background(&mut self, cx: &mut App) {
+        self.tray = cx.try_global::<TrayGlobal>().map(|g| g.0.clone());
+        self.is_background = true;
+    }
+
+    fn update_tray(&self) {
+        if !self.is_background {
+            return;
+        }
+        if let Some(ref tray) = self.tray {
+            let pct = if self.total > 0 {
+                (self.current as f64 / self.total as f64 * 100.0) as f32
+            } else {
+                0.0
+            };
+            tray.send(TrayCommand::UpdateProgress {
+                message: self.message.clone(),
+                percent: pct,
+            });
+        }
+    }
+
+    fn finalize_tray(&self) {
+        if let Some(ref tray) = self.tray {
+            tray.send(TrayCommand::Idle);
         }
     }
 
@@ -201,30 +237,25 @@ impl Render for ProgressDialog {
             )
             .child(
                 DialogFooter::new()
-                    // 已完成 已取消 -> do nothing
-                    // 已完成 未取消 -> show finish, hide pause
-                    // 未完成 未取消 -> show and progress
-                    // 未完成 已取消 -> show and all disable
-                    // .when(!self.is_complete && self.cancel.is_some(), |el| {
-                        .child(
-                            Button::new("pause")
-                                .disabled(self.is_all_complete || self.is_cancel)
-                                .label(if self.is_paused { "Resume" } else { "Pause" })
-                                .on_click(cx.listener(|this, _, _, _| this.toggle_pause())),
-                        )
-                    // })
+                    .child(
+                        Button::new("pause")
+                            .disabled(self.is_all_complete || self.is_cancel)
+                            .label(if self.is_paused { "Resume" } else { "Pause" })
+                            .on_click(cx.listener(|this, _, _, _| this.toggle_pause())),
+                    )
+                    .child(
+                        Button::new("background")
+                            .label("Background")
+                            .disabled(self.is_all_complete || self.is_cancel || self.is_background)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.send_to_background(cx);
+                                window.remove_window();
+                            })),
+                    )
                     .child(
                         DialogClose::new()
                             .when_else(!self.is_all_complete && !self.is_cancel, |el| {
-                                el
-                                .child(
-                                    Button::new("background")
-                                        .label("Background")
-                                        .on_click(cx.listener(|_, _, window, _| {
-                                            window.remove_window();
-                                        })),
-                                )
-                                .child(
+                                el.child(
                                     Button::new("cancel")
                                         .label("Cancel")
                                         .disabled(self.is_cancel)
@@ -234,14 +265,12 @@ impl Render for ProgressDialog {
                                 el.child(
                                     Button::new("finish")
                                         .label("Finish")
-                                        // .disabled(!self.is_complete || self.canceled.is_none())
-                                        .on_click(cx.listener(|_, _click_event, window, cx| {
+                                        .on_click(cx.listener(|_, _click_event, window, _| {
                                             window.remove_window()
                                         })),
                                 )
                             }),
-                    )
-
+                    ),
             )
     }
 }
