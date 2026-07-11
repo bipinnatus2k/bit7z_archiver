@@ -72,13 +72,30 @@ impl DeleteContent {
         let progress_title = format!("Deleting {} entries...", indices.len());
 
         cx.spawn(async move |_this, cx| {
-            // Open the progress window first, then run the delete task.
+            // Open the progress window (it will poll rx).
             crate::progress::ProgressDialog::open(cx, progress_title, rx, Some(cancel_clone), None);
 
-            let notifier: Option<Arc<dyn ProgressNotifier>> =
-                Some(Arc::new(bit7z_infra_progress::CrossbeamNotifier(tx)));
-            let uc = DeleteEntriesUseCase::new(repo);
-            let _ = uc.execute(&mut handle, &indices, notifier);
+            // Run the blocking delete on a background thread so the
+            // ProgressDialog can receive UI events.
+            let (result_tx, result_rx) = crossbeam_channel::unbounded::<()>();
+            cx.background_spawn(async move {
+                let notifier: Option<Arc<dyn ProgressNotifier>> =
+                    Some(Arc::new(bit7z_infra_progress::CrossbeamNotifier(tx)));
+                let uc = DeleteEntriesUseCase::new(repo);
+                let _ = uc.execute(&mut handle, &indices, notifier);
+                let _ = result_tx.send(());
+            })
+            .detach();
+
+            loop {
+                match result_rx.try_recv() {
+                    Ok(()) => break,
+                    Err(crossbeam_channel::TryRecvError::Empty) => {
+                        cx.background_spawn(std::future::ready(())).await;
+                    }
+                    Err(crossbeam_channel::TryRecvError::Disconnected) => break,
+                }
+            }
         })
         .detach();
     }
