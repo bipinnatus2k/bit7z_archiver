@@ -6,6 +6,7 @@ members = [
     "crates/application/checksum",
     "crates/application/test",
     "crates/application/preview",
+    "crates/application/fs",
     "crates/ffi",
     "crates/infrastructure/bit7z",
     "crates/infrastructure/persistence",
@@ -14,10 +15,10 @@ members = [
     "crates/infrastructure/tray",
     "crates/infrastructure/events",
     "crates/infrastructure/progress",
-    "crates/presentation/theme",
     "crates/presentation/view-models",
     "crates/presentation/components",
     "crates/presentation/views",
+    "crates/presentation/settings",
     "crates/presentation/dialogs",
     "crates/runtime/globals",
     "crates/runtime/ipc",
@@ -36,8 +37,165 @@ license = "MIT"
 [workspace.dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", features = ["runtime_shaders"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component" }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
+gpui-component = { git = "https://github.com/longbridge/gpui-component"  }
+gpui-macros = { git = "https://github.com/longbridge/gpui-component" }
+gpui-component-assets = { path = "crates/assets" }
+anyhow = "1"
+log = "0.4"
+reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662463bda39148ba154100dd44d3fba5873a4", default-features = false, features = [
+    "charset",
+    "http2",
+    "macos-system-configuration",
+    "multipart",
+    "rustls-tls-native-roots",
+    "socks",
+    "stream",
+], package = "zed-reqwest", version = "0.12.15-zed" }
+chrono = { version = "0.4", features = ["serde"] }
+dunce = "1.0"
+futures = "0.3.32"
+futures-concurrency = "7.7.1"
+futures-lite = "1.13"
+futures-util = "0.3.32"
+ignore = "0.4.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smallvec = { version = "1", features = ["union", "const_new"] }
+smol = "2.0"
+thiserror = "2"
+tempfile = "3"
+time = { version = "0.3", features = [
+    "macros",
+    "parsing",
+    "serde",
+    "serde-well-known",
+    "formatting",
+    "local-offset",
+] }
+crossbeam-channel = "0.5"
+humansize = "2"
+ashpd = { version = "0.13", default-features = false, features = [
+    "async-io",
+    "notification",
+    "open_uri",
+    "file_chooser",
+    "settings",
+    "trash"
+] }
+parking_lot = "0.12.1"
+libc = "0.2"
+strum = { version = "0.26", features = ["derive"] }
+async-channel = "2.5.0"
+##async-compat = "0.2.1"
+##async-compression = { version = "0.4", features = ["bzip2", "gzip", "futures-io"] }
+##async-dispatcher = "0.1"
+##async-fs = "2.1"
+##async-io = "2.6.0"
+##async-lock = "3.4.2"
+##async-pipe = { git = "https://github.com/zed-industries/async-pipe-rs", rev = "82d00a04211cf4e1236029aa03e6b6ce2a74c553" }
+##async-recursion = "1.0.0"
+#async-tar = "0.5.1"
+##async-task = "4.7"
+async-trait = "0.1"
+#async-tungstenite = "0.31.0"
+#async-process = "2.5.0"
+#async_zip = { version = "0.0.18", features = ["deflate", "deflate64"] }
+#collections
+#futures
+#ignore =
+#parking_lot =
+#paths
+#rope =
+#smol
+#telemetry
+#tempfile
+#text.workspace = true
+#time.workspace = true
+#util.workspace = true
+#
+#windows.workspace = true
+#dunce.workspace = true
+
+[patch."https://github.com/longbridge/gpui-component"]
+gpui-component-assets = { path = "crates/assets" }
+
+[workspace.dependencies.windows]
+version = "0.61"
+features = [
+    "Foundation_Numerics",
+    "Globalization_DateTimeFormatting",
+    "Storage_Search",
+    "Storage_Streams",
+    "System_Threading",
+    "UI_ViewManagement",
+    "Wdk_System_SystemServices",
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_DirectComposition",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_DirectManipulation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
+    "Win32_Graphics_Hlsl",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Security_Credentials",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_DataExchange",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Performance",
+    "Win32_System_Pipes",
+    "Win32_System_RestartManager",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_WinRT",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_Ime",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Input_Pointer",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Media",
+]
+
+[workspace.lints.clippy]
+almost_complete_range = "allow"
+arc_with_non_send_sync = "allow"
+borrowed_box = "allow"
+#dbg_macro = "deny"
+let_underscore_future = "allow"
+manual_is_multiple_of = "allow"
+map_entry = "allow"
+module_inception = "allow"
+non_canonical_partial_ord_impl = "allow"
+reversed_empty_ranges = "allow"
+single_range_in_vec_init = "allow"
+style = { level = "allow", priority = -1 }
+todo = "deny"
+type_complexity = "allow"
+# Temporarily allow this until we can migrate to the new APIs.
+# https://github.com/longbridge/gpui-component/pull/2149
+useless_conversion = "allow"
 
 [profile.dev]
 debug = 1
