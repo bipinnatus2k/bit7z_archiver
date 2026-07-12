@@ -5,8 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-bit7z-domain = { path = "../../domain" }
-thiserror = "2"
+thiserror = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"

@@ -12,8 +12,8 @@ bit7z-infra-platform = { path = "../platform" }
 bit7z-infra-progress = { path = "../progress" }
 autocxx = "0.30"
 crossbeam-channel = "0.5"
-serde_json = "1"
+serde_json = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
-humansize = "2"
+humansize = { workspace = true }
 directories = "6"
 
