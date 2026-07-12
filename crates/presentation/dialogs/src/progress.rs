@@ -246,7 +246,7 @@ impl Render for ProgressDialog {
                     .child(
                         Button::new("background")
                             .label("Background")
-                            .disabled(self.is_all_complete || self.is_cancel || self.is_background)
+                            // .disabled(self.is_all_complete || self.is_cancel || self.is_background)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.send_to_background(cx);
                                 window.remove_window();

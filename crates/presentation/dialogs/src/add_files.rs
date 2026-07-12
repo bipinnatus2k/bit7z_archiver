@@ -1,5 +1,5 @@
 use bit7z_domain::archive::*;
-use bit7z_pres_theme::Theme;
+use gpui_component::ActiveTheme;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
@@ -31,7 +31,7 @@ pub struct AddFilesDialog {
     password_input: Option<Entity<InputState>>,
     password_confirm_input: Option<Entity<InputState>>,
     archive: Option<ArchiveHandle>,
-    repo: Option<std::sync::Arc<dyn bit7z_domain::repository::ArchiveRepository>>,
+    repo: Option<Arc<dyn bit7z_domain::repository::ArchiveRepository>>,
     is_solid: bool,
 }
 
@@ -66,7 +66,7 @@ impl AddFilesDialog {
         cx: &mut Context<Self>,
         format: ArchiveFormat,
         archive: Option<ArchiveHandle>,
-        repo: Option<std::sync::Arc<dyn bit7z_domain::repository::ArchiveRepository>>,
+        repo: Option<Arc<dyn bit7z_domain::repository::ArchiveRepository>>,
         is_solid: bool,
     ) -> Self {
         let prefs = &cx.global::<bit7z_rt_globals::PreferencesGlobal>().0;
@@ -197,9 +197,9 @@ impl Render for AddFilesDialog {
                                 .p_3()
                                 .rounded_md()
                                 .border_1()
-                                .border_color(cx.global::<Theme>().error)
-                                .bg(cx.global::<Theme>().error.alpha(0.1))
-                                .child(div().text_sm().text_color(cx.global::<Theme>().error).child(
+                                .border_color(cx.theme().danger)
+                                .bg(cx.theme().danger.alpha(0.1))
+                                .child(div().text_sm().text_color(cx.theme().danger).child(
                                     "This archive uses solid compression. Files cannot be added to solid archives."
                                 ))
                         )
@@ -240,7 +240,7 @@ impl Render for AddFilesDialog {
                     .child(
                         div()
                             .border_1()
-                            .border_color(cx.global::<Theme>().border)
+                            .border_color(cx.theme().border)
                             .rounded_md()
                             .h(px(80.))
                             .p_2()
@@ -248,7 +248,7 @@ impl Render for AddFilesDialog {
                             .child(
                                 div().child(
                                     if self.file_list.is_empty() {
-                                        div().text_color(cx.global::<Theme>().muted).text_sm().child("No files added").into_any()
+                                        div().text_color(cx.theme().muted).text_sm().child("No files added").into_any()
                                     } else {
                                         v_flex().gap_px().children(
                                             self.file_list.iter().map(|p| {
@@ -313,7 +313,7 @@ impl Render for AddFilesDialog {
             .when(self.show_advanced, |el| {
                 el
                 .child(field().label("Threads").child(
-                    div().px_2().py_1().border_1().border_color(cx.global::<Theme>().border).rounded_md().w(px(80.)).child(thread_count_display)
+                    div().px_2().py_1().border_1().border_color(cx.theme().border).rounded_md().w(px(80.)).child(thread_count_display)
                 ))
                 .child(field().label("Store timestamps").child(
                     Button::new("toggle-timestamps").label(if self.store_timestamps { "Yes" } else { "No" }).on_click(cx.listener(|this, _, _, cx| { this.store_timestamps = !this.store_timestamps; cx.notify(); }))
@@ -361,3 +361,5 @@ impl Render for AddFilesDialog {
             )
     }
 }
+
+

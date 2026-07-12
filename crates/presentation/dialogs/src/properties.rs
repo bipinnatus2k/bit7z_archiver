@@ -4,6 +4,7 @@ use gpui::*;
 use gpui::prelude::FluentBuilder;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::description_list::{DescriptionItem, DescriptionList};
+use gpui_component::dialog::DialogClose;
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::v_flex;
 use gpui_component::Sizable;
@@ -65,9 +66,9 @@ fn dialog_body(title: SharedString, content: impl IntoElement) -> impl IntoEleme
         .gap(px(12.))
         .child(DialogHeader::new().child(DialogTitle::new().child(title)))
         .child(DialogContent::new().child(content))
-        .child(DialogFooter::new().justify_end().child(
+        .child(DialogFooter::new().justify_end().child(DialogClose::new().child(
             Button::new("close").label("Close").primary().on_click(|_, window, _| window.remove_window()),
-        ))
+        )))
 }
 
 // ---------------------------------------------------------------------------

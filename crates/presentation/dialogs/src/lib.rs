@@ -1,7 +1,6 @@
 pub mod about;
 pub mod add_files;
 pub mod checksum;
-pub mod checksum_result;
 pub mod create;
 pub mod delete;
 pub mod extract;

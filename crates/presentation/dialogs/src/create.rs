@@ -1,5 +1,5 @@
 use bit7z_domain::archive::*;
-use bit7z_pres_theme::Theme;
+use gpui_component::ActiveTheme;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
@@ -281,7 +281,7 @@ impl CreateArchiveDialog {
 
 impl Render for CreateArchiveDialog {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.global::<Theme>();
+        let theme = cx.theme();
         v_flex()
             .gap_3().p_4().w(relative(1.))
             .child(div().font_weight(FontWeight::BOLD).text_lg().child("Create Archive"))
@@ -523,3 +523,4 @@ impl Render for CreateArchiveDialog {
             )
     }
 }
+

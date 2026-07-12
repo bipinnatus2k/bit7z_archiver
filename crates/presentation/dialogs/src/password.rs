@@ -1,4 +1,4 @@
-use bit7z_pres_theme::Theme;
+use gpui_component::ActiveTheme;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
@@ -48,7 +48,7 @@ impl PasswordDialog {
         });
         Self {
             archive_name,
-            password: Password::new(""),
+            password: Password::empty(),
             input_state,
             error: None,
             _subscription: subscription,
@@ -109,7 +109,7 @@ impl PasswordDialog {
 
 impl Render for PasswordDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.global::<Theme>();
+        let theme = cx.theme();
         let has_error = self.error.is_some();
         let err = self.error.clone();
 
@@ -150,7 +150,7 @@ impl Render for PasswordDialog {
                     div()
                         .text_sm()
                         .mt_1()
-                        .text_color(theme.error)
+                        .text_color(theme.danger)
                         .child(err.unwrap_or_default()),
                 )
             })
@@ -177,3 +177,5 @@ impl Render for PasswordDialog {
             )
     }
 }
+
+

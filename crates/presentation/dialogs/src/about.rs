@@ -36,7 +36,7 @@ impl Render for AboutContent {
                         )
                         .child(
                             DialogDescription::new()
-                                .child(format!("{}", env!("CARGO_PKG_DESCRIPTION"))),
+                                .child(env!("CARGO_PKG_DESCRIPTION").to_string()),
                         )
                         .child(
                             DialogDescription::new()
