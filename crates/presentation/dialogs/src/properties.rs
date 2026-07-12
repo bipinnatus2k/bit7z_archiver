@@ -4,7 +4,8 @@ use gpui::*;
 use gpui::prelude::FluentBuilder;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::description_list::{DescriptionItem, DescriptionList};
-use gpui_component::dialog::DialogClose;
+use gpui_component::list::{List, ListDelegate, ListItem, ListState};
+use gpui_component::IndexPath;
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::v_flex;
 use gpui_component::Sizable;
@@ -68,9 +69,9 @@ fn dialog_body(title: SharedString, content: impl IntoElement) -> impl IntoEleme
         .gap(px(12.))
         .child(DialogHeader::new().child(DialogTitle::new().child(title)))
         .child(DialogContent::new().child(content))
-        .child(DialogFooter::new().justify_end().child(DialogClose::new().child(
+        .child(DialogFooter::new().justify_end().child(
             Button::new("close").label("Close").primary().on_click(|_, window, _| window.remove_window()),
-        )))
+        ))
 }
 
 // ---------------------------------------------------------------------------
@@ -164,41 +165,78 @@ fn open_single_entry_window(entry: ArchiveEntry, cx: &mut AsyncApp) {
 // Multi-entry properties
 // ---------------------------------------------------------------------------
 
-struct MultiEntryContent {
+struct EntriesDelegate {
     entries: Vec<ArchiveEntry>,
-    show_entry_list: bool,
 }
 
-impl MultiEntryContent {
-    fn new(entries: Vec<ArchiveEntry>) -> Self {
-        Self { entries, show_entry_list: false }
+impl ListDelegate for EntriesDelegate {
+    type Item = ListItem;
+
+    fn items_count(&self, _section: usize, _cx: &gpui::App) -> usize {
+        self.entries.len()
+    }
+
+    fn render_item(
+        &mut self,
+        ix: IndexPath,
+        _window: &mut Window,
+        _cx: &mut gpui::Context<ListState<Self>>,
+    ) -> Option<Self::Item> {
+        self.entries.get(ix.row).map(|e| {
+            ListItem::new(ix).child(
+                gpui_component::h_flex()
+                    .gap_2()
+                    .w_full()
+                    .child(div().w(px(200.)).text_xs().overflow_hidden().child(e.path.clone()))
+                    .child(div().w(px(80.)).text_xs().child(format_size(e.size, BINARY)))
+                    .child(div().w(px(80.)).text_xs().child(format_size(e.compressed_size, BINARY))),
+            )
+        })
+    }
+
+    fn set_selected_index(
+        &mut self,
+        _ix: Option<IndexPath>,
+        _window: &mut Window,
+        _cx: &mut gpui::Context<ListState<Self>>,
+    ) {
     }
 }
 
 fn open_multi_entry_window(entries: Vec<ArchiveEntry>, cx: &mut AsyncApp) {
-    let title = SharedString::from(format!("{} Entries Properties", entries.len()));
-    open_window_dialog_async(cx, opts(title.clone()), move |_, cx| {
-        cx.new(move |_| MultiEntryContent::new(entries))
+    let total_size: u64 = entries.iter().map(|e| e.size).sum();
+    let total_packed: u64 = entries.iter().map(|e| e.compressed_size).sum();
+    let entry_count = entries.len();
+    let title = SharedString::from(format!("{} Entries Properties", entry_count));
+
+    open_window_dialog_async(cx, opts(title), move |window, cx| {
+        let delegate = EntriesDelegate { entries };
+        let list_state = cx.new(|cx| ListState::new(delegate, window, cx));
+        cx.new(move |_| MultiEntryContent { list_state, total_size, total_packed, entry_count, show_entry_list: false })
     });
+}
+
+struct MultiEntryContent {
+    list_state: Entity<ListState<EntriesDelegate>>,
+    total_size: u64,
+    total_packed: u64,
+    entry_count: usize,
+    show_entry_list: bool,
 }
 
 impl Render for MultiEntryContent {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let total_size: u64 = self.entries.iter().map(|e| e.size).sum();
-        let total_packed: u64 = self.entries.iter().map(|e| e.compressed_size).sum();
-        let entry_count = self.entries.len();
-
         let totals = DescriptionList::horizontal().small().children([
-            DescriptionItem::new("Total size").value(format_size(total_size, BINARY)),
-            DescriptionItem::new("Total packed").value(format_size(total_packed, BINARY)),
-            DescriptionItem::new("Files").value(format!("{}", entry_count)),
+            DescriptionItem::new("Total size").value(format_size(self.total_size, BINARY)),
+            DescriptionItem::new("Total packed").value(format_size(self.total_packed, BINARY)),
+            DescriptionItem::new("Files").value(format!("{}", self.entry_count)),
         ]);
 
         let toggle = Button::new("toggle-list")
             .label(if self.show_entry_list {
-                format!("\u{25bc} Entries ({})", entry_count)
+                format!("\u{25bc} Entries ({})", self.entry_count)
             } else {
-                format!("\u{25b6} Entries ({})", entry_count)
+                format!("\u{25b6} Entries ({})", self.entry_count)
             })
             .ghost()
             .on_click(cx.listener(|this, _, _, cx| {
@@ -207,24 +245,17 @@ impl Render for MultiEntryContent {
             }));
 
         dialog_body(
-            SharedString::from(format!("{} Entries Properties", entry_count)),
+            SharedString::from(format!("{} Entries Properties", self.entry_count)),
             v_flex()
                 .gap_3()
                 .child(totals)
                 .child(toggle)
                 .when(self.show_entry_list, |body| {
-                    let mut list = v_flex().gap_1()
-                        .child(gpui_component::h_flex().gap_2().pb_1()
-                            .child(div().w(px(200.)).text_xs().font_weight(FontWeight::BOLD).child("Name"))
-                            .child(div().w(px(80.)).text_xs().font_weight(FontWeight::BOLD).child("Size"))
-                            .child(div().w(px(80.)).text_xs().font_weight(FontWeight::BOLD).child("Packed")));
-                    for e in &self.entries {
-                        list = list.child(gpui_component::h_flex().gap_2()
-                            .child(div().w(px(200.)).text_xs().overflow_hidden().child(e.path.clone()))
-                            .child(div().w(px(80.)).text_xs().child(format_size(e.size, BINARY)))
-                            .child(div().w(px(80.)).text_xs().child(format_size(e.compressed_size, BINARY))));
-                    }
-                    body.child(list)
+                    body.child(gpui_component::h_flex().gap_2().pb_1()
+                        .child(div().w(px(200.)).text_xs().font_weight(FontWeight::BOLD).child("Name"))
+                        .child(div().w(px(80.)).text_xs().font_weight(FontWeight::BOLD).child("Size"))
+                        .child(div().w(px(80.)).text_xs().font_weight(FontWeight::BOLD).child("Packed")))
+                        .child(List::new(&self.list_state))
                 }),
         )
     }
