@@ -43,8 +43,7 @@ fn opts(title: impl Into<SharedString>) -> WindowDialogOptions {
         min_height: None,
         kind: WindowKind::Dialog,
         close_action: CloseAction::RemoveWindow,
-        window_decorations: Some(WindowDecorations::Client),
-        window_background: WindowBackgroundAppearance::Opaque,
+        ..Default::default()
     }
 }
 
@@ -53,11 +52,14 @@ fn bool_yn(v: bool) -> &'static str {
 }
 
 fn kv_display(items: Vec<(&str, String)>, columns: usize) -> impl IntoElement {
-    div().overflow_y_scrollbar().child(
-        DescriptionList::vertical().columns(columns).small().children(
-            items.into_iter().map(|(k, v)| DescriptionItem::new(k).value(v)),
-        ),
-    )
+    div()
+        .flex_1()
+        .overflow_y_scrollbar()
+        .child(
+            DescriptionList::vertical().columns(columns).small().children(
+                items.into_iter().map(|(k, v)| DescriptionItem::new(k).value(v)),
+            ),
+        )
 }
 
 fn dialog_body(title: SharedString, content: impl IntoElement) -> impl IntoElement {

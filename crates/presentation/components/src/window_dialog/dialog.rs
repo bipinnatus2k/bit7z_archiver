@@ -52,7 +52,12 @@ impl Default for WindowDialogOptions {
             min_height: Some(px(200.)),
             kind: WindowKind::Dialog,
             close_action: CloseAction::CloseDialog,
-            window_decorations: Some(WindowDecorations::Client),
+            window_decorations: {
+                #[cfg(target_os = "linux")]
+                { Some(WindowDecorations::Client) }
+                #[cfg(not(target_os = "linux"))]
+                { None }
+            },
             window_background: WindowBackgroundAppearance::Opaque,
         }
     }
