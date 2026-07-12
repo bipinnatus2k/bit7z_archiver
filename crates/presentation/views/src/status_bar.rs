@@ -1,4 +1,3 @@
-use bit7z_pres_theme::Theme;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::separator::Separator;
@@ -31,8 +30,6 @@ impl StatusBar {
 
 impl Render for StatusBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let _theme = cx.global::<Theme>();
-
         gpui_component::status_bar::StatusBar::new()
             .child(Icon::new(IconName::GalleryVerticalEnd).xsmall())
             .child(self.status_text.clone())

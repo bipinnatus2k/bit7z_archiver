@@ -2,9 +2,9 @@ use bit7z_pres_view_models::archive_state::{LevelEntry, ViewStatus};
 use bit7z_pres_components::state_view::{empty_view, error_view, loading_view};
 use bit7z_pres_components::ext_table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};
 use bit7z_app_checksum::ChecksumAlgorithm;
-use bit7z_pres_theme::Theme;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_component::ActiveTheme;
 use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use serde::Deserialize;
@@ -296,12 +296,10 @@ impl ArchiveFileList {
 
 impl Render for ArchiveFileList {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.global::<Theme>();
-
         let base = gpui_component::v_flex()
             .w_full()
             .border_b_1()
-            .border_color(theme.border)
+            .border_color(cx.theme().border)
             .key_context("archive_file_list")
             .track_focus(&self.focus_handle);
 
@@ -342,7 +340,7 @@ impl Render for ArchiveFileList {
                 container = container
                     .child(
                         Breadcrumb::new()
-                            .bg(theme.surface)
+                            .bg(cx.theme().background)
                             .child(
                                 BreadcrumbItem::new(" \u{2190} ")
                                     .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {

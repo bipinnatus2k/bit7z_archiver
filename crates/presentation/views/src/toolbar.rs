@@ -1,4 +1,3 @@
-use bit7z_pres_theme::design::BREAKPOINT_SM;
 use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::{h_flex, Disableable, IconName};
@@ -47,7 +46,7 @@ impl Toolbar {
 impl Render for Toolbar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let window_width = window.bounds().size.width;
-        let compact = window_width < px(BREAKPOINT_SM);
+        let compact = window_width < px(640.0);
         let show_labels = !compact;
 
         let mut row = h_flex().gap_2().p_2().w_full();
