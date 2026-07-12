@@ -8,6 +8,7 @@ use gpui_component::sidebar::{
 };
 use gpui_component::{Icon, IconName, h_flex};
 use std::path::Path;
+use crate::menu::ToggleSidebar;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BrowserIntent {
@@ -52,13 +53,9 @@ impl ArchiveBrowser {
         self.recent_files = recent_files;
     }
 
-    pub fn toggle_collapsed(&mut self, cx: &mut Context<Self>) {
-        self.collapsed = !self.collapsed;
+    pub fn set_collapsed(&mut self, collapsed: bool, cx: &mut Context<Self>) {
+        self.collapsed = collapsed;
         cx.notify();
-    }
-
-    pub fn is_collapsed(&self) -> bool {
-        self.collapsed
     }
 }
 
@@ -104,7 +101,7 @@ impl Render for ArchiveBrowser {
             )
                     .child(
                     SidebarGroup::new("Fast Access").child(SidebarMenu::new()
-                        .child(SidebarMenuItem::new("Recent Files").icon(IconName::Sun)
+                        .child(SidebarMenuItem::new("Recent Files").icon(IconName::History)
                         .children(
                         self.recent_files.iter().cloned().map(|path| {
                             let h = self_handle.clone();
@@ -127,11 +124,8 @@ impl Render for ArchiveBrowser {
                 SidebarFooter::new().child(
                     SidebarToggleButton::new()
                         .collapsed(self.collapsed)
-                        .on_click({
-                            let this = self_handle.clone();
-                            move |_click_event: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                this.update(cx, |this, cx| this.toggle_collapsed(cx));
-                            }
+                        .on_click(|_, window, cx| {
+                            window.dispatch_action(Box::new(ToggleSidebar), cx);
                         }),
                 ),
             );

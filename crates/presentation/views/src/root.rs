@@ -1,5 +1,6 @@
 use bit7z_infra_events::ArchiveVmEvent;
 use bit7z_pres_view_models::archive_state::{ArchiveState, ViewStatus};
+use gpui::prelude::FluentBuilder;
 use crate::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::archive_file_list::{ArchiveFileList, FileListIntent};
 use bit7z_pres_dialogs::password::PasswordDialog;
@@ -17,7 +18,7 @@ use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use gpui_component::{v_flex, Root};
+use gpui_component::{Root, StyleSized, v_flex};
 
 pub struct RootView {
     focus_handle: FocusHandle,
@@ -30,6 +31,7 @@ pub struct RootView {
     pending_password_path: Option<String>,
     state: ArchiveState,
     controller: RootController,
+    sidebar_collapsed: bool,
 }
 
 impl EventEmitter<ArchiveVmEvent> for RootView {}
@@ -44,7 +46,7 @@ impl RootView {
         cx.new(|cx| {
             let repo = cx.global::<bit7z_rt_globals::RepoGlobal>().0.clone();
 
-            let menu = cx.new(|cx| Menu::new(true,cx));
+            let menu = cx.new(|cx| Menu::new(false, cx));
             let toolbar = cx.new(|_| Toolbar::new());
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(window, cx));
@@ -389,6 +391,7 @@ impl RootView {
                 pending_password_path: None,
                 state: ArchiveState::new(),
                 controller: RootController::new(controller_repo),
+                sidebar_collapsed: false,
             };
             if let Some(cb) = deferred_open {
                 cb(&mut root, cx);
@@ -433,9 +436,15 @@ impl RootView {
         self.toolbar
             .update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
         self.menu
-            .update(cx, |c, cx| c.set_state(is_open, has_sel, single, cx));
+            .update(cx, |c, cx| {
+                c.set_sidebar_collapsed(self.sidebar_collapsed);
+                c.set_state(is_open, has_sel, single, cx);
+            });
         self.archive_browser
-            .update(cx, |c, _| c.set_state(subdirs, vec![]));
+            .update(cx, |c, cx| {
+                c.set_collapsed(self.sidebar_collapsed, cx);
+                c.set_state(subdirs, vec![]);
+            });
         self.status_bar
             .update(cx, |c, _| c.set_status(&status_text));
     }
@@ -848,15 +857,23 @@ impl Render for RootView {
             .on_action(cx.listener(|_: &mut RootView, _: &menu::About, _window, cx| {
                 bit7z_pres_dialogs::about::AboutDialog::open(cx);
             }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::ToggleSidebar, _window, cx| {
+                this.sidebar_collapsed = !this.sidebar_collapsed;
+                this.sync_children(cx);
+                cx.notify();
+            }))
             .child(self.menu.clone())
             .child(self.toolbar.clone())
             .child(div().flex_1().child(
                 h_resizable("main-hz")
                     .child(
                         resizable_panel()
-                            .size(px(255.))
-                            .size_range(px(200.)..px(320.))
-                            .child(self.archive_browser.clone())
+                        .when_else(self.sidebar_collapsed, |x|{
+                            x.size(px(45.)).size_range(px(45.)..px(45.))
+                        }, |x| {
+                            x.size(px(255.)).size_range(px(200.)..px(320.))
+                        })
+                        .child(self.archive_browser.clone())
                     )
                     .child(
                         v_resizable("main-vt")

@@ -1,11 +1,9 @@
 use std::path::PathBuf;
 use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::menu::AppMenuBar;
-use gpui_component::{GlobalState, Icon, IconName, TitleBar};
-use gpui_component::dock::PanelEvent;
-use gpui_component::sidebar::{SidebarCollapsible, SidebarToggleButton};
+use gpui_component::{GlobalState, Icon, IconName, Sizable, TitleBar};
 use serde::Deserialize;
-use bit7z_infra_events::ArchiveVmEvent;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = menu_actions, no_json)]
@@ -31,19 +29,24 @@ actions!(menu_actions, [
     ChecksumSha256,
     ShowSettings,
     About,
+    ToggleSidebar,
 ]);
 
 pub struct Menu {
     bar: Entity<AppMenuBar>,
-    expanded_sidebar: bool,
+    sidebar_collapsed: bool,
 }
 
 impl Menu {
-    pub fn new(expanded_sidebar:bool,cx: &mut Context<Self>) -> Self {
+    pub fn new(sidebar_collapsed:bool,cx: &mut Context<Self>) -> Self {
         let bar = AppMenuBar::new(cx);
-        let menu = Self { expanded_sidebar, bar };
+        let menu = Self { sidebar_collapsed, bar };
         menu.reload(cx);
         menu
+    }
+
+    pub fn set_sidebar_collapsed(&mut self, collapsed: bool) {
+        self.sidebar_collapsed = collapsed;
     }
 
     pub fn set_state(&mut self, is_open: bool, has_selection: bool, _single_selection: bool, cx: &mut Context<Self>) {
@@ -132,13 +135,19 @@ impl Menu {
 }
 
 impl Render for Menu {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let collapsed = self.sidebar_collapsed;
+        let icon = if collapsed { IconName::PanelLeftOpen } else { IconName::PanelLeftClose };
         TitleBar::new()
             .child(div().flex()
-                .child(SidebarToggleButton::new()
-                    .collapsed(self.expanded_sidebar)
-                    .on_click(|click_event, w, cx| {
-                    })
+                .child(Button::new("menu-toggle-sidebar")
+                    .ghost()
+                    .small()
+                    .icon(Icon::new(icon).size_4())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        cx.dispatch_action(&ToggleSidebar);
+                        cx.notify();
+                    }))
                 )
             )
             .child(div().flex().items_center().child(self.bar.clone()))
