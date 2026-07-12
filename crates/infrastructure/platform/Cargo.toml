@@ -5,5 +5,4 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-bit7z-domain = { path = "../../domain" }
 rfd = "0.15"
