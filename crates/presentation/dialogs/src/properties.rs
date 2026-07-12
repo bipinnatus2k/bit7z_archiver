@@ -71,15 +71,22 @@ fn dialog_body(title: SharedString, content: impl IntoElement) -> impl IntoEleme
 }
 
 // ---------------------------------------------------------------------------
-// Archive properties
+// KV property display (used by both archive and single-entry)
 // ---------------------------------------------------------------------------
 
-struct ArchiveContent {
-    path: String,
-    props: ArchiveProperties,
+struct PropertiesContent {
+    title: SharedString,
+    fields: Vec<(&'static str, String)>,
+    columns: usize,
 }
 
-fn archive_fields<'a>(props: &'a ArchiveProperties, path: &'a str) -> Vec<(&'a str, String)> {
+impl Render for PropertiesContent {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        dialog_body(self.title.clone(), kv_display(self.fields.clone(), self.columns))
+    }
+}
+
+fn archive_fields(props: &ArchiveProperties, path: &str) -> Vec<(&'static str, String)> {
     let ratio = if props.total_size > 0 {
         format!("{:.0}%", (1.0 - props.packed_size as f64 / props.total_size as f64) * 100.0)
     } else {
@@ -111,27 +118,7 @@ fn archive_fields<'a>(props: &'a ArchiveProperties, path: &'a str) -> Vec<(&'a s
     ]
 }
 
-fn open_archive_window(path: String, props: ArchiveProperties, cx: &mut AsyncApp) {
-    open_window_dialog_async(cx, opts("Archive Properties"), move |_, cx| {
-        cx.new(move |_| ArchiveContent { path, props })
-    });
-}
-
-impl Render for ArchiveContent {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        dialog_body("Archive Properties".into(), kv_display(archive_fields(&self.props, &self.path), 1))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Single entry properties
-// ---------------------------------------------------------------------------
-
-struct EntryContent {
-    entry: ArchiveEntry,
-}
-
-fn entry_fields(entry: &ArchiveEntry) -> Vec<(&str, String)> {
+fn entry_fields(entry: &ArchiveEntry) -> Vec<(&'static str, String)> {
     vec![
         ("Name", entry.name.clone()),
         ("Path", entry.path.clone()),
@@ -156,16 +143,18 @@ fn entry_fields(entry: &ArchiveEntry) -> Vec<(&str, String)> {
     ]
 }
 
-fn open_single_entry_window(entry: ArchiveEntry, cx: &mut AsyncApp) {
-    open_window_dialog_async(cx, opts("Entry Properties"), move |_, cx| {
-        cx.new(move |_| EntryContent { entry })
+fn open_archive_window(path: String, props: ArchiveProperties, cx: &mut AsyncApp) {
+    let fields = archive_fields(&props, &path);
+    open_window_dialog_async(cx, opts("Archive Properties"), move |_, cx| {
+        cx.new(move |_| PropertiesContent { title: "Archive Properties".into(), fields, columns: 1 })
     });
 }
 
-impl Render for EntryContent {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        dialog_body("Entry Properties".into(), kv_display(entry_fields(&self.entry), 2))
-    }
+fn open_single_entry_window(entry: ArchiveEntry, cx: &mut AsyncApp) {
+    let fields = entry_fields(&entry);
+    open_window_dialog_async(cx, opts("Entry Properties"), move |_, cx| {
+        cx.new(move |_| PropertiesContent { title: "Entry Properties".into(), fields, columns: 2 })
+    });
 }
 
 // ---------------------------------------------------------------------------
