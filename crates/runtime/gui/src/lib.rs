@@ -1,17 +1,17 @@
 use gpui::*;
+use gpui_component::Theme;
 use gpui_component_assets::Assets;
-use bit7z_pres_theme::Theme;
-use bit7z_domain::preferences::PreferencesRepository;
 use bit7z_infra_bit7z::Library;
 use bit7z_infra_persistence::Bit7zRepository;
 use bit7z_infra_platform;
 use bit7z_infra_tray::{TrayManager, TrayGlobal};
+use bit7z_pres_settings::{self, SettingsStore};
 use bit7z_pres_view_models::progress_vm::ProgressState;
 use bit7z_pres_views::root::RootView;
 use bit7z_pres_views::utils::window::create_new_window_with_size;
 use bit7z_pres_components::{ext_table, window_dialog};
 use bit7z_rt_ipc::GuiCommand;
-use bit7z_rt_globals::{IpcReceiver, PreferencesGlobal, RepoGlobal, PreferencesRepoGlobal};
+use bit7z_rt_globals::{IpcReceiver, RepoGlobal, PreferencesRepoGlobal};
 use crossbeam_channel::unbounded;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -25,8 +25,9 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
         gpui_component::init(cx);
         ext_table::init(cx);
         window_dialog::init(cx);
-        let prefs_repo = bit7z_infra_persistence::preferences_json::JsonPreferencesRepository::new();
-        let prefs = prefs_repo.load().unwrap_or_default();
+
+        // Initialize settings subsystem (renderer, store, domain registrations)
+        bit7z_pres_settings::init(cx);
 
         let lib_path = bit7z_infra_platform::find_7z_library()
             .expect("7-Zip library not found. Install 7-Zip or p7zip.");
@@ -43,9 +44,10 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
         let (ipc_tx, ipc_rx) = unbounded::<GuiCommand>();
         cx.set_global(IpcReceiver(Arc::new(Mutex::new(ipc_rx))));
 
-        cx.set_global(PreferencesGlobal(prefs));
         cx.set_global(RepoGlobal(repo.clone()));
-        cx.set_global(PreferencesRepoGlobal(Arc::new(prefs_repo)));
+        cx.set_global(PreferencesRepoGlobal(Arc::new(
+            bit7z_infra_persistence::preferences_json::JsonPreferencesRepository::new(),
+        )));
         cx.set_global(TrayGlobal(tray.clone()));
         cx.set_global(ProgressState::default());
         cx.update_global::<ProgressState, _>(|state, _cx| {
@@ -73,9 +75,20 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
                     }
                 });
 
-                let prefs = &cx.global::<PreferencesGlobal>().0;
-                let theme = Theme::from_mode(prefs.ui.theme, w);
-                cx.set_global(theme);
+                // Apply persisted theme from settings
+                let prefs = &SettingsStore::get(cx).prefs;
+                let theme_mode = match prefs.ui.theme {
+                    bit7z_domain::preferences::ThemeMode::Light => gpui_component::theme::ThemeMode::Light,
+                    bit7z_domain::preferences::ThemeMode::Dark => gpui_component::theme::ThemeMode::Dark,
+                    bit7z_domain::preferences::ThemeMode::System => {
+                        if w.appearance() == gpui::WindowAppearance::Dark {
+                            gpui_component::theme::ThemeMode::Dark
+                        } else {
+                            gpui_component::theme::ThemeMode::Light
+                        }
+                    }
+                };
+                Theme::change(theme_mode, Some(w), cx);
                 cx.bind_keys([]);
                 RootView::view(w, cx, open_path2.clone(), open_password)
             },
