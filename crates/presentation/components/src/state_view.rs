@@ -1,12 +1,12 @@
-use bit7z_pres_theme::Theme;
 use gpui::*;
+use gpui_component::ActiveTheme;
 use gpui_component::skeleton::Skeleton;
 use gpui_component::{h_flex, v_flex, Icon, IconName, Sizable};
 use gpui_component::button::ButtonVariants;
 use gpui_component::spinner::Spinner;
 
 pub fn loading_view(cx: &App) -> impl IntoElement {
-    let theme = cx.global::<Theme>();
+    let theme = cx.theme();
     h_flex()
         .h_full()
         .items_center()
@@ -44,7 +44,7 @@ pub fn skeleton_table_rows(count: usize) -> impl IntoElement {
 }
 
 pub fn empty_view(cx: &App, message: &str) -> impl IntoElement {
-    let theme = cx.global::<Theme>();
+    let theme = cx.theme();
     v_flex()
         .h_full()
         .w_full()
@@ -71,7 +71,7 @@ pub fn empty_view_with_action(
     action_label: &str,
     on_action: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let theme = cx.global::<Theme>();
+    let theme = cx.theme();
     v_flex()
         .h_full()
         .w_full()
@@ -99,7 +99,7 @@ pub fn empty_view_with_action(
 }
 
 pub fn error_view(cx: &App, message: &str) -> impl IntoElement {
-    let theme = cx.global::<Theme>();
+    let theme = cx.theme();
     v_flex()
         .h_full()
         .w_full()
@@ -110,12 +110,12 @@ pub fn error_view(cx: &App, message: &str) -> impl IntoElement {
         .child(
             Icon::new(IconName::CircleX)
                 .size_8()
-                .text_color(theme.error),
+                .text_color(theme.danger),
         )
         .child(
             div()
                 .text_center()
-                .text_color(theme.error)
+                .text_color(theme.danger)
                 .child(format!("Error: {}", message)),
         )
 }
@@ -125,7 +125,7 @@ pub fn error_view_with_retry(
     message: &str,
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let theme = cx.global::<Theme>();
+    let theme = cx.theme();
     v_flex()
         .h_full()
         .w_full()
@@ -136,12 +136,12 @@ pub fn error_view_with_retry(
         .child(
             Icon::new(IconName::CircleX)
                 .size_8()
-                .text_color(theme.error),
+                .text_color(theme.danger),
         )
         .child(
             div()
                 .text_center()
-                .text_color(theme.error)
+                .text_color(theme.danger)
                 .child(format!("Error: {}", message)),
         )
         .child(

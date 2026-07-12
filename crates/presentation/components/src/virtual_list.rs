@@ -24,7 +24,7 @@ struct VirtualListScrollHandleState {
 
 #[derive(Clone)]
 pub struct VirtualListScrollHandle {
-    pub state: Rc<RefCell<VirtualListScrollHandleState>>,
+    pub(self) state: Rc<RefCell<VirtualListScrollHandleState>>,
     pub base_handle: ScrollHandle,
 }
 
@@ -61,6 +61,12 @@ impl Deref for VirtualListScrollHandle {
 
     fn deref(&self) -> &Self::Target {
         &self.base_handle
+    }
+}
+
+impl Default for VirtualListScrollHandle {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -206,7 +212,7 @@ impl VirtualList {
     fn scroll_to_deferred_item(
         &self,
         scroll_offset: Point<Pixels>,
-        items_bounds: &[Bounds<Pixels>],
+        items_bounds: &[Bounds<gpui::Pixels>],
         content_bounds: &Bounds<Pixels>,
         scroll_to_item: DeferredScrollToItem,
     ) -> Point<Pixels> {
