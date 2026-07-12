@@ -34,7 +34,7 @@ fn main() {
         }
     }
 
-    if let Some(_) = &cli.command {
+    if cli.command.is_some() {
         bit7z_rt_cli::run_cli(repo, &cli);
     } else {
         bit7z_rt_gui::run_gui();

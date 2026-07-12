@@ -2,12 +2,12 @@ use bit7z_domain::archive::*;
 use bit7z_domain::repository::ArchiveProperties;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct KeyModifiers {
-    pub shift: bool,
-    pub control: bool,
-    pub platform: bool,
-}
+// #[derive(Debug, Clone, Copy, Default)]
+// pub struct KeyModifiers {
+//     pub shift: bool,
+//     pub control: bool,
+//     pub platform: bool,
+// }
 
 #[derive(Clone, Debug)]
 pub struct LevelEntry {

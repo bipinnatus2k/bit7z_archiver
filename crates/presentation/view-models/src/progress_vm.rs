@@ -186,8 +186,8 @@ mod tests {
     use bit7z_domain::repository::ProgressUpdate;
     use crossbeam_channel;
 
-    fn channel_pair() -> (channel::Sender<ProgressUpdate>, channel::Receiver<ProgressUpdate>) {
-        channel::unbounded()
+    fn channel_pair() -> (crossbeam_channel::Sender<ProgressUpdate>, crossbeam_channel::Receiver<ProgressUpdate>) {
+        crossbeam_channel::unbounded()
     }
 
     #[test]
