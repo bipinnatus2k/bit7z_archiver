@@ -19,6 +19,10 @@ impl JsonPreferencesRepository {
         }
     }
 
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+
     fn ensure_dir(&self) -> Result<(), PreferencesError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(PreferencesError::Write)?;

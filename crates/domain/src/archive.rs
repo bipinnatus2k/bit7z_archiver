@@ -274,6 +274,8 @@ impl Password {
     pub fn is_empty(&self) -> bool {
         self.0.expose_secret().is_empty()
     }
+
+    pub fn empty() -> Self { Self("".into()) }
 }
 
 impl fmt::Debug for Password {
