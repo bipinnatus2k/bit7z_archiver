@@ -1,90 +1,114 @@
 use bit7z_domain::archive::{TestFailure, TestResult};
-use bit7z_pres_theme::Theme;
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui::prelude::FluentBuilder;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::{h_flex, v_flex};
+use bit7z_pres_components::window_dialog::{
+    open_window_dialog_async, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+    WindowDialogOptions, CloseAction,
+};
 
 pub struct TestResultsDialog {
-    pub result: Option<TestResult>,
-    pub show_failed: bool,
+    result: TestResult,
+    show_failed: bool,
 }
-
-#[derive(Debug, Clone)]
-pub enum TestResultsEvent {
-    Close,
-}
-
-impl EventEmitter<TestResultsEvent> for TestResultsDialog {}
 
 impl TestResultsDialog {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
-        Self {
-            result: None,
-            show_failed: false,
-        }
-    }
-
-    pub fn set_result(&mut self, result: TestResult, cx: &mut Context<Self>) {
-        self.result = Some(result);
-        cx.notify();
+    pub fn open(cx: &mut AsyncApp, result: TestResult) {
+        open_window_dialog_async(
+            cx,
+            WindowDialogOptions {
+                title: "Test Results".into(),
+                width: px(480.),
+                height: Some(px(400.)),
+                min_width: None,
+                min_height: None,
+                kind: WindowKind::Dialog,
+                close_action: CloseAction::RemoveWindow,
+                window_decorations: Some(WindowDecorations::Client),
+                window_background: WindowBackgroundAppearance::Opaque,
+            },
+            |_window, cx| cx.new(move |_| Self { result, show_failed: false }),
+        );
     }
 }
 
 impl Render for TestResultsDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.global::<Theme>().clone();
+        let all_pass = self.result.failed.is_empty();
+        let h = cx.entity();
 
-        v_flex().gap_3().p_4().w(px(420.))
-            .child(div().font_weight(FontWeight::BOLD).text_lg().child("Test Results"))
-            .when_some(self.result.as_ref(), |el, result| {
-                let all_pass = result.failed.is_empty();
-                el.child(
-                    div().text_lg().font_weight(FontWeight::BOLD)
-                        .text_color(if all_pass { theme.primary } else { theme.error })
-                        .child(format!("{} passed, {} failed", result.passed, result.failed.len()))
-                )
-                .when(!all_pass, |el| {
-                    el.child(
-                        v_flex().gap_1()
-                            .child(
-                                Button::new("toggle-failed")
-                                    .label(if self.show_failed { "\u{25bc} Failed entries" } else { "\u{25b6} Failed entries" })
-                                    .ghost()
-                                    .on_click(cx.listener(|this, _e, _window, cx| {
-                                        this.show_failed = !this.show_failed;
-                                        cx.notify();
-                                    }))
-                            )
-                            .when(self.show_failed, |el| {
-                                el.child(
-                                    v_flex().gap_1().pl_4()
-                                        .children(result.failed.iter().map(|f| {
-                                            failed_entry(f, &theme).into_any_element()
-                                        }).collect::<Vec<_>>())
-                                )
-                            })
-                    )
-                })
-            })
-            .when(self.result.is_none(), |el| {
-                el.child(div().text_sm().text_color(theme.muted).child("Loading results..."))
-            })
+        v_flex()
+            .size_full()
+            .gap(px(12.))
             .child(
-                h_flex().justify_end().gap_2().pt_2()
-                    .child(
-                        Button::new("close")
-                            .label("Close")
-                            .primary()
-                            .on_click(cx.listener(|_this, _e, _window, cx| {
-                                cx.emit(TestResultsEvent::Close);
-                            }))
-                    )
+                DialogHeader::new()
+                    .child(DialogTitle::new().child("Test Results")),
+            )
+            .child(
+                DialogContent::new().child(
+                    v_flex()
+                        .h_full()
+                        .gap_3()
+                        .child(
+                            div()
+                                .text_lg()
+                                .font_weight(FontWeight::BOLD)
+                                .child(format!(
+                                    "{} passed, {} failed",
+                                    self.result.passed,
+                                    self.result.failed.len()
+                                )),
+                        )
+                        .when(!all_pass, |el| {
+                            el.child(
+                                v_flex()
+                                    .gap_1()
+                                    .child(
+                                        Button::new("toggle-failed")
+                                            .label(if self.show_failed {
+                                                "\u{25bc} Failed entries"
+                                            } else {
+                                                "\u{25b6} Failed entries"
+                                            })
+                                            .ghost()
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.show_failed = !this.show_failed;
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .when(self.show_failed, |el| {
+                                        el.child(
+                                            v_flex()
+                                                .gap_1()
+                                                .pl_4()
+                                                .children(
+                                                    self.result
+                                                        .failed
+                                                        .iter()
+                                                        .map(|f| failed_entry(f).into_any_element())
+                                                        .collect::<Vec<_>>(),
+                                                ),
+                                        )
+                                    }),
+                            )
+                        }),
+                ),
+            )
+            .child(
+                DialogFooter::new().justify_end().child(
+                    Button::new("close")
+                        .label("Close")
+                        .primary()
+                        .on_click(move |_, window, _| {
+                            window.remove_window();
+                        }),
+                ),
             )
     }
 }
 
-fn failed_entry(f: &TestFailure, theme: &Theme) -> impl IntoElement {
+fn failed_entry(f: &TestFailure) -> impl IntoElement {
     let reason = match &f.reason {
         bit7z_domain::archive::TestFailureReason::CrcMismatch { expected, actual } => {
             format!("CRC mismatch: expected {:08X}, got {:08X}", expected, actual)
@@ -96,7 +120,14 @@ fn failed_entry(f: &TestFailure, theme: &Theme) -> impl IntoElement {
             "Unsupported operation".to_string()
         }
     };
-    v_flex().gap_0().py_1()
-        .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(format!("#{} {}", f.index, f.path)))
-        .child(div().text_xs().text_color(theme.error).child(reason))
+    v_flex()
+        .gap_0()
+        .py_1()
+        .child(
+            div()
+                .text_sm()
+                .font_weight(FontWeight::MEDIUM)
+                .child(format!("#{} {}", f.index, f.path)),
+        )
+        .child(div().text_xs().child(reason))
 }

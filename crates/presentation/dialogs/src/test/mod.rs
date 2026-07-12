@@ -129,21 +129,8 @@ impl TestContent {
 }
 
 fn show_test_result(cx: &mut AsyncApp, result: TestResult) {
-    open_window_dialog_async(
-        cx,
-        WindowDialogOptions {
-            title: "Test Results".into(),
-            width: px(520.),
-            height: Some(px(400.)),
-            min_width: None,
-            min_height: None,
-            kind: WindowKind::Dialog,
-            close_action: CloseAction::RemoveWindow,
-            window_decorations: Some(WindowDecorations::Client),
-            window_background: WindowBackgroundAppearance::Opaque,
-        },
-        move |_window, cx| cx.new(move |_| TestResultContent::new(result)),
-    );
+    // AsyncApp derefs to App, so we can pass it directly to open_window_dialog.
+    crate::test_results::TestResultsDialog::open(cx, result);
 }
 
 fn show_test_error(cx: &mut AsyncApp, msg: &str) {
@@ -207,84 +194,6 @@ impl Render for TestContent {
                                 move |_, window, cx| {
                                     h.update(cx, |this, cx| this.on_start(window, cx));
                                 }
-                            }),
-                    ),
-            )
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Result display
-// ---------------------------------------------------------------------------
-
-struct TestResultContent {
-    result: TestResult,
-    show_failed: bool,
-}
-
-impl TestResultContent {
-    fn new(result: TestResult) -> Self {
-        Self { result, show_failed: false }
-    }
-}
-
-impl Render for TestResultContent {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let all_pass = self.result.failed.is_empty();
-        let h = cx.entity();
-
-        v_flex()
-            .size_full()
-            .gap(px(12.))
-            .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child("Test Results")),
-            )
-            .child(
-                DialogContent::new().child(
-                    v_flex()
-                        .h_full()
-                        .gap_3()
-                        .child(
-                            div().text_lg().font_weight(FontWeight::BOLD)
-                                .child(format!(
-                                    "{} passed, {} failed",
-                                    self.result.passed,
-                                    self.result.failed.len()
-                                )),
-                        )
-                        .when(!all_pass, |el| {
-                            el.child(
-                                v_flex().gap_1()
-                                    .child(
-                                        Button::new("toggle-failed")
-                                            .label(if self.show_failed { "\u{25bc} Failed entries" } else { "\u{25b6} Failed entries" })
-                                            .ghost()
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.show_failed = !this.show_failed;
-                                                cx.notify();
-                                            })),
-                                    )
-                                    .when(self.show_failed, |el| {
-                                        el.child(
-                                            v_flex().gap_1().pl_4()
-                                                .children(self.result.failed.iter().map(|f| {
-                                                    failed_entry(f).into_any_element()
-                                                }).collect::<Vec<_>>()),
-                                        )
-                                    }),
-                            )
-                        }),
-                ),
-            )
-            .child(
-                DialogFooter::new().justify_end()
-                    .child(
-                        Button::new("close")
-                            .label("Close")
-                            .primary()
-                            .on_click(move |_, window, _| {
-                                window.remove_window();
                             }),
                     ),
             )
