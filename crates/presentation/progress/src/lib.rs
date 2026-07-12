@@ -4,6 +4,8 @@ use crossbeam_channel::{Sender, TryRecvError};
 use gpui::*;
 use std::sync::{Arc, Mutex};
 
+/// Global progress state for long-running operations.
+/// Used by dialogs and tray to track and display progress.
 #[derive(Clone)]
 pub struct ProgressState {
     pub is_active: bool,
@@ -50,6 +52,13 @@ impl Default for ProgressState {
 }
 
 impl Global for ProgressState {}
+
+/// Register the global ProgressState with the given tray sender.
+pub fn init(cx: &mut App, tray_sender: Sender<TrayCommand>) {
+    let mut state = ProgressState::default();
+    state.tray_sender = Some(tray_sender);
+    cx.set_global(state);
+}
 
 impl ProgressState {
     pub fn start(message: impl Into<String>, total: u64, rx: ProgressReceiver, cx: &mut App) {
@@ -205,7 +214,6 @@ mod tests {
         let (tx, rx) = channel_pair();
         state.is_active = true;
         state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
-
         tx.send(ProgressUpdate {
             file_current: 3, file_total: 10,
             current_file: Some("test.txt".into()),
@@ -214,7 +222,6 @@ mod tests {
             error: None,
         }).unwrap();
         drop(tx);
-
         assert!(state.poll());
         assert_eq!(state.file_current, 3);
         assert_eq!(state.current_file, Some("test.txt".into()));
@@ -228,7 +235,6 @@ mod tests {
         state.is_active = true;
         state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
         drop(tx);
-
         state.poll();
         assert!(!state.is_active);
         assert!(state.is_complete);
@@ -241,7 +247,6 @@ mod tests {
         state.is_active = true;
         state.is_paused = true;
         state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
-
         tx.send(ProgressUpdate {
             file_current: 1, file_total: 5,
             current_file: None,
@@ -249,7 +254,6 @@ mod tests {
             bytes_done: 100, bytes_total: 500,
             error: None,
         }).unwrap();
-
         assert!(!state.poll());
         assert_eq!(state.file_current, 0);
     }
@@ -260,7 +264,6 @@ mod tests {
         let (tx, rx) = channel_pair();
         state.is_active = true;
         state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
-
         tx.send(ProgressUpdate {
             file_current: 0, file_total: 1,
             current_file: None,
@@ -269,7 +272,6 @@ mod tests {
             error: Some("CRC mismatch".into()),
         }).unwrap();
         drop(tx);
-
         state.poll();
         assert_eq!(state.error, Some("CRC mismatch".into()));
     }

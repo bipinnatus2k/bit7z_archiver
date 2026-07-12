@@ -1040,14 +1040,25 @@ dependencies = [
  "bit7z-infra-progress",
  "bit7z-infra-tray",
  "bit7z-pres-components",
+ "bit7z-pres-progress",
  "bit7z-pres-settings",
  "bit7z-pres-view-models",
- "bit7z-rt-globals",
+ "bit7z-rt-app-state",
  "crossbeam-channel",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
  "humansize",
+]
+
+[[package]]
+name = "bit7z-pres-progress"
+version = "0.1.0"
+dependencies = [
+ "bit7z-infra-progress",
+ "bit7z-infra-tray",
+ "crossbeam-channel",
+ "gpui",
 ]
 
 [[package]]
@@ -1057,7 +1068,6 @@ dependencies = [
  "anyhow",
  "bit7z-domain",
  "bit7z-infra-persistence",
- "bit7z-rt-globals",
  "fs",
  "gpui",
  "gpui-component",
@@ -1104,8 +1114,9 @@ dependencies = [
  "bit7z-infra-progress",
  "bit7z-pres-components",
  "bit7z-pres-dialogs",
+ "bit7z-pres-settings",
  "bit7z-pres-view-models",
- "bit7z-rt-globals",
+ "bit7z-rt-app-state",
  "bit7z-rt-ipc",
  "crossbeam-channel",
  "gpui",
@@ -1113,6 +1124,20 @@ dependencies = [
  "gpui-component-assets",
  "log",
  "serde",
+]
+
+[[package]]
+name = "bit7z-rt-app-state"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bit7z-domain",
+ "bit7z-infra-persistence",
+ "bit7z-infra-tray",
+ "bit7z-rt-ipc",
+ "crossbeam-channel",
+ "fs",
+ "gpui",
 ]
 
 [[package]]
@@ -1132,16 +1157,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bit7z-rt-globals"
-version = "0.1.0"
-dependencies = [
- "bit7z-domain",
- "bit7z-rt-ipc",
- "crossbeam-channel",
- "gpui",
-]
-
-[[package]]
 name = "bit7z-rt-gui"
 version = "0.1.0"
 dependencies = [
@@ -1152,10 +1167,10 @@ dependencies = [
  "bit7z-infra-platform",
  "bit7z-infra-tray",
  "bit7z-pres-components",
+ "bit7z-pres-progress",
  "bit7z-pres-settings",
- "bit7z-pres-view-models",
  "bit7z-pres-views",
- "bit7z-rt-globals",
+ "bit7z-rt-app-state",
  "bit7z-rt-ipc",
  "crossbeam-channel",
  "gpui",

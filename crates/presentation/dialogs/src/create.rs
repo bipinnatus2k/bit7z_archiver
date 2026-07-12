@@ -115,7 +115,7 @@ fn compression_levels() -> Vec<LevelItem> {
 
 impl CreateArchiveDialog {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, files: Vec<CreateFileItem>) -> Self {
-        let prefs = &cx.global::<bit7z_rt_globals::PreferencesGlobal>().0;
+        let prefs = &bit7z_pres_settings::SettingsStore::get(cx).prefs;
         let default_format = prefs.archive.default_format;
         let compression_level = prefs.archive.default_compression_level;
         let encrypt_filenames = prefs.archive.default_encrypt_filenames;
@@ -463,13 +463,13 @@ impl Render for CreateArchiveDialog {
                             .primary()
                             .disabled(!self.is_valid())
                             .on_click(cx.listener(|this, _e, _window, cx| {
-                                let repo = cx.global::<bit7z_rt_globals::RepoGlobal>().0.clone();
+                                let repo = bit7z_rt_app_state::AppState::global(cx).repository.clone();
                                 let dest = std::path::PathBuf::from(&this.destination);
                                 let format = this.format;
                                 let encryption = this.build_encryption();
                                 let files: Vec<std::path::PathBuf> = this.file_list.iter().map(|f| f.path.clone()).collect();
                                 let (tx, rx) = bit7z_infra_progress::progress_channel();
-                                cx.update_global::<bit7z_pres_view_models::progress_vm::ProgressState, _>(|state, _cx| {
+                                cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _cx| {
                                     state.is_active = true;
                                     state.is_complete = false;
                                     state.is_paused = false;
@@ -504,7 +504,7 @@ impl Render for CreateArchiveDialog {
                                 }).detach();
                                 cx.spawn(async move |_, cx| {
                                     loop {
-                                        let done = cx.update_global::<bit7z_pres_view_models::progress_vm::ProgressState, _>(|state, _| {
+                                        let done = cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _| {
                                             let _ = state.poll();
                                             state.is_complete
                                         });
@@ -513,7 +513,7 @@ impl Render for CreateArchiveDialog {
                                         }
                                         cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(80)); }).await;
                                     }
-                                    let error = cx.update_global::<bit7z_pres_view_models::progress_vm::ProgressState, _>(|state, _| state.error.clone());
+                                    let error = cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _| state.error.clone());
                                     dialog_entity.update(cx, |_, cx| {
                                         cx.emit(CreateDialogEvent::CreateCompleted { success: error.is_none(), error });
                                     });

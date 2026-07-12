@@ -10,7 +10,8 @@ use crate::root_controller::RootController;
 use crate::status_bar::StatusBar;
 use crate::toolbar::{Toolbar, ToolbarIntent};
 use bit7z_domain::repository::ArchiveError;
-use bit7z_rt_globals::IpcReceiver;
+use bit7z_pres_settings::SettingsStore;
+use bit7z_rt_app_state::AppState;
 use bit7z_rt_ipc::GuiCommand;
 use crossbeam_channel::unbounded;
 use gpui::*;
@@ -21,6 +22,7 @@ use std::sync::Arc;
 use gpui_component::{Root, StyleSized, v_flex};
 
 pub struct RootView {
+    pub app_state: Arc<AppState>,
     focus_handle: FocusHandle,
     menu: Entity<Menu>,
     toolbar: Entity<Toolbar>,
@@ -38,13 +40,14 @@ impl EventEmitter<ArchiveVmEvent> for RootView {}
 
 impl RootView {
     pub fn new(
+        app_state: Arc<AppState>,
         window: &mut Window,
         cx: &mut App,
         open_path: Option<String>,
         open_password: Option<String>,
     ) -> Entity<Self> {
         cx.new(|cx| {
-            let repo = cx.global::<bit7z_rt_globals::RepoGlobal>().0.clone();
+            let repo = app_state.repository.clone();
 
             let menu = cx.new(|cx| Menu::new(false, cx));
             let toolbar = cx.new(|_| Toolbar::new());
@@ -342,7 +345,7 @@ impl RootView {
             }).detach();
 
             let (ipc_cmd_tx, ipc_cmd_rx) = unbounded::<GuiCommand>();
-            let ipc_receiver_arc = cx.global::<IpcReceiver>().0.clone();
+            let ipc_receiver_arc = app_state.ipc_receiver.clone();
 
             std::thread::Builder::new()
                 .name("ipc-poll".into())
@@ -385,6 +388,7 @@ impl RootView {
 
             let controller_repo = repo.clone();
             let mut root = Self {
+                app_state,
                 focus_handle,
                 menu, toolbar,
                 archive_browser, entry_list, preview_panel, status_bar,
@@ -400,9 +404,14 @@ impl RootView {
         })
     }
 
-    pub fn view(window: &mut Window, cx: &mut App,path: Option<String>,
-            password: Option<String>) -> Entity<Self> {
-        Self::new(window, cx, path,password)
+    pub fn view(
+        window: &mut Window,
+        cx: &mut App,
+        path: Option<String>,
+        password: Option<String>,
+    ) -> Entity<Self> {
+        let app_state = bit7z_rt_app_state::AppState::global(cx);
+        Self::new(app_state, window, cx, path, password)
     }
 
     fn selected_entries_data(&self) -> (Vec<u32>, Vec<bit7z_domain::archive::ArchiveEntry>) {
@@ -478,16 +487,10 @@ impl RootView {
                     this.state.current_path = String::new();
                     this.state.path_history.clear();
                     this.state.directory_cache.clear();
-                    let mut prefs = cx.global::<bit7z_rt_globals::PreferencesGlobal>().0.clone();
-                    prefs.archive.add_recent(path_string);
-                    cx.set_global(bit7z_rt_globals::PreferencesGlobal(prefs));
-                    if let Err(e) = cx
-                        .global::<bit7z_rt_globals::PreferencesRepoGlobal>()
-                        .0
-                        .save(&cx.global::<bit7z_rt_globals::PreferencesGlobal>().0)
-                    {
-                        log::warn!("Failed to persist preferences: {}", e);
-                    }
+                    let path_str = path_string.clone();
+                    SettingsStore::get_mut(cx).update_and_save(|p| {
+                        p.archive.add_recent(path_str);
+                    });
                     this.load_current_directory(cx);
                 }
                 Err(e) => {

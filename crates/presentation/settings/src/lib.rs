@@ -13,8 +13,6 @@ use gpui::*;
 
 use std::sync::OnceLock;
 
-use bit7z_rt_globals::PreferencesGlobal;
-
 /// Global entity ID for the settings panel, so controls can trigger re-renders.
 static PANEL_ENTITY_ID: OnceLock<EntityId> = OnceLock::new();
 
@@ -33,7 +31,4 @@ pub fn init(cx: &mut App) {
     SettingsStore::init(cx);
     renderer::SettingFieldRenderer::init(cx);
 
-    // Keep backward compatibility: set PreferencesGlobal so legacy code works
-    let prefs = SettingsStore::get(cx).prefs.clone();
-    cx.set_global(bit7z_rt_globals::PreferencesGlobal(prefs));
 }

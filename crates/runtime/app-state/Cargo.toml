@@ -1,17 +1,15 @@
 [package]
-name = "bit7z-pres-settings"
+name = "bit7z-rt-app-state"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
+bit7z-infra-tray = { path = "../../infrastructure/tray" }
 bit7z-infra-persistence = { path = "../../infrastructure/persistence" }
+bit7z-rt-ipc = { path = "../ipc" }
 fs = { path = "../../application/fs" }
 gpui = { workspace = true }
-gpui-component = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 anyhow.workspace = true
-log.workspace = true
-notify = "9.0.0-rc.4"
+crossbeam-channel = "0.5"

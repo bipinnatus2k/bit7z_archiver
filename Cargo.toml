@@ -17,16 +17,17 @@ members = [
     "crates/infrastructure/progress",
     "crates/presentation/view-models",
     "crates/presentation/components",
+    "crates/presentation/progress",
     "crates/presentation/views",
     "crates/presentation/settings",
     "crates/presentation/dialogs",
-    "crates/runtime/globals",
     "crates/runtime/ipc",
     "crates/runtime/instance",
     "crates/runtime/worker",
     "crates/runtime/cli",
     "crates/runtime/gui",
     "crates/runtime/app-bin",
+    "crates/runtime/app-state",
 ]
 
 [workspace.package]

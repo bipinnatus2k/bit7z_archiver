@@ -69,7 +69,7 @@ impl AddFilesDialog {
         repo: Option<Arc<dyn bit7z_domain::repository::ArchiveRepository>>,
         is_solid: bool,
     ) -> Self {
-        let prefs = &cx.global::<bit7z_rt_globals::PreferencesGlobal>().0;
+        let prefs = &bit7z_pres_settings::SettingsStore::get(cx).prefs;
         let encrypt_filenames = prefs.archive.default_encrypt_filenames;
         Self {
             format,
@@ -338,7 +338,7 @@ impl Render for AddFilesDialog {
                                         let encryption = this.build_encryption();
                                         let uc = bit7z_app_archive::add_to::AddToArchiveUseCase::new(repo.clone());
                                         let (_tx, rx) = bit7z_infra_progress::progress_channel();
-                                        cx.update_global::<bit7z_pres_view_models::progress_vm::ProgressState, _>(|state, _cx| {
+                                        cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _cx| {
                                             state.is_active = true;
                                             state.is_complete = false;
                                             state.is_paused = false;

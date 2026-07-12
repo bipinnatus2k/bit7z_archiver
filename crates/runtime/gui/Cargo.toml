@@ -6,9 +6,9 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-bit7z-rt-globals = { path = "../globals" }
+bit7z-rt-app-state = { path = "../app-state" }
+bit7z-pres-progress = { path = "../../presentation/progress" }
 bit7z-pres-settings = { path = "../../presentation/settings" }
-bit7z-pres-view-models = { path = "../../presentation/view-models" }
 bit7z-pres-views = { path = "../../presentation/views" }
 bit7z-pres-components = { path = "../../presentation/components" }
 bit7z-infra-bit7z = { path = "../../infrastructure/bit7z" }
