@@ -66,16 +66,16 @@ impl SignalStorage {
         generation: u32,
         value: T,
     ) -> Option<Vec<Subscriber>> {
-        if let Some(signal_value) = self.values.get_mut(id) {
-            if signal_value.generation == generation {
-                signal_value.value = Box::new(value);
-                let callbacks: Vec<Subscriber> = self
-                    .subscribers
-                    .get(&id)
-                    .map(|subs| subs.iter().cloned().collect())
-                    .unwrap_or_default();
-                return Some(callbacks);
-            }
+        if let Some(signal_value) = self.values.get_mut(id)
+            && signal_value.generation == generation
+        {
+            signal_value.value = Box::new(value);
+            let callbacks: Vec<Subscriber> = self
+                .subscribers
+                .get(&id)
+                .map(|subs| subs.to_vec())
+                .unwrap_or_default();
+            return Some(callbacks);
         }
         None
     }
@@ -91,7 +91,7 @@ impl SignalStorage {
             let callbacks = self
                 .subscribers
                 .get(&id)
-                .map(|subs| subs.iter().cloned().collect())
+                .map(|subs| subs.to_vec())
                 .unwrap_or_default();
             Some((result, callbacks))
         } else {
@@ -134,7 +134,7 @@ pub(crate) fn notify_subscribers(id: SignalId) {
         storage
             .subscribers
             .get(&id)
-            .map(|subs| subs.iter().cloned().collect())
+            .map(|subs| subs.to_vec())
             .unwrap_or_default()
     });
 

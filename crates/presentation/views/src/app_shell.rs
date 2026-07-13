@@ -93,7 +93,7 @@ pub struct AppShell {
 impl AppShell {
     pub fn new(
         window: &mut Window, cx: &mut Context<Self>, repo: Arc<dyn ArchiveRepository>,
-        open_path: Option<String>, open_password: Option<String>,
+        _open_path: Option<String>, _open_password: Option<String>,
     ) -> Self {
         let state = AppState::new(cx);
         let use_cases = Arc::new(UseCases::new(repo));
@@ -129,7 +129,10 @@ impl AppShell {
                 cx.spawn(async move |_, cx| { bit7z_pres_dialogs::create::CreateArchiveDialog::open(cx, vec![], Some(repo)); }).detach();
             }
             Intent::CloseArchive => self.handle_close(cx),
-            Intent::Refresh => { if self.state.handle.get().is_some() { let path = self.state.current_path.get(); self.state.directory_cache.update(|c| { c.remove(&path); }); } }
+            Intent::Refresh if self.state.handle.get().is_some() => {
+                let path = self.state.current_path.get();
+                self.state.directory_cache.update(|c| { c.remove(&path); });
+            }
             _ => {}
         }
     }
@@ -196,7 +199,7 @@ impl AppShell {
 
     fn handle_open_entry(&mut self, cx: &mut Context<Self>) {
         if let (Some(ref h), Some(idx)) = (self.state.handle.get(), self.state.first_selected_index()) {
-            if self.state.displayed_entries().iter().find(|e| e.original_index == idx).map_or(false, |e| e.is_directory) {
+            if self.state.displayed_entries().iter().find(|e| e.original_index == idx).is_some_and(|e| e.is_directory) {
                 let name = self.state.displayed_entries().iter().find(|e| e.original_index == idx).map(|e| e.display_name.clone()).unwrap();
                 self.state.navigate_into(&name);
                 self.load_current_directory(cx);
@@ -219,7 +222,7 @@ impl AppShell {
         let uc = self.use_cases.clone();
         let path_buf = path.to_path_buf();
         let path_string = path.to_string_lossy().to_string();
-        let pw = password.map(|s| Password::new(s));
+        let pw = password.map(Password::new);
         let pw_clone = pw.clone();
         let path_for_password = path_string.clone();
 
@@ -304,7 +307,7 @@ impl AppShell {
         cx.notify();
     }
 
-    fn handle_close(&mut self, cx: &mut Context<Self>) {
+    fn handle_close(&mut self, _cx: &mut Context<Self>) {
         if let Some(ref h) = self.state.handle.get() { self.use_cases.close(h); }
         self.state.handle.set(None);
         self.state.properties.set(None);

@@ -15,7 +15,6 @@ use crate::menu::ToggleSidebar;
 pub enum BrowserIntent {
     NavigateInto(String),
     OpenRecentFile(String),
-    SetFilter(String),
 }
 
 impl EventEmitter<BrowserIntent> for ArchiveBrowser {}
@@ -32,14 +31,11 @@ impl ArchiveBrowser {
         let input_state = cx.new(|cx| InputState::new(window, cx).placeholder("Filter..."));
         let state_for_filter = state.clone();
         let _subscriptions = vec![cx.subscribe_in(&input_state, window, {
-            move |_: &mut Self, _, ev: &InputEvent, _: &mut Window, cx| match ev {
-                InputEvent::Change => {
-                    let value = cx.entity().read(cx).input_state.read(cx).value();
-                    state_for_filter.filter_text.set(value.to_string());
-                    state_for_filter.clear_selection();
-                    state_for_filter.reapply_filter_and_sort();
-                }
-                _ => {}
+            move |_: &mut Self, _, ev: &InputEvent, _: &mut Window, cx| if let InputEvent::Change = ev {
+                let value = cx.entity().read(cx).input_state.read(cx).value();
+                state_for_filter.filter_text.set(value.to_string());
+                state_for_filter.clear_selection();
+                state_for_filter.reapply_filter_and_sort();
             }
         })];
         Self {

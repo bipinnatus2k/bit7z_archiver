@@ -173,20 +173,14 @@ impl TableDelegate for FileListTableDelegate {
             "name" => row.display_name.clone(),
             "size" => row.size.to_string(),
             "packed" => row.compressed_size.to_string(),
-            "ratio" => {
-                let ratio = if row.size == 0 {
-                    "0%".to_string()
-                } else {
-                    format!("{:.0}%", (1.0 - (row.compressed_size as f64 / row.size as f64)) * 100.)
-                };
-                ratio
+            "ratio" => if row.size == 0 {
+                "0%".to_string()
+            } else {
+                format!("{:.0}%", (1.0 - (row.compressed_size as f64 / row.size as f64)) * 100.)
             },
-            "date" => {
-                let date = row.modified
-                                .map(|t| t.naive_local().to_string())
-                                .unwrap_or_default();
-                date
-            },
+            "date" => row.modified
+                            .map(|t| t.naive_local().to_string())
+                            .unwrap_or_default(),
             _ => "".to_string(),
         }
     }

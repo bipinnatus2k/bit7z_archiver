@@ -1,4 +1,3 @@
-use gpui::prelude::FluentBuilder;
 use crate::app_shell::AppShell;
 use crate::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::archive_file_list::{ArchiveFileList, FileListIntent};
@@ -51,16 +50,13 @@ impl RootView {
         }).detach();
 
         let pp = preview_panel.clone();
-        let state_for_browser = state.clone();
         cx.subscribe::<ArchiveBrowser, BrowserIntent>(&archive_browser, move |this, _, intent, cx| {
             match intent {
                 BrowserIntent::NavigateInto(dir) => { if let Some(s) = this.app_shell.upgrade() { s.update(cx, |s, cx| s.navigate_into(dir, cx)); } }
-                BrowserIntent::SetFilter(text) => { if let Some(s) = this.app_shell.upgrade() { s.update(cx, |s, cx| s.set_filter(text, cx)); } }
                 BrowserIntent::OpenRecentFile(path) => { if let Some(s) = this.app_shell.upgrade() { s.update(cx, |s, cx| s.handle_open_archive(std::path::Path::new(path), None, cx)); } }
             }
         }).detach();
 
-        let state_for_list = state.clone();
         cx.subscribe::<ArchiveFileList, FileListIntent>(&entry_list, move |this, _, intent, cx| {
             match intent {
                 FileListIntent::SelectionChanged(indices) => {
@@ -103,9 +99,6 @@ impl RootView {
         Self { app_shell, state, focus_handle, menu, toolbar, archive_browser, entry_list, preview_panel, status_bar }
     }
 
-    fn load_current_directory(&mut self, cx: &mut Context<Self>) {
-        if let Some(s) = self.app_shell.upgrade() { s.update(cx, |s, cx| s.load_current_directory(cx)); }
-    }
 }
 
 impl Focusable for RootView { fn focus_handle(&self, _: &App) -> FocusHandle { self.focus_handle.clone() } }
