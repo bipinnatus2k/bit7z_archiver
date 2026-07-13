@@ -1,15 +1,8 @@
 use bit7z_domain::archive::{ArchiveHandle, Password, ChangeSet};
 use bit7z_domain::repository::*;
+use bit7z_domain::repository::NoopNotifier;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-
-fn default_ctx() -> OpCtx {
-    OpCtx {
-        cancel: CancellationToken::new(),
-        pause: PauseToken::new(),
-        progress: Arc::new(NoopSink),
-    }
-}
 
 pub fn new_folder(
     repo: Arc<dyn ArchiveRepository>,
@@ -32,7 +25,7 @@ pub fn new_folder(
     let mut change_set = ChangeSet::new();
     change_set.add(temp, archive_inner_path);
 
-    let plan = repo.plan(archive, &change_set)?;
+    let plan = repo.plan_changes(archive, &change_set)?;
 
     if plan.has_conflicts() {
         return Err(ArchiveError::Conflict);
@@ -44,7 +37,7 @@ pub fn new_folder(
         notifier: Arc::new(NoopNotifier),
     };
 
-    repo.apply(archive, &plan, &options, &default_ctx())
+    repo.apply_changes(archive, &plan, &options)
 }
 
 #[cfg(test)]
@@ -56,7 +49,7 @@ mod tests {
     #[test]
     fn test_new_folder_success() {
         let repo = MockArchiveRepository::arc_with_count(0);
-        let handle = ArchiveHandle::new(0);
+        let handle = ArchiveHandle::new_reader();
         let result = new_folder(repo, &handle, "newdir", None);
         assert!(result.is_ok());
     }
@@ -64,7 +57,7 @@ mod tests {
     #[test]
     fn test_new_folder_empty_path() {
         let repo = MockArchiveRepository::arc_with_count(0);
-        let handle = ArchiveHandle::new(0);
+        let handle = ArchiveHandle::new_reader();
         let result = new_folder(repo, &handle, "", None);
         assert!(matches!(result, Err(ArchiveError::Internal(ref msg)) if msg.contains("empty")));
     }
@@ -72,7 +65,7 @@ mod tests {
     #[test]
     fn test_new_folder_nested() {
         let repo = MockArchiveRepository::arc_with_count(0);
-        let handle = ArchiveHandle::new(0);
+        let handle = ArchiveHandle::new_reader();
         let result = new_folder(repo, &handle, "parent/child", None);
         assert!(result.is_ok());
     }
@@ -80,7 +73,7 @@ mod tests {
     #[test]
     fn test_new_folder_trim_trailing_slash() {
         let repo = MockArchiveRepository::arc_with_count(0);
-        let handle = ArchiveHandle::new(0);
+        let handle = ArchiveHandle::new_reader();
         let result = new_folder(repo, &handle, "mydir/", None);
         assert!(result.is_ok());
     }

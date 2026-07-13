@@ -32,7 +32,7 @@ mod tests {
     fn test_delete_success() {
         let repo = MockArchiveRepository::arc_with_count(5);
         let uc = DeleteEntriesUseCase::new(repo);
-        let handle = ArchiveHandle::new(0);
+        let handle = ArchiveHandle::new_reader();
         let result = uc.execute(&handle, &[0, 1], None);
         assert!(result.is_ok());
     }

@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
+bit7z-rt-app-state = { path = "../../runtime/app-state" }
 bit7z-pres-progress = { path = "../progress" }
 bit7z-pres-settings = { path = "../settings" }
 bit7z-pres-view-models = { path = "../view-models" }
@@ -22,3 +23,4 @@ gpui-component-assets = { workspace = true }
 crossbeam-channel = { workspace = true }
 humansize = { workspace = true }
 async-std = "1.13.2"
+

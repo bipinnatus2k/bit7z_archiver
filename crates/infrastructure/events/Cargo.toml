@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
+bit7z-app-checksum = { path = "../../application/checksum" }

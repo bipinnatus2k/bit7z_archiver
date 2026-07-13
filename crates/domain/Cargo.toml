@@ -10,6 +10,3 @@ thiserror = { workspace = true }
 secrecy = { version = "0.10", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde_json = { workspace = true }
-
-[features]
-testing = []

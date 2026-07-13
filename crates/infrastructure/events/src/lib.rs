@@ -1,5 +1,5 @@
 use bit7z_domain::archive::ArchiveHandle;
-use bit7z_domain::checksum::ChecksumAlgorithm;
+use bit7z_app_checksum::ChecksumAlgorithm;
 
 /// UI events emitted by ViewModels and consumed by Views.
 #[derive(Debug, Clone)]

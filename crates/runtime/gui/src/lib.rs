@@ -1,10 +1,13 @@
 use gpui::*;
 use gpui_component::Theme;
 use gpui_component_assets::Assets;
+use bit7z_infra_bit7z::Library;
+use bit7z_infra_persistence::Bit7zRepository;
 use bit7z_infra_platform;
 use bit7z_infra_tray::TrayManager;
 use bit7z_pres_settings::{self, SettingsStore};
-use bit7z_pres_progress::init as init_progress;
+use bit7z_pres_progress::{ProgressState, init as init_progress};
+use bit7z_pres_views::root::RootView;
 use bit7z_pres_views::utils::window::create_new_window_with_size;
 use bit7z_pres_components::{ext_table, window_dialog};
 use bit7z_rt_app_state::AppState;
@@ -12,7 +15,6 @@ use bit7z_rt_ipc::GuiCommand;
 use crossbeam_channel::unbounded;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 pub fn run_gui() {
     run_gui_with_path(None, None);
@@ -30,10 +32,11 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
         let lib_path = bit7z_infra_platform::find_7z_library()
             .expect("7-Zip library not found. Install 7-Zip or p7zip.");
         let lib_path_str = lib_path.to_string_lossy();
+        let lib = Library::open(&lib_path_str)
+            .expect("Failed to load 7-Zip library");
 
         let repo: Arc<dyn bit7z_domain::repository::ArchiveRepository> =
-            Arc::new(bit7z_infra_repo::supervisor::RepoSupervisor::new(&lib_path_str)
-                .expect("Failed to create RepoSupervisor"));
+            Arc::new(Bit7zRepository::new(lib));
 
         let tray = Arc::new(TrayManager::new());
 
@@ -86,36 +89,7 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
                 };
                 Theme::change(theme_mode, Some(w), cx);
                 cx.bind_keys([]);
-                let app_shell = cx.new(|cx| bit7z_pres_views::app_shell::AppShell::new(w, cx, repo, open_path2.clone(), open_password));
-
-                // IPC polling: spawn from the AppShell entity context
-                let ipc_rx_clone = app_state.ipc_receiver.clone();
-                app_shell.update(cx, |_shell, cx| {
-                    let weak = cx.entity().downgrade();
-                    cx.spawn(async move |this, cx| {
-                        loop {
-                            while let Ok(cmd) = ipc_rx_clone.lock().unwrap().try_recv() {
-                                match cmd {
-                                    GuiCommand::Open { path, password } => {
-                                        let _ = this.update(cx, |shell, cx| {
-                                            shell.handle_open_archive(
-                                                std::path::Path::new(&path),
-                                                password,
-                                                cx,
-                                            );
-                                        });
-                                    }
-                                    GuiCommand::Activate => {
-                                        // TODO: bring window to front
-                                    }
-                                }
-                            }
-                            smol::Timer::after(Duration::from_millis(50)).await;
-                        }
-                    }).detach();
-                });
-
-                app_shell.update(cx, |shell, _| shell.root_view.clone())
+                RootView::view(w, cx, open_path2.clone(), open_password)
             },
             cx,
         );

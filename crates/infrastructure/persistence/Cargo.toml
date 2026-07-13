@@ -6,9 +6,14 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
+bit7z-ffi = { path = "../../ffi" }
 bit7z-infra-bit7z = { path = "../bit7z" }
+bit7z-infra-platform = { path = "../platform" }
+bit7z-infra-progress = { path = "../progress" }
+autocxx = "0.30"
+crossbeam-channel = "0.5"
 serde_json = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
+humansize = { workspace = true }
 directories = "6"
 
-[dev-dependencies]
-bit7z-domain = { path = "../../domain", features = ["testing"] }

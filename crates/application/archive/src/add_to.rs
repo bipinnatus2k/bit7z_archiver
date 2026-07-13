@@ -35,7 +35,7 @@ mod tests {
         let uc = AddToArchiveUseCase::new(repo);
         let test_file = std::env::temp_dir().join("add_to_test_file.txt");
         std::fs::write(&test_file, b"test").unwrap();
-        let handle = ArchiveHandle::new(0).with_path("test.7z".into());
+        let handle = ArchiveHandle::new_writer().with_path("test.7z".into());
         let result = uc.execute(&handle, &[test_file.clone()], None);
         assert!(result.is_ok());
         let _ = std::fs::remove_file(&test_file);
@@ -45,7 +45,7 @@ mod tests {
     fn test_add_to_archive_file_not_found() {
         let repo = MockArchiveRepository::arc_with_count(0);
         let uc = AddToArchiveUseCase::new(repo);
-        let handle = ArchiveHandle::new(0).with_path("test.7z".into());
+        let handle = ArchiveHandle::new_writer().with_path("test.7z".into());
         let result = uc.execute(&handle, &[PathBuf::from(r"Z:\nonexistent\file.txt")], None);
         assert!(matches!(result, Err(ArchiveError::NotFound(_))));
     }

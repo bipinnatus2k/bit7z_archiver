@@ -23,7 +23,7 @@ impl TestDialog {
         repo: Arc<dyn ArchiveRepository>,
     ) {
         let total = indices.as_ref().map_or_else(
-            || repo.properties(&handle).map(|p| p.files_count() as usize).unwrap_or(0),
+            || repo.get_properties(&handle).map(|p| p.files_count as usize).unwrap_or(0),
             |v| count_expanded(&repo, &handle, v),
         );
 
@@ -77,23 +77,6 @@ impl TestContent {
         let (progress_tx, progress_rx) = progress_channel();
         let total = self.total;
 
-        struct TestProgressSink(crossbeam_channel::Sender<ProgressUpdate>);
-        impl ProgressSink for TestProgressSink {
-            fn on_progress(&self, processed: u64, total: u64) {
-                let _ = self.0.send(ProgressUpdate {
-                    bytes_done: processed,
-                    bytes_total: total,
-                    ..Default::default()
-                });
-            }
-            fn on_file(&self, path: &str) {
-                let _ = self.0.send(ProgressUpdate {
-                    current_file: Some(path.to_string()),
-                    ..Default::default()
-                });
-            }
-        }
-
         // Spawn a background task that opens ProgressDialog, runs the test,
         // then opens the result dialog on completion.
         cx.spawn(async move |_this, cx| {
@@ -114,11 +97,10 @@ impl TestContent {
                     Some(h) => h,
                     None => path
                         .and_then(|p| repo.open(&p, password.as_ref()).ok())
-                        .unwrap_or(ArchiveHandle::new(0)),
+                        .unwrap_or(ArchiveHandle::new_reader()),
                 };
-                let sink: Arc<dyn ProgressSink> = Arc::new(TestProgressSink(progress_tx));
                 let uc = TestEntriesUseCase::new(repo.clone());
-                let result = uc.execute(&h, indices.as_deref(), Some(sink));
+                let result = uc.execute(&h, indices.as_deref(), Some(progress_tx));
                 if dialog_owns_handle {
                     repo.close(&h);
                 }
@@ -281,10 +263,10 @@ fn count_files_recursive(
         format!("{}/", dir_path)
     };
     let mut count = 0;
-    if let Ok(page) = repo.list_dir(archive, &path, 0..usize::MAX) {
-        for child in &page.items {
-            if child.is_directory() {
-                count += count_files_recursive(repo, archive, child.path());
+    if let Ok(children) = repo.list_directory(archive, &path) {
+        for child in &children {
+            if child.is_directory {
+                count += count_files_recursive(repo, archive, &child.path);
             } else {
                 count += 1;
             }
@@ -300,10 +282,10 @@ fn count_expanded(
 ) -> usize {
     let mut count = 0;
     for &idx in indices {
-        if let Ok(page) = repo.list(archive, idx as usize..idx as usize + 1) {
+        if let Ok(page) = repo.list_page(archive, idx as usize, 1) {
             if let Some(entry) = page.items.first() {
-                if entry.is_directory() {
-                    count += count_files_recursive(repo, archive, entry.path());
+                if entry.is_directory {
+                    count += count_files_recursive(repo, archive, &entry.path);
                     continue;
                 }
             }

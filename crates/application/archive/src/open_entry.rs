@@ -1,6 +1,8 @@
 use bit7z_domain::archive::*;
 use bit7z_domain::repository::*;
+use bit7z_domain::repository::NoopNotifier;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 pub struct OpenEntryUseCase {
     repo: Arc<dyn ArchiveRepository>,
@@ -16,30 +18,27 @@ impl OpenEntryUseCase {
         archive: &ArchiveHandle,
         index: u32,
     ) -> Result<(), ArchiveError> {
-        let page = self.repo.list(archive, index as usize..index as usize + 1)?;
+        let page = self.repo.list_page(archive, index as usize, 1)?;
         if page.items.is_empty() {
             return Err(ArchiveError::NotFound(format!("index {}", index)));
         }
         let entry = &page.items[0];
 
-        if entry.is_directory() {
+        if entry.is_directory {
             return Err(ArchiveError::Internal("Cannot open a directory entry".into()));
         }
 
         let mut temp_path = std::env::temp_dir();
-        temp_path.push(entry.name());
+        temp_path.push(&entry.name);
 
-        let req = ExtractRequest {
-            indices: vec![index],
-            dest: temp_path.clone(),
-            overwrite: OverwriteMode::Overwrite,
+        let indices = [index];
+        let options = ExtractOptions {
+            overwrite_mode: OverwriteMode::Overwrite,
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: Arc::new(NoopNotifier),
         };
-        let ctx = OpCtx {
-            cancel: CancellationToken::new(),
-            pause: PauseToken::new(),
-            progress: Arc::new(NoopSink),
-        };
-        self.repo.extract(archive, &req, &ctx)?;
+        self.repo.extract(archive, &indices, &temp_path, &options)?;
 
         #[cfg(target_os = "windows")]
         {
@@ -81,14 +80,11 @@ mod tests {
     #[test]
     fn test_open_entry_directory_returns_error() {
         let mock = MockArchiveRepository::new(vec![
-            ArchiveEntry::builder()
-                .name("mydir".into()).path("mydir".into())
-                .is_directory(true).original_index(0)
-                .build(),
+            ArchiveEntry { name: "mydir".into(), path: "mydir".into(), is_directory: true, original_index: 0, ..Default::default() },
         ]);
         let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
         let uc = OpenEntryUseCase::new(repo);
-        let handle = ArchiveHandle::new(0);
+        let handle = ArchiveHandle::new_reader();
         let result = uc.execute(&handle, 0);
         assert!(matches!(result, Err(ArchiveError::Internal(ref msg)) if msg.contains("directory")));
     }
@@ -97,7 +93,7 @@ mod tests {
     fn test_open_entry_not_found() {
         let repo = MockArchiveRepository::arc_with_count(3);
         let uc = OpenEntryUseCase::new(repo);
-        let handle = ArchiveHandle::new(0);
+        let handle = ArchiveHandle::new_reader();
         let result = uc.execute(&handle, 99);
         assert!(matches!(result, Err(ArchiveError::NotFound(_))));
     }

@@ -32,7 +32,7 @@ mod tests {
     fn test_rename_success() {
         let repo = MockArchiveRepository::arc_with_count(3);
         let uc = RenameEntryUseCase::new(repo);
-        let handle = ArchiveHandle::new(0);
+        let handle = ArchiveHandle::new_reader();
         let result = uc.execute(&handle, 0, "new_name.txt");
         assert!(result.is_ok());
     }

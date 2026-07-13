@@ -1,5 +1,4 @@
 use bit7z_domain::archive::*;
-use bit7z_domain::repository::{ArchiveRepository, CancellationToken, NoopSink, OpCtx, PauseToken};
 use gpui_component::ActiveTheme;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::prelude::FluentBuilder as _;
@@ -12,7 +11,6 @@ use gpui_component::collapsible::Collapsible;
 use gpui_component::input::{Input, InputState};
 use gpui_component::select::{SearchableVec, Select, SelectItem, SelectState};
 use gpui_component::{IconName, h_flex, v_flex};
-#[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
 use std::sync::{Arc, Mutex};
 
@@ -38,7 +36,6 @@ pub struct CreateArchiveDialog {
     password_confirm_state: Entity<InputState>,
     format_select: Entity<SelectState<Vec<FormatItem>>>,
     level_select: Entity<SelectState<SearchableVec<LevelItem>>>,
-    repo: Option<Arc<dyn ArchiveRepository>>,
 }
 
 #[derive(Debug, Clone)]
@@ -117,7 +114,7 @@ fn compression_levels() -> Vec<LevelItem> {
 }
 
 impl CreateArchiveDialog {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>, files: Vec<CreateFileItem>, repo: Option<Arc<dyn ArchiveRepository>>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>, files: Vec<CreateFileItem>) -> Self {
         let prefs = &bit7z_pres_settings::SettingsStore::get(cx).prefs;
         let default_format = prefs.archive.default_format;
         let compression_level = prefs.archive.default_compression_level;
@@ -219,7 +216,6 @@ impl CreateArchiveDialog {
             password_confirm_state,
             format_select,
             level_select,
-            repo,
         }
     }
 
@@ -244,7 +240,7 @@ impl CreateArchiveDialog {
         })
     }
 
-    pub fn open(cx: &mut AsyncApp, files: Vec<CreateFileItem>, repo: Option<Arc<dyn ArchiveRepository>>) -> Receiver<CreateDialogEvent> {
+    pub fn open(cx: &mut AsyncApp, files: Vec<CreateFileItem>) -> Receiver<CreateDialogEvent> {
         let (tx, rx) = unbounded::<CreateDialogEvent>();
         let event_tx: SharedSender<CreateDialogEvent> = Arc::new(Mutex::new(Some(tx)));
         let et = event_tx.clone();
@@ -261,7 +257,7 @@ impl CreateArchiveDialog {
                     ..Default::default()
                 },
                 move |window, cx| {
-                    let dialog = cx.new(|cx| CreateArchiveDialog::new(window, cx, files, repo));
+                    let dialog = cx.new(|cx| CreateArchiveDialog::new(window, cx, files));
                     let et = et.clone();
                     cx.subscribe::<CreateArchiveDialog, CreateDialogEvent>(
                         &dialog,
@@ -309,7 +305,7 @@ impl Render for CreateArchiveDialog {
                                         this.file_list.push(bit7z_domain::archive::CreateFileItem {
                                             path: i.clone(),
                                             is_directory: false,
-                                            size: Some(std::fs::metadata(&i).map(|m| m.len()).unwrap_or(0)),
+                                            size: Some(i.metadata().unwrap().file_size()),
                                         });
                                     });
                                     if this.destination.is_empty() {
@@ -467,43 +463,61 @@ impl Render for CreateArchiveDialog {
                             .primary()
                             .disabled(!self.is_valid())
                             .on_click(cx.listener(|this, _e, _window, cx| {
-                                if let Some(ref repo) = this.repo {
-                                    let files: Vec<std::path::PathBuf> = this.file_list.iter().map(|f| f.path.clone()).collect();
-                                    let dest = std::path::PathBuf::from(&this.destination);
-                                    let fmt = this.format;
-                                    let encryption = this.build_encryption();
-                                    let cloned_repo = repo.clone();
-
-                                    cx.spawn(async move |this, cx| {
-                                        let result = || -> Result<(), bit7z_domain::repository::ArchiveError> {
-                                            let handle = cloned_repo.create(&dest, fmt, encryption.as_ref())?;
-                                            let files_with_names: Vec<(std::path::PathBuf, String)> = files.iter().map(|p| {
-                                                let name = p.file_name()
-                                                    .map(|n| n.to_string_lossy().to_string())
-                                                    .unwrap_or_else(|| p.to_string_lossy().to_string());
-                                                (p.clone(), name)
-                                            }).collect();
-                                            let ctx = OpCtx {
-                                                cancel: CancellationToken::new(),
-                                                pause: PauseToken::new(),
-                                                progress: std::sync::Arc::new(NoopSink),
-                                            };
-                                            cloned_repo.build_archive(&handle, &files_with_names, &dest, &ctx)
-                                        }();
-
-                                        let _ = this.update(cx, |_, cx| {
-                                            match result {
-                                                Ok(()) => cx.emit(CreateDialogEvent::CreateCompleted { success: true, error: None }),
-                                                Err(e) => cx.emit(CreateDialogEvent::CreateCompleted { success: false, error: Some(e.to_string()) }),
-                                            }
+                                let repo = bit7z_rt_app_state::AppState::global(cx).repository.clone();
+                                let dest = std::path::PathBuf::from(&this.destination);
+                                let format = this.format;
+                                let encryption = this.build_encryption();
+                                let files: Vec<std::path::PathBuf> = this.file_list.iter().map(|f| f.path.clone()).collect();
+                                let (tx, rx) = bit7z_infra_progress::progress_channel();
+                                cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _cx| {
+                                    state.is_active = true;
+                                    state.is_complete = false;
+                                    state.is_paused = false;
+                                    state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
+                                    state.message = "Creating archive...".to_string();
+                                    state.current = 0;
+                                    state.total = 1;
+                                    state.error = None;
+                                });
+                                let dialog_entity = cx.entity();
+                                cx.background_spawn(async move {
+                                    let mut handle = match repo.create(&dest, format, encryption.as_ref()) {
+                                        Ok(h) => h,
+                                        Err(e) => {
+                                            let _ = tx.send(bit7z_domain::repository::ProgressUpdate {
+                                                file_current: 0, file_total: 0,
+                                                current_file: None,
+                                                items_done: 0, items_total: 0,
+                                                bytes_done: 0, bytes_total: 0,
+                                                error: Some(e.to_string()),
+                                            });
+                                            return;
+                                        }
+                                    };
+                                    if !files.is_empty() {
+                                        let uc = bit7z_app_archive::add_to::AddToArchiveUseCase::new(repo.clone());
+                                        let notifier: Option<Arc<dyn bit7z_domain::repository::ProgressNotifier>> = Some(Arc::new(bit7z_infra_progress::CrossbeamNotifier(tx)));
+                                        let _ = uc.execute(&mut handle, &files, notifier);
+                                    } else {
+                                        drop(tx);
+                                    }
+                                }).detach();
+                                cx.spawn(async move |_, cx| {
+                                    loop {
+                                        let done = cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _| {
+                                            let _ = state.poll();
+                                            state.is_complete
                                         });
-                                    }).detach();
-                                } else {
-                                    cx.emit(CreateDialogEvent::CreateCompleted {
-                                        success: false,
-                                        error: Some("Repository not wired: integration pending".into()),
+                                        if done {
+                                            break;
+                                        }
+                                        cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(80)); }).await;
+                                    }
+                                    let error = cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _| state.error.clone());
+                                    dialog_entity.update(cx, |_, cx| {
+                                        cx.emit(CreateDialogEvent::CreateCompleted { success: error.is_none(), error });
                                     });
-                                }
+                                }).detach();
                             }))
                     )
             )

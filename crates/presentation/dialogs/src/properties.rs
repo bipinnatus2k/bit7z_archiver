@@ -91,78 +91,59 @@ impl Render for PropertiesContent {
 }
 
 fn archive_fields(props: &ArchiveProperties, path: &str) -> Vec<(&'static str, String)> {
-    let ratio = if props.total_size() > 0 {
-        format!("{:.0}%", (1.0 - props.packed_size() as f64 / props.total_size() as f64) * 100.0)
+    let ratio = if props.total_size > 0 {
+        format!("{:.0}%", (1.0 - props.packed_size as f64 / props.total_size as f64) * 100.0)
     } else {
         "0%".into()
     };
     let mut kind = String::new();
-    if props.is_solid() { kind.push_str("Solid "); }
-    if props.is_multi_volume() { kind.push_str("Multi-volume "); }
+    if props.is_solid { kind.push_str("Solid "); }
+    if props.is_multi_volume { kind.push_str("Multi-volume "); }
     if kind.is_empty() { kind.push_str("Archive"); }
 
     vec![
         ("Type", kind),
         ("Location", path.into()),
-        ("Size", format_size(props.total_size(), BINARY)),
-        ("Packed", format_size(props.packed_size(), BINARY)),
+        ("Size", format_size(props.total_size, BINARY)),
+        ("Packed", format_size(props.packed_size, BINARY)),
         ("Ratio", ratio),
-        ("Files", format!("{}", props.files_count())),
-        ("Folders", format!("{}", props.folders_count())),
-        ("Headers size", format_size(props.headers_size(), BINARY)),
-        ("Volumes", format!("{}", props.volumes_count())),
-        ("Solid", bool_yn(props.is_solid()).into()),
-        ("Encrypted", bool_yn(props.is_encrypted()).into()),
-        ("Encrypted names", bool_yn(props.encrypted_names()).into()),
-        ("Multi-volume", bool_yn(props.is_multi_volume()).into()),
-        ("Has comment", bool_yn(props.has_comment()).into()),
-        ("Recovery record", bool_yn(props.has_recovery_record()).into()),
-        ("Locked", bool_yn(props.locked()).into()),
-        ("Dictionary size", props.dictionary_size().map(|s| format_size(s, BINARY)).unwrap_or_else(|| "-".into())),
+        ("Files", format!("{}", props.files_count)),
+        ("Folders", format!("{}", props.folders_count)),
+        ("Headers size", format_size(props.headers_size, BINARY)),
+        ("Volumes", format!("{}", props.volumes_count)),
+        ("Solid", bool_yn(props.is_solid).into()),
+        ("Encrypted", bool_yn(props.is_encrypted).into()),
+        ("Encrypted names", bool_yn(props.encrypted_names).into()),
+        ("Multi-volume", bool_yn(props.is_multi_volume).into()),
+        ("Has comment", bool_yn(props.has_comment).into()),
+        ("Recovery record", bool_yn(props.has_recovery_record).into()),
+        ("Locked", bool_yn(props.locked).into()),
+        ("Dictionary size", props.dictionary_size.map(|s| format_size(s, BINARY)).unwrap_or_else(|| "-".into())),
     ]
-}
-
-fn dt_fmt(ts: Option<i64>) -> String {
-    match ts {
-        Some(t) if t >= 0 => {
-            let days = t / 86400;
-            let year = 1970 + (days / 365) as i32;
-            let doy = (days % 365) as i32;
-            let mut month = 1i32;
-            let mut rem = doy;
-            for dm in &[31i32, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] {
-                if rem < *dm { break; }
-                rem -= *dm;
-                month += 1;
-            }
-            format!("{:04}-{:02}-{:02}", year, month, rem + 1)
-        }
-        _ => "-".into(),
-    }
 }
 
 fn entry_fields(entry: &ArchiveEntry) -> Vec<(&'static str, String)> {
     vec![
-        ("Name", entry.name().to_string()),
-        ("Path", entry.path().to_string()),
-        ("Extension", entry.extension().unwrap_or("-").to_string()),
-        ("Size", format_size(entry.size(), BINARY)),
-        ("Packed", format_size(entry.compressed_size(), BINARY)),
+        ("Name", entry.name.clone()),
+        ("Path", entry.path.clone()),
+        ("Extension", entry.extension.clone().unwrap_or_else(|| "-".into())),
+        ("Size", format_size(entry.size, BINARY)),
+        ("Packed", format_size(entry.compressed_size, BINARY)),
         ("Ratio", format!("{:.0}%", entry.compression_ratio() * 100.0)),
-        ("CRC", if entry.crc() != 0 { format!("{:08X}", entry.crc()) } else { "-".into() }),
-        ("Modified", dt_fmt(entry.mtime())),
-        ("Created", dt_fmt(entry.ctime())),
-        ("Accessed", dt_fmt(entry.atime())),
-        ("Host OS", format!("{}", entry.host_os())),
-        ("Attributes", format!("{:08X}", entry.attributes())),
-        ("POSIX", format!("{:o}", entry.posix_attrib())),
-        ("Owner", entry.user().unwrap_or("-").to_string()),
-        ("Group", entry.group().unwrap_or("-").to_string()),
-        ("Encrypted", bool_yn(entry.is_encrypted()).into()),
-        ("Symlink", bool_yn(entry.is_symlink()).into()),
-        ("Method", entry.compression_method().unwrap_or("-").to_string()),
-        ("Comment", entry.comment().unwrap_or("-").to_string()),
-        ("Hardlink target", entry.hardlink().unwrap_or("-").to_string()),
+        ("CRC", entry.crc.map(|c| format!("{:08X}", c)).unwrap_or_else(|| "-".into())),
+        ("Modified", entry.modified.map(|t| t.naive_local().to_string()).unwrap_or_else(|| "-".into())),
+        ("Created", entry.created.map(|t| t.to_string()).unwrap_or_else(|| "-".into())),
+        ("Accessed", entry.accessed.map(|t| t.to_string()).unwrap_or_else(|| "-".into())),
+        ("Host OS", entry.host_os.map(|o| format!("{}", o)).unwrap_or_else(|| "-".into())),
+        ("Attributes", entry.attributes.map(|a| format!("{:08X}", a)).unwrap_or_else(|| "-".into())),
+        ("POSIX", entry.posix_attrib.map(|p| format!("{:o}", p)).unwrap_or_else(|| "-".into())),
+        ("Owner", entry.user.clone().unwrap_or_else(|| "-".into())),
+        ("Group", entry.group.clone().unwrap_or_else(|| "-".into())),
+        ("Encrypted", bool_yn(entry.is_encrypted).into()),
+        ("Symlink", bool_yn(entry.is_symlink).into()),
+        ("Method", entry.compression_method.clone().unwrap_or_else(|| "-".into())),
+        ("Comment", entry.comment.clone().unwrap_or_else(|| "-".into())),
+        ("Hardlink target", entry.hardlink.clone().unwrap_or_else(|| "-".into())),
     ]
 }
 
@@ -206,9 +187,9 @@ impl ListDelegate for EntriesDelegate {
                 gpui_component::h_flex()
                     .gap_2()
                     .w_full()
-                    .child(div().w(px(200.)).text_xs().overflow_hidden().child(e.path().to_string()))
-                    .child(div().w(px(80.)).text_xs().child(format_size(e.size(), BINARY)))
-                    .child(div().w(px(80.)).text_xs().child(format_size(e.compressed_size(), BINARY))),
+                    .child(div().w(px(200.)).text_xs().overflow_hidden().child(e.path.clone()))
+                    .child(div().w(px(80.)).text_xs().child(format_size(e.size, BINARY)))
+                    .child(div().w(px(80.)).text_xs().child(format_size(e.compressed_size, BINARY))),
             )
         })
     }
@@ -223,8 +204,8 @@ impl ListDelegate for EntriesDelegate {
 }
 
 fn open_multi_entry_window(entries: Vec<ArchiveEntry>, cx: &mut AsyncApp) {
-    let total_size: u64 = entries.iter().map(|e| e.size()).sum();
-    let total_packed: u64 = entries.iter().map(|e| e.compressed_size()).sum();
+    let total_size: u64 = entries.iter().map(|e| e.size).sum();
+    let total_packed: u64 = entries.iter().map(|e| e.compressed_size).sum();
     let entry_count = entries.len();
     let title = SharedString::from(format!("{} Entries Properties", entry_count));
 

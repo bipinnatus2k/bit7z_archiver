@@ -12,7 +12,6 @@ bit7z-pres-settings = { path = "../../presentation/settings" }
 bit7z-pres-views = { path = "../../presentation/views" }
 bit7z-pres-components = { path = "../../presentation/components" }
 bit7z-infra-bit7z = { path = "../../infrastructure/bit7z" }
-bit7z-infra-repo = { path = "../../infrastructure/repo" }
 bit7z-infra-persistence = { path = "../../infrastructure/persistence" }
 bit7z-infra-platform = { path = "../../infrastructure/platform" }
 bit7z-infra-tray = { path = "../../infrastructure/tray" }
@@ -23,4 +22,3 @@ gpui_platform = { workspace = true }
 gpui-component = { workspace = true }
 gpui-component-assets = { workspace = true }
 crossbeam-channel = "0.5"
-smol = { workspace = true }
