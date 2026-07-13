@@ -441,16 +441,14 @@ fn handle_test(
 
     let mut failed = Vec::new();
     if !all_ok && failed_count > 0 {
-        for i in 0..failed_count.min(total) {
-            let error = failed_errors.first().cloned().unwrap_or_else(|| "test failed".into());
-            failed.push(TestFailure {
-                entry_path: format!("index {}", i),
-                error: error.clone(),
-                index: i as usize,
-                path: String::new(),
-                reason: TestFailureReason::ReadError(error),
-            });
-        }
+        let error = failed_errors.first().cloned().unwrap_or_else(|| "test failed".into());
+        failed.push(TestFailure {
+            entry_path: String::new(),
+            error: error.clone(),
+            index: 0,
+            path: String::new(),
+            reason: TestFailureReason::ReadError(error),
+        });
     }
 
     // If indices are provided and test was on all items, filter to just the requested indices
@@ -512,38 +510,49 @@ fn execute_with_editor(
     password: Option<&Password>,
 ) -> Result<(), ArchiveError> {
     let path_str = archive_path.to_str().ok_or_else(|| {
-        ArchiveError::Internal("archive path is not valid UTF-8".into())
+        ArchiveError::Internal("archive path is not valid valid UTF-8".into())
     })?;
 
-    // Drop reader before opening editor (editor needs exclusive access)
-    let _old_reader = reader.take();
+    let old_reader = reader.take();
 
-    let editor = Editor::open(lib, path_str, format, password.map(|p| p.as_str()))
-        .map_err(|e| ArchiveError::Internal(format!("editor open: {}", e)))?;
+    let editor = match Editor::open(lib, path_str, format, password.map(|p| p.as_str())) {
+        Ok(e) => e,
+        Err(e) => {
+            *reader = old_reader;
+            return Err(ArchiveError::Internal(format!("editor open: {}", e)));
+        }
+    };
 
-    // Process deletes in reverse order to avoid index shifting
     let mut sorted_deletes = plan.deletes.clone();
     sorted_deletes.sort_unstable_by(|a, b| b.cmp(a));
     for &idx in &sorted_deletes {
-        editor.delete(idx)
-            .map_err(|e| ArchiveError::Internal(format!("editor delete {}: {}", idx, e)))?;
+        if let Err(e) = editor.delete(idx) {
+            *reader = old_reader;
+            return Err(ArchiveError::Internal(format!("editor delete {}: {}", idx, e)));
+        }
     }
 
-    // Process renames
     for &(idx, ref new_path) in &plan.renames {
-        editor.rename(idx, new_path)
-            .map_err(|e| ArchiveError::Internal(format!("editor rename {}: {}", idx, e)))?;
+        if let Err(e) = editor.rename(idx, new_path) {
+            *reader = old_reader;
+            return Err(ArchiveError::Internal(format!("editor rename {}: {}", idx, e)));
+        }
     }
 
-    // Apply changes
-    editor.apply()
-        .map_err(|e| ArchiveError::Internal(format!("editor apply: {}", e)))?;
+    if let Err(e) = editor.apply() {
+        *reader = old_reader;
+        return Err(ArchiveError::Internal(format!("editor apply: {}", e)));
+    }
 
-    // Editor is dropped here (goes out of scope)
+    drop(editor);
 
-    // Re-open reader with the stored password for subsequent operations
-    let new_reader = ArchiveReader::open(lib, path_str, password)
-        .map_err(|e| ArchiveError::Internal(format!("re-open reader after edit: {}", e)))?;
+    let new_reader = match ArchiveReader::open(lib, path_str, password) {
+        Ok(r) => r,
+        Err(e) => {
+            *reader = old_reader;
+            return Err(ArchiveError::Internal(format!("re-open reader after edit: {}", e)));
+        }
+    };
 
     *reader = Some(new_reader);
 
