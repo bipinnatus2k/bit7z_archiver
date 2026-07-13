@@ -20,6 +20,7 @@ bit7z-infra-progress = { path = "../../infrastructure/progress" }
 gpui = { workspace = true }
 gpui-component = { workspace = true }
 gpui-component-assets = { workspace = true }
+gpui_signals = { path = "../../vendor/gpui_signals" }
 crossbeam-channel = "0.5"
 serde = { version = "1", features = ["derive"] }
 log = "0.4"

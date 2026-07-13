@@ -30,6 +30,7 @@ members = [
     "crates/runtime/gui",
     "crates/runtime/app-bin",
     "crates/runtime/app-state",
+    "crates/vendor/gpui_signals",
 ]
 
 [workspace.package]

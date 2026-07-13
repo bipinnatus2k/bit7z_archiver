@@ -1,0 +1,15 @@
+[package]
+name = "gpui_signals"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
+slotmap = "1.0"
+parking_lot = "0.12"
+futures = { version = "0.3" }
+
+[lib]
+doctest = false

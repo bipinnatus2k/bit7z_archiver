@@ -1101,6 +1101,7 @@ dependencies = [
  "chrono",
  "crossbeam-channel",
  "gpui",
+ "gpui_signals",
 ]
 
 [[package]]
@@ -1124,6 +1125,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "gpui_signals",
  "log",
  "serde",
 ]
@@ -3178,6 +3180,16 @@ dependencies = [
  "schemars",
  "serde",
  "smol_str",
+]
+
+[[package]]
+name = "gpui_signals"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gpui",
+ "parking_lot",
+ "slotmap",
 ]
 
 [[package]]

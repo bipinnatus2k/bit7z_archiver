@@ -1,6 +1,7 @@
 use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::{h_flex, Disableable, IconName};
+use bit7z_pres_view_models::AppState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToolbarIntent {
@@ -16,26 +17,16 @@ pub enum ToolbarIntent {
 impl EventEmitter<ToolbarIntent> for Toolbar {}
 
 pub struct Toolbar {
-    is_open: bool,
-    is_ready: bool,
-    has_selection: bool,
+    state: AppState,
     is_loading: bool,
 }
 
 impl Toolbar {
-    pub fn new() -> Self {
+    pub fn new(state: AppState) -> Self {
         Self {
-            is_open: false,
-            is_ready: false,
-            has_selection: false,
+            state,
             is_loading: false,
         }
-    }
-
-    pub fn set_state(&mut self, is_open: bool, is_ready: bool, has_selection: bool) {
-        self.is_open = is_open;
-        self.is_ready = is_ready;
-        self.has_selection = has_selection;
     }
 
     pub fn set_loading(&mut self, is_loading: bool) {
@@ -48,6 +39,10 @@ impl Render for Toolbar {
         let window_width = window.bounds().size.width;
         let compact = window_width < px(640.0);
         let show_labels = !compact;
+
+        let is_open = self.state.is_open();
+        let is_ready = self.state.is_ready();
+        let has_selection = self.state.has_selection();
 
         let mut row = h_flex().gap_2().p_2().w_full();
 
@@ -88,7 +83,7 @@ impl Render for Toolbar {
         let add_btn = Button::new("add")
             .icon(IconName::Plus)
             .tooltip("Add files to archive")
-            .disabled(!self.is_open || self.is_loading)
+            .disabled(!is_open || self.is_loading)
             .on_click({
                 let h = self_handle.clone();
                 move |_, _, cx| {
@@ -105,7 +100,7 @@ impl Render for Toolbar {
         let extract_btn = Button::new("extract")
             .icon(IconName::ChevronDown)
             .tooltip("Extract selected files (Ctrl+E)")
-            .disabled(!self.is_ready || !self.has_selection || self.is_loading)
+            .disabled(!is_ready || !has_selection || self.is_loading)
             .on_click({
                 let h = self_handle.clone();
                 move |_, _, cx| {
@@ -122,7 +117,7 @@ impl Render for Toolbar {
         let test_btn = Button::new("test")
             .icon(IconName::PanelRightClose)
             .tooltip("Test archive integrity (Ctrl+T)")
-            .disabled(!self.is_open || self.is_loading)
+            .disabled(!is_open || self.is_loading)
             .on_click({
                 let h = self_handle.clone();
                 move |_, _, cx| {
@@ -139,7 +134,7 @@ impl Render for Toolbar {
         let close_btn = Button::new("close")
             .icon(IconName::Close)
             .tooltip("Close archive")
-            .disabled(!self.is_open || self.is_loading)
+            .disabled(!is_open || self.is_loading)
             .on_click({
                 let h = self_handle.clone();
                 move |_, _, cx| {

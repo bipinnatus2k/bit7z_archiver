@@ -1,4 +1,5 @@
 use bit7z_pres_view_models::archive_state::{LevelEntry, ViewStatus};
+use bit7z_pres_view_models::AppState;
 use bit7z_pres_components::state_view::{empty_view, error_view, loading_view};
 use bit7z_pres_components::ext_table::{Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState};
 use bit7z_app_checksum::ChecksumAlgorithm;
@@ -127,9 +128,10 @@ impl TableDelegate for FileListTableDelegate {
             Some(f) => f,
             None => return menu,
         };
-        let has_selection = fl.read(cx).selection.len() > 0;
-        let single_selection = fl.read(cx).selection.len() == 1;
-        let ready = fl.read(cx).is_ready;
+        let fl_read = fl.read(cx);
+        let has_selection = fl_read.state.has_selection();
+        let single_selection = fl_read.state.selection_len() == 1;
+        let ready = fl_read.state.is_ready();
 
         menu
         .when(has_selection,|m| {
@@ -195,18 +197,13 @@ impl TableDelegate for FileListTableDelegate {
 }
 
 pub struct ArchiveFileList {
-    entries: Vec<LevelEntry>,
-    selection: std::collections::HashSet<u32>,
-    status: ViewStatus,
-    current_path: String,
-    is_ready: bool,
+    state: AppState,
     table_state: Entity<TableState<FileListTableDelegate>>,
     focus_handle: FocusHandle,
 }
 
 impl ArchiveFileList {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-
+    pub fn new(window: &mut Window, cx: &mut Context<Self>, state: AppState) -> Self {
         bind_keys!(cx, "archive_file_list",
             "ctrl-a" => SelectAll,
             "ctrl-o" => OpenEntry,
@@ -234,27 +231,33 @@ impl ArchiveFileList {
                 .cell_selectable(false)
         });
 
-        cx.subscribe_in(&table_state, window, |view, _table, event, _window, cx| {
+        let state_for_selection = state.clone();
+        cx.subscribe_in(&table_state, window, move |view: &mut Self, _table, event, _window, cx| {
             match event {
                 TableEvent::SelectRow(_row_ix) => {
+                    let entries = view.state.level_entries.get();
                     let indices: Vec<u32> = view.table_state.read(cx).selected_rows().iter()
-                        .filter_map(|&row| view.entries.get(row))
+                        .filter_map(|&row| entries.get(row))
                         .map(|e| e.original_index)
                         .collect();
-                    view.selection = indices.iter().copied().collect();
+                    state_for_selection.selection.update(|s| { *s = indices.iter().copied().collect(); });
+                    state_for_selection.selection_anchor.set(None);
                     cx.emit(FileListIntent::SelectionChanged(indices));
                 }
                 TableEvent::DoubleClickedRow(_row_ix) => {
+                    let entries = view.state.level_entries.get();
                     let indices: Vec<u32> = view.table_state.read(cx).selected_rows().iter()
-                        .filter_map(|&row| view.entries.get(row))
+                        .filter_map(|&row| entries.get(row))
                         .map(|e| e.original_index)
                         .collect();
-                    view.selection = indices.iter().copied().collect();
+                    state_for_selection.selection.update(|s| { *s = indices.iter().copied().collect(); });
+                    state_for_selection.selection_anchor.set(None);
                     cx.emit(FileListIntent::SelectionChanged(indices));
                     cx.emit(FileListIntent::OpenEntry);
                 }
                 TableEvent::ClearSelection => {
-                    view.selection.clear();
+                    state_for_selection.selection.update(|s| s.clear());
+                    state_for_selection.selection_anchor.set(None);
                     cx.emit(FileListIntent::SelectionChanged(vec![]));
                 }
                 _ => {}
@@ -264,38 +267,41 @@ impl ArchiveFileList {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window,cx);
 
-        Self { entries: vec![], selection: std::collections::HashSet::new(), status: ViewStatus::Empty, current_path: String::new(), is_ready: false, table_state, focus_handle }
+        Self { state, table_state, focus_handle }
     }
 
     pub fn select_all_entries(&mut self, cx: &mut Context<Self>) {
-        let rows: std::collections::HashSet<usize> = (0..self.entries.len()).collect();
-        self.selection = self.entries.iter().map(|e| e.original_index).collect();
+        let entries = self.state.level_entries.get();
+        let rows: std::collections::HashSet<usize> = (0..entries.len()).collect();
+        self.state.selection.update(|s| {
+            *s = entries.iter().map(|e| e.original_index).collect();
+        });
+        self.state.selection_anchor.set(None);
         self.table_state.update(cx, |state, cx| {
             state.set_selected_rows(rows, cx);
         });
     }
 
     pub fn clear_selection(&mut self, cx: &mut Context<Self>) {
-        self.selection.clear();
+        self.state.selection.update(|s| s.clear());
+        self.state.selection_anchor.set(None);
         self.table_state.update(cx, |state, cx| {
             state.set_selected_rows(std::collections::HashSet::new(), cx);
             state.clear_selection(cx);
-        });
-    }
-
-    pub fn set_state(&mut self, entries: Vec<LevelEntry>, status: ViewStatus, current_path: String, cx: &mut Context<Self>) {
-        self.entries = entries.clone();
-        self.status = status;
-        self.current_path = current_path;
-        self.is_ready = self.status == ViewStatus::Ready;
-        self.table_state.update(cx, |state, _| {
-            state.delegate_mut().entries = entries;
         });
     }
 }
 
 impl Render for ArchiveFileList {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let entries = self.state.level_entries.get();
+        let status = self.state.status.get();
+        let current_path = self.state.current_path.get();
+
+        self.table_state.update(cx, |state, _| {
+            state.delegate_mut().entries = entries.clone();
+        });
+
         let base = gpui_component::v_flex()
             .w_full()
             .border_b_1()
@@ -321,7 +327,7 @@ impl Render for ArchiveFileList {
             ChecksumSHA256 => FileListIntent::Checksum(ChecksumAlgorithm::Sha256),
         );
 
-        match &self.status {
+        match &status {
             ViewStatus::Empty => {
                 base.child(empty_view(cx, "Open an archive to browse its contents"))
             }
@@ -332,7 +338,7 @@ impl Render for ArchiveFileList {
                 base.child(error_view(cx, msg))
             }
             ViewStatus::Ready => {
-                let path_str = self.current_path.trim_end_matches('/').to_string();
+                let path_str = current_path.trim_end_matches('/').to_string();
                 let self_handle = cx.entity();
 
                 let mut container = base;

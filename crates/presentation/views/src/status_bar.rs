@@ -2,37 +2,24 @@ use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::separator::Separator;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable};
+use bit7z_pres_view_models::AppState;
 
 pub struct StatusBar {
-    status_text: String,
-    show_preview :bool,
+    state: AppState,
 }
 
 impl StatusBar {
-    pub fn new(status_text: String, show_preview: bool) -> Self {
-        Self {
-            status_text,
-            show_preview,
-        }
-    }
-
-    pub fn default() -> Self {
-        Self {
-            status_text: String::new(),
-            show_preview: false,
-        }
-    }
-
-    pub fn set_status(&mut self, text: &str) {
-        self.status_text = text.to_string();
+    pub fn new(state: AppState) -> Self {
+        Self { state }
     }
 }
 
 impl Render for StatusBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let status_text = self.state.status_text();
         gpui_component::status_bar::StatusBar::new()
             .child(Icon::new(IconName::GalleryVerticalEnd).xsmall())
-            .child(self.status_text.clone())
+            .child(status_text)
             .child(Separator::vertical())
             .right(cx.theme().theme_name().clone())
             .right(format!("v{}", env!("CARGO_PKG_VERSION")))

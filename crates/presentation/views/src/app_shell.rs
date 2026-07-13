@@ -88,7 +88,6 @@ pub struct AppShell {
     pub use_cases: Arc<UseCases>,
     pub root_view: Entity<RootView>,
     pub preview_panel: Entity<PreviewPanel>,
-    pub sidebar_collapsed: bool,
 }
 
 impl AppShell {
@@ -96,18 +95,21 @@ impl AppShell {
         window: &mut Window, cx: &mut Context<Self>, repo: Arc<dyn ArchiveRepository>,
         open_path: Option<String>, open_password: Option<String>,
     ) -> Self {
-        let state = AppState::new();
+        let state = AppState::new(cx);
         let use_cases = Arc::new(UseCases::new(repo));
         let preview_panel = cx.new(|_| PreviewPanel::new());
         let p2 = preview_panel.clone();
-        let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
-        let entry_list = cx.new(|cx| ArchiveFileList::new(window, cx));
+        let state_for_browser = state.clone();
+        let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, state_for_browser, cx));
+        let state_for_list = state.clone();
+        let entry_list = cx.new(|cx| ArchiveFileList::new(window, cx, state_for_list));
         let app_shell_weak = cx.entity().downgrade();
-        let root_view = cx.new(move |cx| RootView::new(app_shell_weak, p2, archive_browser, entry_list, cx));
+        let state_for_root = state.clone();
+        let root_view = cx.new(move |cx| RootView::new(app_shell_weak, state_for_root, p2, archive_browser, entry_list, cx));
 
         cx.subscribe::<RootView, Intent>(&root_view, move |this, _, intent, cx| this.on_intent(intent.clone(), cx)).detach();
 
-        Self { state, use_cases, root_view, preview_panel, sidebar_collapsed: false }
+        Self { state, use_cases, root_view, preview_panel }
     }
 
     fn on_intent(&mut self, intent: Intent, cx: &mut Context<Self>) {
@@ -119,7 +121,7 @@ impl AppShell {
             Intent::TestAll => self.handle_test(cx, false),
             Intent::OpenEntry => self.handle_open_entry(cx),
             Intent::RequestNewFolder => cx.emit(bit7z_infra_events::ArchiveVmEvent::RequestNewFolder),
-            Intent::RequestNewFile => { if let Some(ref h) = self.state.handle { let uc = self.use_cases.clone(); let handle = h.clone(); cx.background_spawn(async move { let _ = uc.new_file(&handle); }).detach(); } }
+            Intent::RequestNewFile => { if self.state.handle.get().is_some() { let uc = self.use_cases.clone(); let handle = self.state.handle.get().unwrap(); cx.background_spawn(async move { let _ = uc.new_file(&handle); }).detach(); } }
             Intent::RequestAddFiles => self.handle_add_files(cx),
             Intent::RequestOpenArchive => { if let Some(path) = bit7z_infra_platform::pick_archive_file() { self.handle_open_archive(&path, None, cx); } }
             Intent::RequestCreateArchive => {
@@ -127,7 +129,7 @@ impl AppShell {
                 cx.spawn(async move |_, cx| { bit7z_pres_dialogs::create::CreateArchiveDialog::open(cx, vec![], Some(repo)); }).detach();
             }
             Intent::CloseArchive => self.handle_close(cx),
-            Intent::Refresh => { if self.state.handle.is_some() { self.state.directory_cache.remove(&self.state.current_path); } }
+            Intent::Refresh => { if self.state.handle.get().is_some() { let path = self.state.current_path.get(); self.state.directory_cache.update(|c| { c.remove(&path); }); } }
             _ => {}
         }
     }
@@ -135,8 +137,8 @@ impl AppShell {
     fn handle_extract(&mut self, cx: &mut Context<Self>) {
         let indices = self.state.selected_indices();
         let entries = self.state.selected_entries();
-        if entries.is_empty() || self.state.handle.is_none() { return; }
-        let handle = self.state.handle.clone().unwrap();
+        if entries.is_empty() || self.state.handle.get().is_none() { return; }
+        let handle = self.state.handle.get().unwrap();
         let uc = self.use_cases.clone();
         let busy = indices.clone();
         cx.spawn(async move |this, cx| {
@@ -166,7 +168,7 @@ impl AppShell {
     }
 
     fn handle_delete(&mut self, cx: &mut Context<Self>) {
-        if let (Some(h), false) = (self.state.handle.clone(), self.state.selected_indices().is_empty()) {
+        if let (Some(h), false) = (self.state.handle.get(), self.state.selected_indices().is_empty()) {
             let indices = self.state.selected_indices();
             let uc = self.use_cases.clone();
             cx.spawn(async move |_, cx| { bit7z_pres_dialogs::delete::DeleteDialog::open(cx, indices, h, uc.repo.clone()); }).detach();
@@ -177,7 +179,7 @@ impl AppShell {
         let entries = self.state.selected_entries();
         if !entries.is_empty() {
             cx.spawn(async move |_, cx| { bit7z_pres_dialogs::properties::PropertiesDialog::open_entries(entries, cx); }).detach();
-        } else if let Some(ref h) = self.state.handle {
+        } else if let Some(ref h) = self.state.handle.get() {
             let path_str = h.path().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
             let uc = self.use_cases.clone(); let handle = h.clone();
             cx.spawn(async move |_, cx| { if let Ok(props) = uc.properties(&handle) { bit7z_pres_dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx); } }).detach();
@@ -185,7 +187,7 @@ impl AppShell {
     }
 
     fn handle_test(&mut self, cx: &mut Context<Self>, selected: bool) {
-        if let Some(h) = self.state.handle.clone() {
+        if let Some(h) = self.state.handle.get() {
             let indices = if selected { Some(self.state.selected_indices()) } else { None };
             let uc = self.use_cases.clone();
             cx.spawn(async move |_, cx| { bit7z_pres_dialogs::test::TestDialog::open_with_entries(cx, h, indices, uc.repo.clone()); }).detach();
@@ -193,10 +195,11 @@ impl AppShell {
     }
 
     fn handle_open_entry(&mut self, cx: &mut Context<Self>) {
-        if let (Some(ref h), Some(idx)) = (self.state.handle.clone(), self.state.first_selected_index()) {
+        if let (Some(ref h), Some(idx)) = (self.state.handle.get(), self.state.first_selected_index()) {
             if self.state.displayed_entries().iter().find(|e| e.original_index == idx).map_or(false, |e| e.is_directory) {
                 let name = self.state.displayed_entries().iter().find(|e| e.original_index == idx).map(|e| e.display_name.clone()).unwrap();
-                self.state.navigate_into(&name); self.sync_root_view(cx); self.load_current_directory(cx);
+                self.state.navigate_into(&name);
+                self.load_current_directory(cx);
             } else {
                 let uc = self.use_cases.clone(); let handle = h.clone();
                 cx.background_spawn(async move { let _ = uc.open_entry(&handle, idx); }).detach();
@@ -205,15 +208,14 @@ impl AppShell {
     }
 
     fn handle_add_files(&mut self, cx: &mut Context<Self>) {
-        if let Some(ref h) = self.state.handle {
+        if let Some(ref h) = self.state.handle.get() {
             let uc = self.use_cases.clone(); let handle = h.clone();
             cx.spawn(async move |_, cx| { bit7z_pres_dialogs::add_files::AddFilesDialog::open(cx, bit7z_domain::archive::ArchiveFormat::SevenZip, Some(handle), Some(uc.repo.clone()), false); }).detach();
         }
     }
 
     pub fn handle_open_archive(&mut self, path: &Path, password: Option<String>, cx: &mut Context<Self>) {
-        self.state.status = ViewStatus::Loading;
-        self.sync_root_view(cx);
+        self.state.status.set(ViewStatus::Loading);
         let uc = self.use_cases.clone();
         let path_buf = path.to_path_buf();
         let path_string = path.to_string_lossy().to_string();
@@ -227,19 +229,22 @@ impl AppShell {
             match bg_task.await {
                 Ok(handle) => {
                     this.update(cx, |this, cx| {
-                        this.state.handle = Some(handle); this.state.archive_password = pw_clone;
-                        this.state.current_path = String::new(); this.state.path_history.clear(); this.state.directory_cache.clear();
+                        this.state.handle.set(Some(handle));
+                        this.state.archive_password.set(pw_clone);
+                        this.state.current_path.set(String::new());
+                        this.state.path_history.update(|h| h.clear());
+                        this.state.directory_cache.update(|c| c.clear());
                         bit7z_pres_settings::SettingsStore::get_mut(cx).update_and_save(|p| p.archive.add_recent(path_string.clone()));
                         this.load_current_directory(cx);
                     }).ok();
                 }
                 Err(ArchiveError::EncryptedArchiveRequiresPassword) => {
-                    this.update(cx, |this, cx| { this.state.status = ViewStatus::Empty; }).ok();
+                    this.update(cx, |this, _| { this.state.status.set(ViewStatus::Empty); }).ok();
                     if let Some(this_strong) = this_strong.clone() {
                         Self::password_prompt(path_for_password, this_strong, cx);
                     }
                 }
-                Err(e) => { this.update(cx, |this, _| { this.state.status = ViewStatus::Error(e.to_string()); }).ok(); }
+                Err(e) => { this.update(cx, |this, _| { this.state.status.set(ViewStatus::Error(e.to_string())); }).ok(); }
             }
         }).detach();
     }
@@ -265,29 +270,48 @@ impl AppShell {
     }
 
     pub fn load_current_directory(&mut self, cx: &mut Context<Self>) {
-        if let (Some(ref h), _) = (self.state.handle.clone(), ()) {
-            let handle = h.clone(); let path = self.state.current_path.clone(); let uc = self.use_cases.clone();
+        if self.state.handle.get().is_some() {
+            let handle = self.state.handle.get().unwrap();
+            let path = self.state.current_path.get();
+            let uc = self.use_cases.clone();
             cx.spawn(async move |this, cx| {
                 match uc.list_directory(&handle, &path) {
-                    Ok(entries) => { let _ = this.update(cx, |this, cx| { this.state.directory_cache.insert(path, entries); this.state.reapply_filter_and_sort(); this.state.status = ViewStatus::Ready; this.sync_root_view(cx); cx.notify(); }); }
-                    Err(e) => { let _ = this.update(cx, |this, _| { this.state.status = ViewStatus::Error(e.to_string()); }); }
+                    Ok(entries) => {
+                        let _ = this.update(cx, |this, cx| {
+                            this.state.directory_cache.update(|c| { c.insert(path, entries); });
+                            this.state.reapply_filter_and_sort();
+                            this.state.status.set(ViewStatus::Ready);
+                            cx.notify();
+                        });
+                    }
+                    Err(e) => { let _ = this.update(cx, |this, _| { this.state.status.set(ViewStatus::Error(e.to_string())); }); }
                 }
             }).detach();
         }
     }
 
-    pub fn navigate_into(&mut self, dir: &str, cx: &mut Context<Self>) { self.state.navigate_into(dir); self.sync_root_view(cx); self.load_current_directory(cx); }
-    pub fn set_filter(&mut self, text: &str, cx: &mut Context<Self>) { self.state.set_filter(text); self.sync_root_view(cx); }
-    pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) { self.sidebar_collapsed = !self.sidebar_collapsed; self.sync_root_view(cx); cx.notify(); }
-
-    fn handle_close(&mut self, cx: &mut Context<Self>) {
-        if let Some(ref h) = self.state.handle { self.use_cases.close(h); }
-        self.state.handle = None; self.state.properties = None; self.state.directory_cache.clear(); self.state.level_entries.clear();
-        self.state.current_path = String::new(); self.state.path_history.clear(); self.state.status = ViewStatus::Empty;
-        self.sync_root_view(cx);
+    pub fn navigate_into(&mut self, dir: &str, cx: &mut Context<Self>) {
+        self.state.navigate_into(dir);
+        self.load_current_directory(cx);
     }
 
-    pub fn sync_root_view(&self, cx: &mut Context<Self>) {
-        self.root_view.update(cx, |rv, cx| rv.sync_state(&self.state, self.sidebar_collapsed, cx));
+    pub fn set_filter(&mut self, text: &str, _cx: &mut Context<Self>) {
+        self.state.set_filter(text);
+    }
+
+    pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.state.sidebar_collapsed.update(|c| *c = !*c);
+        cx.notify();
+    }
+
+    fn handle_close(&mut self, cx: &mut Context<Self>) {
+        if let Some(ref h) = self.state.handle.get() { self.use_cases.close(h); }
+        self.state.handle.set(None);
+        self.state.properties.set(None);
+        self.state.directory_cache.update(|c| c.clear());
+        self.state.level_entries.update(|e| e.clear());
+        self.state.current_path.set(String::new());
+        self.state.path_history.update(|h| h.clear());
+        self.state.status.set(ViewStatus::Empty);
     }
 }

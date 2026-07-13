@@ -10,5 +10,6 @@ bit7z-infra-events = { path = "../../infrastructure/events" }
 bit7z-infra-tray = { path = "../../infrastructure/tray" }
 bit7z-infra-progress = { path = "../../infrastructure/progress" }
 gpui = { workspace = true }
+gpui_signals = { path = "../../vendor/gpui_signals" }
 chrono = { version = "0.4", features = ["serde"] }
 crossbeam-channel = "0.5"

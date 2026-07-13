@@ -8,6 +8,7 @@ use gpui_component::sidebar::{
 };
 use gpui_component::{Icon, IconName, h_flex};
 use std::path::Path;
+use bit7z_pres_view_models::AppState;
 use crate::menu::ToggleSidebar;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,37 +21,33 @@ pub enum BrowserIntent {
 impl EventEmitter<BrowserIntent> for ArchiveBrowser {}
 
 pub struct ArchiveBrowser {
-    subdirs: Vec<String>,
-    recent_files: Vec<String>,
+    state: AppState,
     input_state: Entity<InputState>,
     collapsed: bool,
     _subscriptions: Vec<Subscription>,
 }
 
 impl ArchiveBrowser {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, state: AppState, cx: &mut Context<Self>) -> Self {
         let input_state = cx.new(|cx| InputState::new(window, cx).placeholder("Filter..."));
+        let state_for_filter = state.clone();
         let _subscriptions = vec![cx.subscribe_in(&input_state, window, {
-            move |this: &mut Self, _, ev: &InputEvent, _: &mut Window, cx| match ev {
+            move |_: &mut Self, _, ev: &InputEvent, _: &mut Window, cx| match ev {
                 InputEvent::Change => {
-                    let value = this.input_state.read(cx).value();
-                    cx.emit(BrowserIntent::SetFilter(value.to_string()))
+                    let value = cx.entity().read(cx).input_state.read(cx).value();
+                    state_for_filter.filter_text.set(value.to_string());
+                    state_for_filter.clear_selection();
+                    state_for_filter.reapply_filter_and_sort();
                 }
                 _ => {}
             }
         })];
         Self {
-            subdirs: vec![],
-            recent_files: vec![],
+            state,
             input_state,
             collapsed: false,
             _subscriptions,
         }
-    }
-
-    pub fn set_state(&mut self, subdirs: Vec<String>, recent_files: Vec<String>) {
-        self.subdirs = subdirs;
-        self.recent_files = recent_files;
     }
 
     pub fn set_collapsed(&mut self, collapsed: bool, cx: &mut Context<Self>) {
@@ -63,6 +60,8 @@ impl Render for ArchiveBrowser {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let self_handle = cx.entity();
         let collapsed = self.collapsed;
+        let subdirs = self.state.filtered_subdirs();
+        let recent_files: Vec<String> = vec![];
 
         let sidebar = Sidebar::new("archive-browser")
             .collapsible(true)
@@ -85,7 +84,7 @@ impl Render for ArchiveBrowser {
                 SidebarGroup::new("Explorer").child(SidebarMenu::new().child(
                     SidebarMenuItem::new("Folder")
                         .icon(IconName::Folder)
-                        .children(self.subdirs.iter().cloned().map(
+                        .children(subdirs.iter().cloned().map(
                         |name| {
                             let h = self_handle.clone();
                             SidebarMenuItem::new(name.clone())
@@ -103,7 +102,7 @@ impl Render for ArchiveBrowser {
                     SidebarGroup::new("Fast Access").child(SidebarMenu::new()
                         .child(SidebarMenuItem::new("Recent Files").icon(IconName::History)
                         .children(
-                        self.recent_files.iter().cloned().map(|path| {
+                        recent_files.iter().cloned().map(|path| {
                             let h = self_handle.clone();
                             let file_name = Path::new(&path)
                                 .file_name()

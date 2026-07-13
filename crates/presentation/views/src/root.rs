@@ -28,16 +28,17 @@ pub struct RootView {
 impl RootView {
     pub fn new(
         app_shell: WeakEntity<AppShell>,
+        state: AppState,
         preview_panel: Entity<PreviewPanel>,
         archive_browser: Entity<ArchiveBrowser>,
         entry_list: Entity<ArchiveFileList>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let menu = cx.new(|cx| Menu::new(false, cx));
-        let toolbar = cx.new(|_| Toolbar::new());
-        let status_bar = cx.new(|_| StatusBar::default());
+        let menu = cx.new(|cx| Menu::new(state.clone(), cx));
+        let toolbar = cx.new(|_| Toolbar::new(state.clone()));
+        let status_bar = cx.new(|_| StatusBar::new(state.clone()));
 
-        cx.subscribe::<Toolbar, ToolbarIntent>(&toolbar, move |this, _, intent, cx| {
+        cx.subscribe::<Toolbar, ToolbarIntent>(&toolbar, move |_, _, intent, cx| {
             match intent {
                 ToolbarIntent::OpenArchive => cx.emit(Intent::RequestOpenArchive),
                 ToolbarIntent::CreateArchive => cx.emit(Intent::RequestCreateArchive),
@@ -50,6 +51,7 @@ impl RootView {
         }).detach();
 
         let pp = preview_panel.clone();
+        let state_for_browser = state.clone();
         cx.subscribe::<ArchiveBrowser, BrowserIntent>(&archive_browser, move |this, _, intent, cx| {
             match intent {
                 BrowserIntent::NavigateInto(dir) => { if let Some(s) = this.app_shell.upgrade() { s.update(cx, |s, cx| s.navigate_into(dir, cx)); } }
@@ -58,12 +60,17 @@ impl RootView {
             }
         }).detach();
 
+        let state_for_list = state.clone();
         cx.subscribe::<ArchiveFileList, FileListIntent>(&entry_list, move |this, _, intent, cx| {
             match intent {
                 FileListIntent::SelectionChanged(indices) => {
-                    this.state.selection = indices.iter().copied().collect(); this.state.selection_anchor = None; this.sync_child_views(cx);
+                    this.state.selection.update(|s| { *s = indices.iter().copied().collect(); });
+                    this.state.selection_anchor.set(None);
                     if let (Some(idx), Some(s)) = (indices.first(), this.app_shell.upgrade()) {
-                        let h = s.read(cx).state.handle.clone(); let panel = pp.clone(); let idx = *idx; let uc = s.read(cx).use_cases.clone();
+                        let h = s.read(cx).state.handle.get();
+                        let panel = pp.clone();
+                        let idx = *idx;
+                        let uc = s.read(cx).use_cases.clone();
                         cx.spawn(async move |this, cx| {
                             panel.update(cx, |p, _| p.set_loading());
                             if let Some(ref handle) = h {
@@ -76,8 +83,8 @@ impl RootView {
                         }).detach();
                     }
                 }
-                FileListIntent::SortByColumn(col, asc) => { this.state.apply_sort(*col, *asc); this.sync_child_views(cx); }
-                FileListIntent::NavigateUp => { this.state.navigate_up(); this.sync_child_views(cx); this.load_current_directory(cx); }
+                FileListIntent::SortByColumn(col, asc) => { this.state.apply_sort(*col, *asc); }
+                FileListIntent::NavigateUp => { this.state.navigate_up(); if let Some(s) = this.app_shell.upgrade() { s.update(cx, |s, cx| s.load_current_directory(cx)); } }
                 FileListIntent::OpenEntry => cx.emit(Intent::OpenEntry),
                 FileListIntent::PreviewEntry => {},
                 FileListIntent::ExtractSelected => cx.emit(Intent::Extract),
@@ -85,36 +92,19 @@ impl RootView {
                 FileListIntent::RenameEntry(_) => {},
                 FileListIntent::DeleteSelected => cx.emit(Intent::DeleteSelected),
                 FileListIntent::Checksum(_) => {},
-                FileListIntent::SelectAll => { this.state.select_all(); this.entry_list.update(cx, |c, cx| c.select_all_entries(cx)); this.sync_child_views(cx); }
-                FileListIntent::ClearSelection => { this.state.clear_selection(); this.entry_list.update(cx, |c, cx| c.clear_selection(cx)); this.sync_child_views(cx); }
+                FileListIntent::SelectAll => { this.state.select_all(); }
+                FileListIntent::ClearSelection => { this.state.clear_selection(); }
                 FileListIntent::Refresh => cx.emit(Intent::Refresh),
                 FileListIntent::ShowProperties => cx.emit(Intent::ShowProperties),
             }
         }).detach();
 
         let focus_handle = cx.focus_handle();
-        Self { app_shell, state: AppState::new(), focus_handle, menu, toolbar, archive_browser, entry_list, preview_panel, status_bar }
+        Self { app_shell, state, focus_handle, menu, toolbar, archive_browser, entry_list, preview_panel, status_bar }
     }
 
     fn load_current_directory(&mut self, cx: &mut Context<Self>) {
         if let Some(s) = self.app_shell.upgrade() { s.update(cx, |s, cx| s.load_current_directory(cx)); }
-    }
-
-    pub fn sync_state(&mut self, state: &AppState, sidebar_collapsed: bool, cx: &mut Context<Self>) {
-        self.state = state.clone(); self.sync_child_views(cx);
-        self.menu.update(cx, |c, cx| {
-            c.set_sidebar_collapsed(sidebar_collapsed);
-            c.set_state(state.handle.is_some(), state.has_selection(), state.selection.len() == 1, cx);
-        });
-    }
-
-    fn sync_child_views(&mut self, cx: &mut Context<Self>) {
-        let e = self.state.displayed_entries().to_vec(); let st = self.state.status.clone(); let p = self.state.current_path.clone();
-        let is_open = self.state.handle.is_some();
-        self.entry_list.update(cx, |c, cx| c.set_state(e, st, p, cx));
-        self.toolbar.update(cx, |c, _| c.set_state(is_open, self.state.is_ready(), self.state.has_selection()));
-        self.archive_browser.update(cx, |c, cx| { c.set_collapsed(false, cx); c.set_state(self.state.filtered_subdirs(), vec![]); });
-        self.status_bar.update(cx, |c, _| c.set_status(&self.state.status_text()));
     }
 }
 
@@ -131,7 +121,7 @@ impl Render for RootView {
                 let shift = event.keystroke.modifiers.shift;
                 let alt = event.keystroke.modifiers.alt;
                 match key {
-                    "a" if cmd && !shift => { this.state.select_all(); this.entry_list.update(cx, |c, cx| c.select_all_entries(cx)); this.sync_child_views(cx); }
+                    "a" if cmd && !shift => { this.state.select_all(); }
                     "o" if cmd => cx.emit(Intent::RequestOpenArchive),
                     "n" if cmd && shift => cx.emit(Intent::RequestNewFolder),
                     "n" if cmd => cx.emit(Intent::RequestCreateArchive),
@@ -158,8 +148,8 @@ impl Render for RootView {
             .on_action(cx.listener(|_, _: &menu::ChecksumMd5, _, cx| cx.emit(Intent::RequestChecksum { algorithm: "MD5".into() })))
             .on_action(cx.listener(|_, _: &menu::ChecksumSha1, _, cx| cx.emit(Intent::RequestChecksum { algorithm: "SHA1".into() })))
             .on_action(cx.listener(|_, _: &menu::ChecksumSha256, _, cx| cx.emit(Intent::RequestChecksum { algorithm: "SHA256".into() })))
-            .on_action(cx.listener(|this, _: &menu::SelectAll, _, cx| { this.state.select_all(); this.entry_list.update(cx, |c, cx| c.select_all_entries(cx)); this.sync_child_views(cx); }))
-            .on_action(cx.listener(|this, _: &menu::InvertSelection, _, cx| { this.state.invert_selection(); this.sync_child_views(cx); }))
+            .on_action(cx.listener(|this, _: &menu::SelectAll, _, _cx| { this.state.select_all(); }))
+            .on_action(cx.listener(|this, _: &menu::InvertSelection, _, _cx| { this.state.invert_selection(); }))
             .on_action(cx.listener(|this, _: &menu::RenameSelected, _, cx| { if let Some(idx) = this.state.first_selected_index() { cx.emit(ArchiveVmEvent::RequestRename { index: idx, new_name: String::new() }); } }))
             .on_action(cx.listener(|this, _: &menu::ToggleSidebar, _, cx| { if let Some(s) = this.app_shell.upgrade() { s.update(cx, |s, cx| s.toggle_sidebar(cx)); } }))
             .on_action(cx.listener(|_, _: &menu::ShowSettings, _, cx| { cx.spawn(async move |_, cx| { bit7z_pres_dialogs::settings::SettingsDialog::open(cx); }).detach(); }))

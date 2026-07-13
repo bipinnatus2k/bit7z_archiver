@@ -4,6 +4,7 @@ use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::menu::AppMenuBar;
 use gpui_component::{GlobalState, Icon, IconName, Sizable, TitleBar};
 use serde::Deserialize;
+use bit7z_pres_view_models::AppState;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = menu_actions, no_json)]
@@ -34,22 +35,20 @@ actions!(menu_actions, [
 
 pub struct Menu {
     bar: Entity<AppMenuBar>,
-    sidebar_collapsed: bool,
+    state: AppState,
 }
 
 impl Menu {
-    pub fn new(sidebar_collapsed:bool,cx: &mut Context<Self>) -> Self {
+    pub fn new(state: AppState, cx: &mut Context<Self>) -> Self {
         let bar = AppMenuBar::new(cx);
-        let menu = Self { sidebar_collapsed, bar };
+        let menu = Self { state, bar };
         menu.reload(cx);
         menu
     }
 
-    pub fn set_sidebar_collapsed(&mut self, collapsed: bool) {
-        self.sidebar_collapsed = collapsed;
-    }
-
-    pub fn set_state(&mut self, is_open: bool, has_selection: bool, _single_selection: bool, cx: &mut Context<Self>) {
+    pub fn update_menus(&mut self, cx: &mut Context<Self>) {
+        let is_open = self.state.is_open();
+        let has_selection = self.state.has_selection();
         let menus = Self::build_menus(is_open, has_selection, vec![]);
         let owned: Vec<OwnedMenu> = menus.into_iter().map(|m| m.owned()).collect();
         GlobalState::global_mut(cx).set_app_menus(owned);
@@ -57,13 +56,13 @@ impl Menu {
     }
 
     fn reload(&self, cx: &mut Context<Self>) {
-        let menus = Self::build_menus(false, false,vec![]);
+        let menus = Self::build_menus(false, false, vec![]);
         let owned: Vec<OwnedMenu> = menus.into_iter().map(|m| m.owned()).collect();
         GlobalState::global_mut(cx).set_app_menus(owned);
         self.bar.update(cx, |bar, cx| bar.reload(cx));
     }
 
-    fn build_menus(is_open: bool, has_selection: bool,recent_files: Vec<PathBuf>) -> Vec<gpui::Menu> {
+    fn build_menus(is_open: bool, has_selection: bool, recent_files: Vec<PathBuf>) -> Vec<gpui::Menu> {
         vec![
             gpui::Menu {
                 name: "File".into(),
@@ -136,7 +135,8 @@ impl Menu {
 
 impl Render for Menu {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let collapsed = self.sidebar_collapsed;
+        self.update_menus(cx);
+        let collapsed = self.state.sidebar_collapsed.get();
         let icon = if collapsed { IconName::PanelLeftOpen } else { IconName::PanelLeftClose };
         TitleBar::new()
             .child(div().flex()
@@ -144,7 +144,7 @@ impl Render for Menu {
                     .ghost()
                     .small()
                     .icon(Icon::new(icon).size_4())
-                    .on_click(cx.listener(|this, _, _, cx| {
+                    .on_click(cx.listener(|_this, _, _, cx| {
                         cx.dispatch_action(&ToggleSidebar);
                         cx.notify();
                     }))
