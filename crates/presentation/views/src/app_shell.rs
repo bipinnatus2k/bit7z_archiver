@@ -14,8 +14,6 @@ use crate::archive_file_list::ArchiveFileList;
 use crate::preview_panel::PreviewPanel;
 use crate::root::RootView;
 
-// TODO(integration): IPC polling moved to runtime/gui
-
 #[derive(Clone)]
 pub struct UseCases {
     pub repo: Arc<dyn ArchiveRepository>,
@@ -109,7 +107,10 @@ impl AppShell {
             Intent::RequestNewFile => { if let Some(ref h) = self.state.handle { let uc = self.use_cases.clone(); let handle = h.clone(); cx.background_spawn(async move { let _ = uc.new_file(&handle); }).detach(); } }
             Intent::RequestAddFiles => self.handle_add_files(cx),
             Intent::RequestOpenArchive => { if let Some(path) = bit7z_infra_platform::pick_archive_file() { self.handle_open_archive(&path, None, cx); } }
-            Intent::RequestCreateArchive => { cx.spawn(async move |_, cx| { bit7z_pres_dialogs::create::CreateArchiveDialog::open(cx, vec![]); }).detach(); }
+            Intent::RequestCreateArchive => {
+                let repo = self.use_cases.repo.clone();
+                cx.spawn(async move |_, cx| { bit7z_pres_dialogs::create::CreateArchiveDialog::open(cx, vec![], Some(repo)); }).detach();
+            }
             Intent::CloseArchive => self.handle_close(cx),
             Intent::Refresh => { if self.state.handle.is_some() { self.state.directory_cache.remove(&self.state.current_path); } }
             _ => {}

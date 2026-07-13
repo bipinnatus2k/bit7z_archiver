@@ -186,6 +186,9 @@ pub trait ArchiveRepository: Send + Sync {
     fn test(&self, h: &ArchiveHandle, indices: &[u32], ctx: &OpCtx) -> Result<TestReport, ArchiveError>;
     fn plan(&self, h: &ArchiveHandle, changes: &ChangeSet) -> Result<ExecutionPlan, ArchiveError>;
     fn apply(&self, h: &ArchiveHandle, plan: &ExecutionPlan, opts: &WriteOptions, ctx: &OpCtx) -> Result<(), ArchiveError>;
+    fn build_archive(&self, h: &ArchiveHandle, files: &[(PathBuf, String)], out_path: &Path, ctx: &OpCtx) -> Result<(), ArchiveError> {
+        Err(ArchiveError::UnsupportedOperation)
+    }
     fn close(&self, h: &ArchiveHandle);
 }
 
@@ -503,6 +506,10 @@ pub mod test_utils {
                 total: tr.total as u32,
                 failed: tr.failed.clone(),
             })
+        }
+
+        fn build_archive(&self, _archive: &ArchiveHandle, _files: &[(PathBuf, String)], _out_path: &Path, _ctx: &OpCtx) -> Result<(), ArchiveError> {
+            Ok(())
         }
 
         fn close(&self, _archive: &ArchiveHandle) {

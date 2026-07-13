@@ -2,11 +2,12 @@ use crate::actor::{spawn_actor, ActorCmd};
 use bit7z_domain::archive::*;
 use bit7z_domain::plan::ExecutionPlan;
 use bit7z_domain::repository::*;
+use bit7z_infra_bit7z::WriterFormat;
 use crossbeam_channel::{bounded, unbounded, Sender};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -120,8 +121,30 @@ impl ArchiveRepository for RepoSupervisor {
         Ok(handle)
     }
 
-    fn create(&self, _path: &Path, _format: ArchiveFormat, _encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
-        Err(ArchiveError::UnsupportedOperation)
+    fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
+        let wf = archive_format_to_writer(format);
+        let password = encryption.map(|e| e.password.clone());
+
+        let (id, actor) = self.spawn()?;
+
+        let (reply_tx, reply_rx) = bounded(1);
+        actor.cmd_tx.send(ActorCmd::CreateWriter {
+            path: path.to_path_buf(),
+            format: wf,
+            password,
+            reply: reply_tx,
+        }).map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
+
+        reply_rx.recv()
+            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))?
+            .map_err(|_| ArchiveError::Internal("failed to create archive in actor".into()))?;
+
+        let handle = ArchiveHandle::new(id)
+            .with_path(path.to_path_buf());
+
+        self.actors.lock().insert(handle.raw_id(), actor);
+
+        Ok(handle)
     }
 
     fn list(&self, handle: &ArchiveHandle, range: Range<usize>) -> Result<Page<ArchiveEntry>, ArchiveError> {
@@ -142,8 +165,8 @@ impl ArchiveRepository for RepoSupervisor {
 
     fn extract(&self, handle: &ArchiveHandle, req: &ExtractRequest, ctx: &OpCtx) -> Result<ExtractReport, ArchiveError> {
         let ctx_owned = OpCtx {
-            cancel: CancellationToken::new(),
-            pause: PauseToken::new(),
+            cancel: ctx.cancel.clone(),
+            pause: ctx.pause.clone(),
             progress: ctx.progress.clone(),
         };
 
@@ -164,8 +187,8 @@ impl ArchiveRepository for RepoSupervisor {
 
     fn test(&self, handle: &ArchiveHandle, indices: &[u32], ctx: &OpCtx) -> Result<TestReport, ArchiveError> {
         let ctx_owned = OpCtx {
-            cancel: CancellationToken::new(),
-            pause: PauseToken::new(),
+            cancel: ctx.cancel.clone(),
+            pause: ctx.pause.clone(),
             progress: ctx.progress.clone(),
         };
 
@@ -183,10 +206,10 @@ impl ArchiveRepository for RepoSupervisor {
         })
     }
 
-    fn apply(&self, handle: &ArchiveHandle, plan: &ExecutionPlan, opts: &WriteOptions, ctx: &OpCtx) -> Result<(), ArchiveError> {
+    fn apply(&self, handle: &ArchiveHandle, plan: &ExecutionPlan, _opts: &WriteOptions, ctx: &OpCtx) -> Result<(), ArchiveError> {
         let ctx_owned = OpCtx {
-            cancel: CancellationToken::new(),
-            pause: PauseToken::new(),
+            cancel: ctx.cancel.clone(),
+            pause: ctx.pause.clone(),
             progress: ctx.progress.clone(),
         };
 
@@ -199,13 +222,40 @@ impl ArchiveRepository for RepoSupervisor {
                 conflicts: plan.conflicts.clone(),
             },
             opts: WriteOptions {
-                cancel: opts.cancel.clone(),
-                paused: opts.paused.clone(),
-                notifier: opts.notifier.clone(),
+                cancel: _opts.cancel.clone(),
+                paused: _opts.paused.clone(),
+                notifier: _opts.notifier.clone(),
             },
             ctx: ctx_owned,
             reply,
         })
+    }
+
+    fn build_archive(&self, handle: &ArchiveHandle, files: &[(PathBuf, String)], out_path: &Path, ctx: &OpCtx) -> Result<(), ArchiveError> {
+        let ctx_owned = OpCtx {
+            cancel: ctx.cancel.clone(),
+            pause: ctx.pause.clone(),
+            progress: ctx.progress.clone(),
+        };
+
+        let cmd_tx = self.actor_cmd_tx(handle)?;
+
+        // Step 1: add files to writer
+        let (reply_tx, reply_rx) = bounded(1);
+        let fs_paths: Vec<PathBuf> = files.iter().map(|(p, _)| p.clone()).collect();
+        cmd_tx.send(ActorCmd::AddFiles { files: fs_paths, reply: reply_tx })
+            .map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
+        reply_rx.recv()
+            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))??;
+
+        // Step 2: compress
+        let (reply_tx2, reply_rx2) = bounded(1);
+        cmd_tx.send(ActorCmd::CompressTo { out_path: out_path.to_path_buf(), ctx: ctx_owned, reply: reply_tx2 })
+            .map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
+        reply_rx2.recv()
+            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))??;
+
+        Ok(())
     }
 
     fn close(&self, handle: &ArchiveHandle) {
@@ -234,5 +284,17 @@ impl Drop for RepoSupervisor {
                 let _ = join.join();
             }
         }
+    }
+}
+
+fn archive_format_to_writer(fmt: ArchiveFormat) -> WriterFormat {
+    match fmt {
+        ArchiveFormat::SevenZip => WriterFormat::SevenZip,
+        ArchiveFormat::Zip => WriterFormat::Zip,
+        ArchiveFormat::Tar => WriterFormat::Tar,
+        ArchiveFormat::TarGz => WriterFormat::GZip,
+        ArchiveFormat::TarBz2 => WriterFormat::BZip2,
+        ArchiveFormat::TarXz => WriterFormat::Xz,
+        ArchiveFormat::Rar => WriterFormat::SevenZip, // RAR is read-only; default to 7z
     }
 }

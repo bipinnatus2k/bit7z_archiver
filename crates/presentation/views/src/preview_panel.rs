@@ -74,26 +74,46 @@ fn render_hex_view(bytes: &[u8], cx: &mut Context<PreviewPanel>) -> impl IntoEle
 }
 
 fn render_image_view(bytes: &[u8], cx: &mut Context<PreviewPanel>) -> impl IntoElement {
-    let (fmt_desc, has_dimensions) = detect_image_format(bytes);
-    let dims = if has_dimensions {
-        try_get_dimensions(bytes).map(|(w, h)| format!("{}x{}", w, h)).unwrap_or_default()
+    let (fmt_desc, _) = detect_image_format(bytes);
+    let dims = try_get_dimensions(bytes).map(|(w, h)| format!("{}x{}", w, h)).unwrap_or_else(|| String::from("unknown dimensions"));
+    let size_str = if bytes.len() >= 1_048_576 {
+        format!("{:.1} MB", bytes.len() as f64 / 1_048_576.0)
+    } else if bytes.len() >= 1024 {
+        format!("{:.1} KB", bytes.len() as f64 / 1024.0)
     } else {
-        String::new()
+        format!("{} B", bytes.len())
     };
 
-    let info = if !dims.is_empty() {
-        format!("{} — {} — {} bytes", fmt_desc, dims, bytes.len())
-    } else {
-        format!("{} — {} bytes", fmt_desc, bytes.len())
-    };
-
-    div().flex_1().flex_col().gap_2().child(
-        div().text_color(cx.theme().muted).text_sm().child(info)
-    ).child(
-        div().text_color(cx.theme().muted).text_xs().child(
-            "TODO(integration): render image via GPUI window::Image from in-memory buffer"
+    div().flex_1().flex_col().gap_3().overflow_y_scrollbar()
+        .child(
+            div()
+                .flex_col()
+                .gap_2()
+                .p_3()
+                .bg(cx.theme().background)
+                .border_1()
+                .border_color(cx.theme().border)
+                .rounded_md()
+                .child(
+                    div().flex_row().gap_3()
+                        .child(div().text_color(cx.theme().muted).text_xs().child("Format"))
+                        .child(div().text_sm().font_weight(gpui::FontWeight::MEDIUM).child(fmt_desc))
+                )
+                .child(
+                    div().flex_row().gap_3()
+                        .child(div().text_color(cx.theme().muted).text_xs().child("Dimensions"))
+                        .child(div().text_sm().child(dims))
+                )
+                .child(
+                    div().flex_row().gap_3()
+                        .child(div().text_color(cx.theme().muted).text_xs().child("Size"))
+                        .child(div().text_sm().child(size_str))
+                )
+                .child(
+                    div().text_color(cx.theme().muted).text_xs()
+                        .child("Image rendering from memory buffer will use GPUI image element; write to temp file first.")
+                )
         )
-    )
 }
 
 fn detect_image_format(bytes: &[u8]) -> (&'static str, bool) {

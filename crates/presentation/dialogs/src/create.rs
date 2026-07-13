@@ -1,4 +1,5 @@
 use bit7z_domain::archive::*;
+use bit7z_domain::repository::{ArchiveRepository, CancellationToken, NoopSink, OpCtx, PauseToken};
 use gpui_component::ActiveTheme;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::prelude::FluentBuilder as _;
@@ -37,6 +38,7 @@ pub struct CreateArchiveDialog {
     password_confirm_state: Entity<InputState>,
     format_select: Entity<SelectState<Vec<FormatItem>>>,
     level_select: Entity<SelectState<SearchableVec<LevelItem>>>,
+    repo: Option<Arc<dyn ArchiveRepository>>,
 }
 
 #[derive(Debug, Clone)]
@@ -115,7 +117,7 @@ fn compression_levels() -> Vec<LevelItem> {
 }
 
 impl CreateArchiveDialog {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>, files: Vec<CreateFileItem>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>, files: Vec<CreateFileItem>, repo: Option<Arc<dyn ArchiveRepository>>) -> Self {
         let prefs = &bit7z_pres_settings::SettingsStore::get(cx).prefs;
         let default_format = prefs.archive.default_format;
         let compression_level = prefs.archive.default_compression_level;
@@ -217,6 +219,7 @@ impl CreateArchiveDialog {
             password_confirm_state,
             format_select,
             level_select,
+            repo,
         }
     }
 
@@ -241,7 +244,7 @@ impl CreateArchiveDialog {
         })
     }
 
-    pub fn open(cx: &mut AsyncApp, files: Vec<CreateFileItem>) -> Receiver<CreateDialogEvent> {
+    pub fn open(cx: &mut AsyncApp, files: Vec<CreateFileItem>, repo: Option<Arc<dyn ArchiveRepository>>) -> Receiver<CreateDialogEvent> {
         let (tx, rx) = unbounded::<CreateDialogEvent>();
         let event_tx: SharedSender<CreateDialogEvent> = Arc::new(Mutex::new(Some(tx)));
         let et = event_tx.clone();
@@ -258,7 +261,7 @@ impl CreateArchiveDialog {
                     ..Default::default()
                 },
                 move |window, cx| {
-                    let dialog = cx.new(|cx| CreateArchiveDialog::new(window, cx, files));
+                    let dialog = cx.new(|cx| CreateArchiveDialog::new(window, cx, files, repo));
                     let et = et.clone();
                     cx.subscribe::<CreateArchiveDialog, CreateDialogEvent>(
                         &dialog,
@@ -464,11 +467,43 @@ impl Render for CreateArchiveDialog {
                             .primary()
                             .disabled(!self.is_valid())
                             .on_click(cx.listener(|this, _e, _window, cx| {
-                                // TODO(integration): repository injected via runtime/gui composition root
-                                cx.emit(CreateDialogEvent::CreateCompleted {
-                                    success: false,
-                                    error: Some("Repository not wired: integration pending".into()),
-                                });
+                                if let Some(ref repo) = this.repo {
+                                    let files: Vec<std::path::PathBuf> = this.file_list.iter().map(|f| f.path.clone()).collect();
+                                    let dest = std::path::PathBuf::from(&this.destination);
+                                    let fmt = this.format;
+                                    let encryption = this.build_encryption();
+                                    let cloned_repo = repo.clone();
+
+                                    cx.spawn(async move |this, cx| {
+                                        let result = || -> Result<(), bit7z_domain::repository::ArchiveError> {
+                                            let handle = cloned_repo.create(&dest, fmt, encryption.as_ref())?;
+                                            let files_with_names: Vec<(std::path::PathBuf, String)> = files.iter().map(|p| {
+                                                let name = p.file_name()
+                                                    .map(|n| n.to_string_lossy().to_string())
+                                                    .unwrap_or_else(|| p.to_string_lossy().to_string());
+                                                (p.clone(), name)
+                                            }).collect();
+                                            let ctx = OpCtx {
+                                                cancel: CancellationToken::new(),
+                                                pause: PauseToken::new(),
+                                                progress: std::sync::Arc::new(NoopSink),
+                                            };
+                                            cloned_repo.build_archive(&handle, &files_with_names, &dest, &ctx)
+                                        }();
+
+                                        let _ = this.update(cx, |_, cx| {
+                                            match result {
+                                                Ok(()) => cx.emit(CreateDialogEvent::CreateCompleted { success: true, error: None }),
+                                                Err(e) => cx.emit(CreateDialogEvent::CreateCompleted { success: false, error: Some(e.to_string()) }),
+                                            }
+                                        });
+                                    }).detach();
+                                } else {
+                                    cx.emit(CreateDialogEvent::CreateCompleted {
+                                        success: false,
+                                        error: Some("Repository not wired: integration pending".into()),
+                                    });
+                                }
                             }))
                     )
             )
