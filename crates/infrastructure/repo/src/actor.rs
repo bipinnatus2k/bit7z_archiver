@@ -166,28 +166,25 @@ fn handle_command(
                 }
             }
         }
-        ActorCmd::CreateWriter { path, format, password, reply } => {
-            let path_str = match path.to_str() {
-                Some(s) => s.to_string(),
-                None => {
-                    let _ = reply.send(Err(ArchiveError::Internal(
-                        "invalid UTF-8 path".into(),
-                    )));
+        ActorCmd::CreateWriter { path, format, password: pw, reply } => {
+            let result = Writer::create(lib, format);
+            let w = match result {
+                Ok(w) => w,
+                Err(e) => {
+                    let _ = reply.send(Err(ArchiveError::Internal(e)));
                     return;
                 }
             };
-            let pw_ref = password.as_ref();
-            let result = Writer::open(lib, &path_str, format, pw_ref);
-            match result {
-                Ok(w) => {
-                    *archive_path = Some(path);
-                    *writer = Some(w);
-                    let _ = reply.send(Ok(()));
-                }
-                Err(e) => {
+            if let Some(ref pw) = pw {
+                if let Err(e) = w.set_password(pw.as_str()) {
                     let _ = reply.send(Err(ArchiveError::Internal(e)));
+                    return;
                 }
             }
+            *archive_path = Some(path);
+            *writer = Some(w);
+            *password = pw;
+            let _ = reply.send(Ok(()));
         }
         ActorCmd::AddFiles { files, reply } => {
             let result = match writer.as_ref() {
@@ -510,7 +507,7 @@ fn execute_with_editor(
     password: Option<&Password>,
 ) -> Result<(), ArchiveError> {
     let path_str = archive_path.to_str().ok_or_else(|| {
-        ArchiveError::Internal("archive path is not valid valid UTF-8".into())
+        ArchiveError::Internal("archive path is not valid UTF-8".into())
     })?;
 
     let old_reader = reader.take();
