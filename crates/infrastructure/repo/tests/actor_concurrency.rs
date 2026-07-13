@@ -227,7 +227,6 @@ fn test_cancel_mid_extract() {
     match result {
         Ok(_) => eprintln!("Extraction completed before cancel took effect"),
         Err(ArchiveError::Cancelled) => { /* expected */ }
-        Err(ArchiveError::Canceled) => { /* expected (old name) */ }
         Err(e) => panic!("Unexpected error: {:?}", e),
     }
 
@@ -291,8 +290,6 @@ fn test_pause_resume() {
 
     if let Err(ArchiveError::Cancelled) = &result {
         eprintln!("Extraction was cancelled (expected if FFI cancel was triggered)");
-    } else if let Err(ArchiveError::Canceled) = &result {
-        eprintln!("Extraction was cancelled (old variant)");
     } else {
         assert!(result.is_ok(), "Extraction should succeed after resume: {:?}", result);
     }

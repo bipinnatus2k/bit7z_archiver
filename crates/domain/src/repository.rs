@@ -210,8 +210,6 @@ pub enum ArchiveError {
     Io(#[from] std::io::Error),
     #[error("Internal error: {0}")]
     Internal(String),
-    #[error("Operation canceled")]
-    Canceled,
     #[error("Operation cancelled")]
     Cancelled,
     #[error("Operation not supported for this archive format")]

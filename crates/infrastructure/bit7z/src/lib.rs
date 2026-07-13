@@ -284,31 +284,45 @@ impl ArchiveReader {
 
     /// Check if the archive is solid (compressed as a single stream).
     pub fn is_solid(&self) -> bool {
+        // SAFETY: self.raw is a valid BitArchiveReader pointer obtained from
+        // bit7z_reader_open; the reader is alive for the lifetime of self.
+        // This is a read-only property query with no side effects.
         unsafe { bit7z_ffi::bit7z_reader_is_solid(self.raw.as_ptr()) != 0 }
     }
 
     /// Check if the archive is multi-volume.
     pub fn is_multi_volume(&self) -> bool {
+        // SAFETY: self.raw is a valid BitArchiveReader pointer obtained from
+        // bit7z_reader_open; the reader is alive for the lifetime of self.
+        // This is a read-only property query with no side effects.
         unsafe { bit7z_ffi::bit7z_reader_is_multi_volume(self.raw.as_ptr()) != 0 }
     }
 
     /// Get the number of volumes in a multi-volume archive.
     pub fn volumes_count(&self) -> u32 {
+        // SAFETY: self.raw is a valid BitArchiveReader pointer; the reader is
+        // alive for the lifetime of self. Read-only property query.
         unsafe { bit7z_ffi::bit7z_reader_volumes_count(self.raw.as_ptr()) }
     }
 
     /// Get the headers size of the archive.
     pub fn headers_size(&self) -> u64 {
+        // SAFETY: self.raw is a valid BitArchiveReader pointer; the reader is
+        // alive for the lifetime of self. Read-only property query.
         unsafe { bit7z_ffi::bit7z_reader_headers_size(self.raw.as_ptr()) }
     }
 
     /// Check if the archive has a comment.
     pub fn has_comment(&self) -> bool {
+        // SAFETY: self.raw is a valid BitArchiveReader pointer; the reader is
+        // alive for the lifetime of self. Read-only property query.
         unsafe { bit7z_ffi::bit7z_reader_has_comment(self.raw.as_ptr()) != 0 }
     }
 
     /// Get the dictionary size (0 if not applicable).
     pub fn dictionary_size(&self) -> u64 {
+        // SAFETY: self.raw is a valid BitArchiveReader pointer; the reader is
+        // alive for the lifetime of self. Read-only property query.
         unsafe { bit7z_ffi::bit7z_reader_dictionary_size(self.raw.as_ptr()) }
     }
 }

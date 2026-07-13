@@ -108,3 +108,20 @@ pub unsafe extern "C" fn extract_overwrite_callback(
         }
     }
 }
+
+/// RAII guard that reclaims a Boxed `ExtractCtx` when the guard goes out of scope,
+/// including during panic unwind. This prevents memory leaks if the FFI call panics
+/// before `Box::from_raw` is reached.
+pub(crate) struct CtxGuard(pub(crate) *mut ExtractCtx);
+
+impl Drop for CtxGuard {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            // SAFETY: pointer was created by Box::into_raw in handle_extract;
+            // this guard is the sole owner.
+            unsafe {
+                drop(Box::from_raw(self.0));
+            }
+        }
+    }
+}

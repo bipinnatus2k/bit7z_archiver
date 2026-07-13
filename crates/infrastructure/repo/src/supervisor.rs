@@ -18,6 +18,8 @@ static NEXT_ARCHIVE_ID: AtomicU64 = AtomicU64::new(1);
 pub struct ArchiveActorHandle {
     cmd_tx: Sender<ActorCmd>,
     join: Option<JoinHandle<()>>,
+    running_cancel: parking_lot::Mutex<Option<CancellationToken>>,
+    running_pause: parking_lot::Mutex<Option<PauseToken>>,
 }
 
 /// Supervisor that manages per-archive actor threads.
@@ -57,7 +59,12 @@ impl RepoSupervisor {
         let name = format!("bit7z-actor-{}", id);
         let join = spawn_actor(lib, cmd_rx, name)
             .map_err(|e| ArchiveError::Internal(format!("failed to spawn actor: {}", e)))?;
-        Ok((id, ArchiveActorHandle { cmd_tx, join: Some(join) }))
+        Ok((id, ArchiveActorHandle {
+            cmd_tx,
+            join: Some(join),
+            running_cancel: parking_lot::Mutex::new(None),
+            running_pause: parking_lot::Mutex::new(None),
+        }))
     }
 
     fn actor_cmd_tx(&self, handle: &ArchiveHandle) -> Result<Sender<ActorCmd>, ArchiveError> {
@@ -79,6 +86,22 @@ impl RepoSupervisor {
         cmd_tx.send(cmd).map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
         reply_rx.recv()
             .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))?
+    }
+
+    fn set_running_tokens(&self, id: u64, cancel: &CancellationToken, pause: &PauseToken) {
+        let actors = self.actors.lock();
+        if let Some(actor) = actors.get(&id) {
+            *actor.running_cancel.lock() = Some(cancel.clone());
+            *actor.running_pause.lock() = Some(pause.clone());
+        }
+    }
+
+    fn clear_running_tokens(&self, id: u64) {
+        let actors = self.actors.lock();
+        if let Some(actor) = actors.get(&id) {
+            *actor.running_cancel.lock() = None;
+            *actor.running_pause.lock() = None;
+        }
     }
 }
 
@@ -107,8 +130,7 @@ impl ArchiveRepository for RepoSupervisor {
         }).map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
 
         reply_rx.recv()
-            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))?
-            .map_err(|_| ArchiveError::Internal("failed to open archive in actor".into()))?;
+            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))??;
 
         let has_encrypted_items = is_header_encrypted;
 
@@ -136,8 +158,7 @@ impl ArchiveRepository for RepoSupervisor {
         }).map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
 
         reply_rx.recv()
-            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))?
-            .map_err(|_| ArchiveError::Internal("failed to create archive in actor".into()))?;
+            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))??;
 
         let handle = ArchiveHandle::new(id)
             .with_path(path.to_path_buf());
@@ -170,7 +191,9 @@ impl ArchiveRepository for RepoSupervisor {
             progress: ctx.progress.clone(),
         };
 
-        self.send_recv(handle, |reply| ActorCmd::Extract {
+        // Set running tokens so close() can cancel+resume in-flight operations
+        self.set_running_tokens(handle.raw_id(), &ctx.cancel, &ctx.pause);
+        let result = self.send_recv(handle, |reply| ActorCmd::Extract {
             req: ExtractRequest {
                 indices: req.indices.clone(),
                 dest: req.dest.clone(),
@@ -178,11 +201,14 @@ impl ArchiveRepository for RepoSupervisor {
             },
             ctx: ctx_owned,
             reply,
-        })
+        });
+        self.clear_running_tokens(handle.raw_id());
+
+        result
     }
 
-    fn extract_to_buffer(&self, _handle: &ArchiveHandle, _index: u32) -> Result<Vec<u8>, ArchiveError> {
-        Err(ArchiveError::UnsupportedOperation)
+    fn extract_to_buffer(&self, handle: &ArchiveHandle, index: u32) -> Result<Vec<u8>, ArchiveError> {
+        self.send_recv(handle, |reply| ActorCmd::ExtractToBuffer { index, reply })
     }
 
     fn test(&self, handle: &ArchiveHandle, indices: &[u32], ctx: &OpCtx) -> Result<TestReport, ArchiveError> {
@@ -192,11 +218,15 @@ impl ArchiveRepository for RepoSupervisor {
             progress: ctx.progress.clone(),
         };
 
-        self.send_recv(handle, |reply| ActorCmd::Test {
+        self.set_running_tokens(handle.raw_id(), &ctx.cancel, &ctx.pause);
+        let result = self.send_recv(handle, |reply| ActorCmd::Test {
             indices: indices.to_vec(),
             ctx: ctx_owned,
             reply,
-        })
+        });
+        self.clear_running_tokens(handle.raw_id());
+
+        result
     }
 
     fn plan(&self, handle: &ArchiveHandle, changes: &ChangeSet) -> Result<ExecutionPlan, ArchiveError> {
@@ -213,7 +243,8 @@ impl ArchiveRepository for RepoSupervisor {
             progress: ctx.progress.clone(),
         };
 
-        self.send_recv(handle, |reply| ActorCmd::Apply {
+        self.set_running_tokens(handle.raw_id(), &ctx.cancel, &ctx.pause);
+        let result = self.send_recv(handle, |reply| ActorCmd::Apply {
             plan: ExecutionPlan {
                 deletes: plan.deletes.clone(),
                 renames: plan.renames.clone(),
@@ -228,7 +259,10 @@ impl ArchiveRepository for RepoSupervisor {
             },
             ctx: ctx_owned,
             reply,
-        })
+        });
+        self.clear_running_tokens(handle.raw_id());
+
+        result
     }
 
     fn build_archive(&self, handle: &ArchiveHandle, files: &[(PathBuf, String)], out_path: &Path, ctx: &OpCtx) -> Result<(), ArchiveError> {
@@ -263,6 +297,22 @@ impl ArchiveRepository for RepoSupervisor {
         let mut actors = self.actors.lock();
         if let Some(mut actor) = actors.remove(&id) {
             drop(actors);
+
+            // Cancel + resume any in-progress long operation to prevent deadlock.
+            // If the actor thread is blocked in wait_while_paused or an FFI call,
+            // this unblocks it so it can process the Close command.
+            {
+                let cancel = actor.running_cancel.lock();
+                if let Some(ref token) = *cancel {
+                    token.cancel();
+                }
+                drop(cancel);
+                let pause = actor.running_pause.lock();
+                if let Some(ref token) = *pause {
+                    token.resume();
+                }
+            }
+
             let (reply_tx, reply_rx) = bounded(1);
             let _ = actor.cmd_tx.send(ActorCmd::Close { reply: reply_tx });
             let _ = reply_rx.recv();
@@ -277,6 +327,18 @@ impl Drop for RepoSupervisor {
     fn drop(&mut self) {
         let actors = std::mem::take(&mut *self.actors.lock());
         for (_id, mut actor) in actors {
+            // Cancel + resume in-progress operation to prevent deadlock
+            {
+                let cancel = actor.running_cancel.lock();
+                if let Some(ref token) = *cancel {
+                    token.cancel();
+                }
+                drop(cancel);
+                let pause = actor.running_pause.lock();
+                if let Some(ref token) = *pause {
+                    token.resume();
+                }
+            }
             let (reply_tx, reply_rx) = bounded(1);
             let _ = actor.cmd_tx.send(ActorCmd::Close { reply: reply_tx });
             let _ = reply_rx.recv();

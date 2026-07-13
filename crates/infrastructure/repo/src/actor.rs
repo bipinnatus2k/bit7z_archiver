@@ -77,6 +77,10 @@ pub enum ActorCmd {
     Close {
         reply: Sender<()>,
     },
+    ExtractToBuffer {
+        index: u32,
+        reply: Sender<Result<Vec<u8>, ArchiveError>>,
+    },
 }
 
 /// Spawn an actor thread that exclusively owns an ArchiveReader (or Writer).
@@ -97,10 +101,11 @@ pub fn spawn_actor(
             let mut reader: Option<ArchiveReader> = None;
             let mut writer: Option<Writer> = None;
             let mut archive_path: Option<PathBuf> = None;
+            let mut password: Option<Password> = None;
 
             while let Ok(cmd) = cmd_rx.recv() {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    handle_command(&lib, &mut reader, &mut writer, &mut archive_path, cmd)
+                    handle_command(&lib, &mut reader, &mut writer, &mut archive_path, &mut password, cmd)
                 }));
                 if let Err(panic_err) = result {
                     let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
@@ -127,10 +132,11 @@ fn handle_command(
     reader: &mut Option<ArchiveReader>,
     writer: &mut Option<Writer>,
     archive_path: &mut Option<PathBuf>,
+    password: &mut Option<Password>,
     cmd: ActorCmd,
 ) {
     match cmd {
-        ActorCmd::Open { path, password, reply } => {
+        ActorCmd::Open { path, password: pw, reply } => {
             let path_str = match path.to_str() {
                 Some(s) => s.to_string(),
                 None => {
@@ -140,12 +146,13 @@ fn handle_command(
                     return;
                 }
             };
-            let pw_ref = password.as_ref();
+            let pw_ref = pw.as_ref();
             let result = ArchiveReader::open(lib, &path_str, pw_ref);
             match result {
                 Ok(rd) => {
                     *archive_path = Some(path);
                     *reader = Some(rd);
+                    *password = pw;
                     let _ = reply.send(Ok(()));
                 }
                 Err(e) => {
@@ -239,18 +246,27 @@ fn handle_command(
             let _ = reply.send(result);
         }
         ActorCmd::Apply { plan, opts, ctx, reply } => {
-            let result = handle_apply_editor(lib, reader, archive_path, plan, opts, ctx);
+            let result = handle_apply_editor(lib, reader, archive_path, password.as_ref(), plan, opts, ctx);
             let _ = reply.send(result);
         }
         ActorCmd::ApplyEditor { archive_path: ap, format, plan, opts, ctx, reply } => {
-            let result = execute_with_editor(lib, reader, &ap, format, &plan, opts, ctx);
+            let result = execute_with_editor(lib, reader, &ap, format, &plan, opts, ctx, password.as_ref());
             let _ = reply.send(result);
         }
         ActorCmd::Close { reply } => {
             let _ = reader.take();
             let _ = writer.take();
             *archive_path = None;
+            *password = None;
             let _ = reply.send(());
+        }
+        ActorCmd::ExtractToBuffer { index, reply } => {
+            let result = match reader.as_ref() {
+                Some(rd) => rd.extract_to_buffer(index)
+                    .map_err(|e| ArchiveError::Internal(e)),
+                None => Err(ArchiveError::NotOpen),
+            };
+            let _ = reply.send(result);
         }
     }
 }
@@ -363,13 +379,16 @@ fn handle_extract(
         ArchiveError::Internal("destination path is not valid UTF-8".into())
     })?;
 
+    let cancel = ctx.cancel.clone();
     let overwrite = req.overwrite;
     let extract_ctx = crate::trampolines::ExtractCtx { ctx, overwrite };
     let progress_ptr = Box::into_raw(Box::new(extract_ctx)) as *mut std::ffi::c_void;
+    let _guard = crate::trampolines::CtxGuard(progress_ptr as *mut crate::trampolines::ExtractCtx);
 
     // SAFETY: extract_to_cb calls the trampolines on the same thread (actor thread).
-    // The ExtractCtx (behind progress_ptr) lives until Box::from_raw below.
-    // The trampolines only run during this synchronous FFI call.
+    // The ExtractCtx (behind progress_ptr) lives for the duration of this FFI call,
+    // protected by the CtxGuard RAII guard. The trampolines only run during this
+    // synchronous FFI call.
     let result = unsafe {
         rd.extract_to_cb(
             &req.indices,
@@ -381,14 +400,10 @@ fn handle_extract(
         )
     };
 
-    // Recover the ExtractCtx; we don't need it after the call
-    // SAFETY: progress_ptr was created by Box::into_raw above; we own it exclusively.
-    let _recovered = unsafe { Box::from_raw(progress_ptr as *mut crate::trampolines::ExtractCtx) };
-
     match result {
         Ok(()) => Ok(ExtractReport::default()),
         Err(e) => {
-            if e.contains("cancel") || e.contains("Cancel") {
+            if cancel.is_cancelled() {
                 Err(ArchiveError::Cancelled)
             } else {
                 Err(ArchiveError::Internal(e))
@@ -399,12 +414,24 @@ fn handle_extract(
 
 fn handle_test(
     rd: &ArchiveReader,
-    _indices: &[u32],
-    _ctx: OpCtx,
+    indices: &[u32],
+    ctx: OpCtx,
 ) -> Result<TestReport, ArchiveError> {
-    // ArchiveReader::test() tests all items; we convert to TestReport
+    if ctx.cancel.is_cancelled() {
+        return Err(ArchiveError::Cancelled);
+    }
+
+    // bit7z test() tests all items; per-index test requires FFI support.
+    if !indices.is_empty() {
+        // TODO: per-index test requires FFI support. Currently testing all items.
+    }
+
     let (all_ok, total, failed_count, _failed_paths, failed_errors) =
         rd.test().map_err(|e| ArchiveError::Internal(e))?;
+
+    if ctx.cancel.is_cancelled() {
+        return Err(ArchiveError::Cancelled);
+    }
 
     let mut failed = Vec::new();
     if !all_ok && failed_count > 0 {
@@ -456,6 +483,7 @@ fn handle_apply_editor(
     lib: &bit7z_infra_bit7z::Library,
     reader: &mut Option<ArchiveReader>,
     archive_path: &Option<PathBuf>,
+    password: Option<&Password>,
     plan: ExecutionPlan,
     opts: WriteOptions,
     ctx: OpCtx,
@@ -472,7 +500,7 @@ fn handle_apply_editor(
         _ => WriterFormat::SevenZip,
     };
 
-    execute_with_editor(lib, reader, ap, format, &plan, opts, ctx)
+    execute_with_editor(lib, reader, ap, format, &plan, opts, ctx, password)
 }
 
 fn execute_with_editor(
@@ -483,6 +511,7 @@ fn execute_with_editor(
     plan: &ExecutionPlan,
     _opts: WriteOptions,
     _ctx: OpCtx,
+    password: Option<&Password>,
 ) -> Result<(), ArchiveError> {
     let path_str = archive_path.to_str().ok_or_else(|| {
         ArchiveError::Internal("archive path is not valid UTF-8".into())
@@ -491,7 +520,7 @@ fn execute_with_editor(
     // Drop reader before opening editor (editor needs exclusive access)
     let _old_reader = reader.take();
 
-    let editor = Editor::open(lib, path_str, format, None)
+    let editor = Editor::open(lib, path_str, format, password.map(|p| p.as_str()))
         .map_err(|e| ArchiveError::Internal(format!("editor open: {}", e)))?;
 
     // Process deletes in reverse order to avoid index shifting
@@ -514,9 +543,8 @@ fn execute_with_editor(
 
     // Editor is dropped here (goes out of scope)
 
-    // Re-open reader for subsequent operations
-    let pw_ref: Option<&Password> = None;
-    let new_reader = ArchiveReader::open(lib, path_str, pw_ref)
+    // Re-open reader with the stored password for subsequent operations
+    let new_reader = ArchiveReader::open(lib, path_str, password)
         .map_err(|e| ArchiveError::Internal(format!("re-open reader after edit: {}", e)))?;
 
     *reader = Some(new_reader);
