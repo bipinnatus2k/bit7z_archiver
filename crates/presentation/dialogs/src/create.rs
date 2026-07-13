@@ -11,6 +11,7 @@ use gpui_component::collapsible::Collapsible;
 use gpui_component::input::{Input, InputState};
 use gpui_component::select::{SearchableVec, Select, SelectItem, SelectState};
 use gpui_component::{IconName, h_flex, v_flex};
+#[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
 use std::sync::{Arc, Mutex};
 
@@ -305,7 +306,7 @@ impl Render for CreateArchiveDialog {
                                         this.file_list.push(bit7z_domain::archive::CreateFileItem {
                                             path: i.clone(),
                                             is_directory: false,
-                                            size: Some(i.metadata().unwrap().file_size()),
+                                            size: Some(std::fs::metadata(&i).map(|m| m.len()).unwrap_or(0)),
                                         });
                                     });
                                     if this.destination.is_empty() {
@@ -463,61 +464,11 @@ impl Render for CreateArchiveDialog {
                             .primary()
                             .disabled(!self.is_valid())
                             .on_click(cx.listener(|this, _e, _window, cx| {
-                                let repo = bit7z_rt_app_state::AppState::global(cx).repository.clone();
-                                let dest = std::path::PathBuf::from(&this.destination);
-                                let format = this.format;
-                                let encryption = this.build_encryption();
-                                let files: Vec<std::path::PathBuf> = this.file_list.iter().map(|f| f.path.clone()).collect();
-                                let (tx, rx) = bit7z_infra_progress::progress_channel();
-                                cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _cx| {
-                                    state.is_active = true;
-                                    state.is_complete = false;
-                                    state.is_paused = false;
-                                    state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
-                                    state.message = "Creating archive...".to_string();
-                                    state.current = 0;
-                                    state.total = 1;
-                                    state.error = None;
+                                // TODO(integration): repository injected via runtime/gui composition root
+                                cx.emit(CreateDialogEvent::CreateCompleted {
+                                    success: false,
+                                    error: Some("Repository not wired: integration pending".into()),
                                 });
-                                let dialog_entity = cx.entity();
-                                cx.background_spawn(async move {
-                                    let mut handle = match repo.create(&dest, format, encryption.as_ref()) {
-                                        Ok(h) => h,
-                                        Err(e) => {
-                                            let _ = tx.send(bit7z_domain::repository::ProgressUpdate {
-                                                file_current: 0, file_total: 0,
-                                                current_file: None,
-                                                items_done: 0, items_total: 0,
-                                                bytes_done: 0, bytes_total: 0,
-                                                error: Some(e.to_string()),
-                                            });
-                                            return;
-                                        }
-                                    };
-                                    if !files.is_empty() {
-                                        let uc = bit7z_app_archive::add_to::AddToArchiveUseCase::new(repo.clone());
-                                        let notifier: Option<Arc<dyn bit7z_domain::repository::ProgressNotifier>> = Some(Arc::new(bit7z_infra_progress::CrossbeamNotifier(tx)));
-                                        let _ = uc.execute(&mut handle, &files, notifier);
-                                    } else {
-                                        drop(tx);
-                                    }
-                                }).detach();
-                                cx.spawn(async move |_, cx| {
-                                    loop {
-                                        let done = cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _| {
-                                            let _ = state.poll();
-                                            state.is_complete
-                                        });
-                                        if done {
-                                            break;
-                                        }
-                                        cx.background_spawn(async move { std::thread::sleep(std::time::Duration::from_millis(80)); }).await;
-                                    }
-                                    let error = cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _| state.error.clone());
-                                    dialog_entity.update(cx, |_, cx| {
-                                        cx.emit(CreateDialogEvent::CreateCompleted { success: error.is_none(), error });
-                                    });
-                                }).detach();
                             }))
                     )
             )

@@ -1,0 +1,238 @@
+use crate::actor::{spawn_actor, ActorCmd};
+use bit7z_domain::archive::*;
+use bit7z_domain::plan::ExecutionPlan;
+use bit7z_domain::repository::*;
+use crossbeam_channel::{bounded, unbounded, Sender};
+use parking_lot::Mutex;
+use std::collections::HashMap;
+use std::ops::Range;
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
+
+static NEXT_ARCHIVE_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Handle to an actor thread, holding the command sender and join handle.
+pub struct ArchiveActorHandle {
+    cmd_tx: Sender<ActorCmd>,
+    join: Option<JoinHandle<()>>,
+}
+
+/// Supervisor that manages per-archive actor threads.
+///
+/// Each `open` call spawns a new actor thread. Commands are sent via
+/// crossbeam channel and processed serially on the actor thread.
+pub struct RepoSupervisor {
+    lib: Arc<bit7z_infra_bit7z::Library>,
+    actors: Mutex<HashMap<u64, ArchiveActorHandle>>,
+}
+
+impl RepoSupervisor {
+    pub fn new(lib_path: &str) -> Result<Self, ArchiveError> {
+        let lib = bit7z_infra_bit7z::Library::open(lib_path)
+            .map_err(|e| ArchiveError::Internal(format!("failed to load 7-Zip library: {}", e)))?;
+        Ok(Self {
+            lib: Arc::new(lib),
+            actors: Mutex::new(HashMap::new()),
+        })
+    }
+
+    pub fn with_library(lib: Arc<bit7z_infra_bit7z::Library>) -> Self {
+        Self {
+            lib,
+            actors: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn next_id() -> u64 {
+        NEXT_ARCHIVE_ID.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn spawn(&self) -> Result<(u64, ArchiveActorHandle), ArchiveError> {
+        let id = Self::next_id();
+        let (cmd_tx, cmd_rx) = unbounded();
+        let lib = self.lib.clone();
+        let name = format!("bit7z-actor-{}", id);
+        let join = spawn_actor(lib, cmd_rx, name)
+            .map_err(|e| ArchiveError::Internal(format!("failed to spawn actor: {}", e)))?;
+        Ok((id, ArchiveActorHandle { cmd_tx, join: Some(join) }))
+    }
+
+    fn actor_cmd_tx(&self, handle: &ArchiveHandle) -> Result<Sender<ActorCmd>, ArchiveError> {
+        let id = handle.raw_id();
+        let actors = self.actors.lock();
+        actors.get(&id)
+            .map(|a| a.cmd_tx.clone())
+            .ok_or(ArchiveError::NotOpen)
+    }
+
+    fn send_recv<T: Send + 'static>(
+        &self,
+        handle: &ArchiveHandle,
+        f: impl FnOnce(Sender<Result<T, ArchiveError>>) -> ActorCmd,
+    ) -> Result<T, ArchiveError> {
+        let cmd_tx = self.actor_cmd_tx(handle)?;
+        let (reply_tx, reply_rx) = bounded(1);
+        let cmd = f(reply_tx);
+        cmd_tx.send(cmd).map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
+        reply_rx.recv()
+            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))?
+    }
+}
+
+impl ArchiveRepository for RepoSupervisor {
+    fn open(&self, path: &Path, password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
+        let path_str = path.to_str().ok_or_else(|| {
+            ArchiveError::Internal("path is not valid UTF-8".into())
+        })?;
+
+        let (id, actor) = self.spawn()?;
+
+        // Check if header is encrypted
+        let is_header_encrypted = (path_str.to_lowercase().ends_with(".rar") && password.is_some())
+            || self.lib.is_header_encrypted(path_str);
+        let needs_password = is_header_encrypted && password.is_none();
+
+        if needs_password {
+            return Err(ArchiveError::EncryptedArchiveRequiresPassword);
+        }
+
+        let (reply_tx, reply_rx) = bounded(1);
+        actor.cmd_tx.send(ActorCmd::Open {
+            path: path.to_path_buf(),
+            password: password.cloned(),
+            reply: reply_tx,
+        }).map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
+
+        reply_rx.recv()
+            .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))?
+            .map_err(|_| ArchiveError::Internal("failed to open archive in actor".into()))?;
+
+        let has_encrypted_items = is_header_encrypted;
+
+        let mut handle = ArchiveHandle::new(id)
+            .with_path(path.to_path_buf());
+        handle.set_encryption_info(is_header_encrypted, has_encrypted_items);
+
+        self.actors.lock().insert(handle.raw_id(), actor);
+
+        Ok(handle)
+    }
+
+    fn create(&self, _path: &Path, _format: ArchiveFormat, _encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
+        Err(ArchiveError::UnsupportedOperation)
+    }
+
+    fn list(&self, handle: &ArchiveHandle, range: Range<usize>) -> Result<Page<ArchiveEntry>, ArchiveError> {
+        self.send_recv(handle, |reply| ActorCmd::List { range, reply })
+    }
+
+    fn list_dir(&self, handle: &ArchiveHandle, dir: &str, range: Range<usize>) -> Result<Page<ArchiveEntry>, ArchiveError> {
+        self.send_recv(handle, |reply| ActorCmd::ListDir {
+            dir: dir.to_string(),
+            range,
+            reply,
+        })
+    }
+
+    fn properties(&self, handle: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
+        self.send_recv(handle, |reply| ActorCmd::Properties { reply })
+    }
+
+    fn extract(&self, handle: &ArchiveHandle, req: &ExtractRequest, ctx: &OpCtx) -> Result<ExtractReport, ArchiveError> {
+        let ctx_owned = OpCtx {
+            cancel: CancellationToken::new(),
+            pause: PauseToken::new(),
+            progress: ctx.progress.clone(),
+        };
+
+        self.send_recv(handle, |reply| ActorCmd::Extract {
+            req: ExtractRequest {
+                indices: req.indices.clone(),
+                dest: req.dest.clone(),
+                overwrite: req.overwrite,
+            },
+            ctx: ctx_owned,
+            reply,
+        })
+    }
+
+    fn extract_to_buffer(&self, _handle: &ArchiveHandle, _index: u32) -> Result<Vec<u8>, ArchiveError> {
+        Err(ArchiveError::UnsupportedOperation)
+    }
+
+    fn test(&self, handle: &ArchiveHandle, indices: &[u32], ctx: &OpCtx) -> Result<TestReport, ArchiveError> {
+        let ctx_owned = OpCtx {
+            cancel: CancellationToken::new(),
+            pause: PauseToken::new(),
+            progress: ctx.progress.clone(),
+        };
+
+        self.send_recv(handle, |reply| ActorCmd::Test {
+            indices: indices.to_vec(),
+            ctx: ctx_owned,
+            reply,
+        })
+    }
+
+    fn plan(&self, handle: &ArchiveHandle, changes: &ChangeSet) -> Result<ExecutionPlan, ArchiveError> {
+        self.send_recv(handle, |reply| ActorCmd::Plan {
+            changes: changes.clone(),
+            reply,
+        })
+    }
+
+    fn apply(&self, handle: &ArchiveHandle, plan: &ExecutionPlan, opts: &WriteOptions, ctx: &OpCtx) -> Result<(), ArchiveError> {
+        let ctx_owned = OpCtx {
+            cancel: CancellationToken::new(),
+            pause: PauseToken::new(),
+            progress: ctx.progress.clone(),
+        };
+
+        self.send_recv(handle, |reply| ActorCmd::Apply {
+            plan: ExecutionPlan {
+                deletes: plan.deletes.clone(),
+                renames: plan.renames.clone(),
+                adds: plan.adds.clone(),
+                updates: plan.updates.clone(),
+                conflicts: plan.conflicts.clone(),
+            },
+            opts: WriteOptions {
+                cancel: opts.cancel.clone(),
+                paused: opts.paused.clone(),
+                notifier: opts.notifier.clone(),
+            },
+            ctx: ctx_owned,
+            reply,
+        })
+    }
+
+    fn close(&self, handle: &ArchiveHandle) {
+        let id = handle.raw_id();
+        let mut actors = self.actors.lock();
+        if let Some(mut actor) = actors.remove(&id) {
+            drop(actors);
+            let (reply_tx, reply_rx) = bounded(1);
+            let _ = actor.cmd_tx.send(ActorCmd::Close { reply: reply_tx });
+            let _ = reply_rx.recv();
+            if let Some(join) = actor.join.take() {
+                let _ = join.join();
+            }
+        }
+    }
+}
+
+impl Drop for RepoSupervisor {
+    fn drop(&mut self) {
+        let actors = std::mem::take(&mut *self.actors.lock());
+        for (_id, mut actor) in actors {
+            let (reply_tx, reply_rx) = bounded(1);
+            let _ = actor.cmd_tx.send(ActorCmd::Close { reply: reply_tx });
+            let _ = reply_rx.recv();
+            if let Some(join) = actor.join.take() {
+                let _ = join.join();
+            }
+        }
+    }
+}

@@ -3,9 +3,8 @@ use bit7z_app_archive::add_to::AddToArchiveUseCase;
 use bit7z_app_preview::PreviewEntryUseCase;
 use bit7z_app_checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
 use bit7z_domain::archive::{ArchiveFormat, ArchiveHandle, EncryptionConfig, EncryptionMethod, Password};
-use bit7z_domain::repository::{ArchiveError, ArchiveRepository, ArchiveProperties, ExtractOptions};
+use bit7z_domain::repository::*;
 use bit7z_domain::archive::OverwriteMode;
-use bit7z_domain::repository::NoopNotifier;
 use bit7z_infra_shell::ShellIntegration;
 use clap::{Parser, Subcommand};
 use humansize::{format_size, BINARY};
@@ -136,12 +135,12 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
         Commands::Open { path, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
             if let Err(e) = with_archive(&repo, Path::new(path), pw.as_ref(), |handle| {
-                let props = repo.get_properties(handle).unwrap_or_else(|e| {
-                    eprintln!("Warning: could not read properties: {}", e);
+                let props = repo.properties(handle).unwrap_or_else(|_| {
+                    eprintln!("Warning: could not read properties");
                     ArchiveProperties::default()
                 });
                 println!("Opened: {} ({} items, {} files, {} folders)",
-                    path, props.items_count, props.files_count, props.folders_count);
+                    path, props.items_count(), props.files_count(), props.folders_count());
                 Ok(())
             }) {
                 eprintln!("Error: {}", e);
@@ -151,8 +150,8 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
             let dest = to.as_deref().unwrap_or(".");
             if let Err(e) = with_archive(&repo, Path::new(path), pw.as_ref(), |handle| {
-                let props = repo.get_properties(handle).ok();
-                let count = props.map(|p| p.items_count).unwrap_or(0);
+                let props = repo.properties(handle).ok();
+                let count = props.map(|p| p.items_count()).unwrap_or(0);
                 let indices: Vec<u32> = if let Some(s) = indices {
                     s.split(',')
                         .filter_map(|part| part.trim().parse::<u32>().ok())
@@ -167,13 +166,17 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                     eprintln!("No valid indices specified");
                     return Ok(());
                 }
-                let options = ExtractOptions {
-                    overwrite_mode: OverwriteMode::Ask,
-                    cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                    paused: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                    notifier: std::sync::Arc::new(NoopNotifier),
+                let req = ExtractRequest {
+                    indices: indices.clone(),
+                    dest: PathBuf::from(dest),
+                    overwrite: OverwriteMode::Ask,
                 };
-                repo.extract(handle, &indices, Path::new(dest), &options)?;
+                let ctx = OpCtx {
+                    cancel: CancellationToken::new(),
+                    pause: PauseToken::new(),
+                    progress: Arc::new(NoopSink),
+                };
+                repo.extract(handle, &req, &ctx)?;
                 println!("Extracted {} entries to {}", indices.len(), dest);
                 Ok(())
             }) {
@@ -183,8 +186,13 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
         Commands::Test { path, password } => {
             let pw = password.as_ref().map(|p| Password::new(p.clone()));
             if let Err(e) = with_archive(&repo, Path::new(path), pw.as_ref(), |handle| {
-                match repo.test(handle) {
-                    Ok(result) => println!("Test result: {}/{} passed", result.passed, result.total),
+                let ctx = OpCtx {
+                    cancel: CancellationToken::new(),
+                    pause: PauseToken::new(),
+                    progress: Arc::new(NoopSink),
+                };
+                match repo.test(handle, &[], &ctx) {
+                    Ok(result) => println!("Test result: {}/{} ok", result.all_ok, result.total),
                     Err(e) => eprintln!("Test error: {}", e),
                 }
                 Ok(())
@@ -333,37 +341,38 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                 Ok(h) => h,
                 Err(e) => { eprintln!("Error: {}", e); return; }
             };
-            match repo.list_page(&handle, 0, u32::MAX as usize) {
+            match repo.list(&handle, 0..u32::MAX as usize) {
                 Ok(page) => {
                     println!("{0: <6} {1: <40} {2: >10} {3: >10} {4: >7} {5: <10}",
                         "Index", "Name", "Size", "Packed", "Ratio", "Modified");
                     println!("{:-<6} {:-<40} {:-<10} {:-<10} {:-<7} {:-<10}", "", "", "", "", "", "");
                     for entry in &page.items {
-                        let size_str = if entry.is_directory {
+                        let size_str = if entry.is_directory() {
                             "<DIR>".to_string()
                         } else {
-                            format_size(entry.size, BINARY)
+                            format_size(entry.size(), BINARY)
                         };
-                        let packed_str = if entry.is_directory {
+                        let packed_str = if entry.is_directory() {
                             "-".to_string()
                         } else {
-                            format_size(entry.compressed_size, BINARY)
+                            format_size(entry.compressed_size(), BINARY)
                         };
-                        let ratio_str = if entry.is_directory {
+                        let ratio_str = if entry.is_directory() {
                             "-".to_string()
                         } else {
                             format!("{:.0}%", entry.compression_ratio() * 100.0)
                         };
-                        let date_str = entry.modified
-                            .map(|d| d.format("%Y-%m-%d").to_string())
+                        let date_str = entry
+                            .mtime()
+                            .map(|ts| format_date(ts))
                             .unwrap_or_else(|| "-".to_string());
-                        let display_name = if entry.is_directory {
-                            format!("{}/", entry.name)
+                        let display_name = if entry.is_directory() {
+                            format!("{}/", entry.name())
                         } else {
-                            entry.name.clone()
+                            entry.name().to_string()
                         };
                         println!("{0: <6} {1: <40} {2: >10} {3: >10} {4: >7} {5: <10}",
-                            entry.original_index, display_name, size_str, packed_str, ratio_str, date_str);
+                            entry.original_index(), display_name, size_str, packed_str, ratio_str, date_str);
                     }
                 }
                 Err(e) => eprintln!("Error listing archive: {}", e),
@@ -484,6 +493,25 @@ fn collect_dir(dir: &Path, out: &mut Vec<PathBuf>) {
             }
         }
     }
+}
+
+fn format_date(timestamp: i64) -> String {
+    const SECONDS_PER_DAY: i64 = 86400;
+    const DAYS_PER_YEAR_APPROX: i64 = 365;
+    let days = timestamp / SECONDS_PER_DAY;
+    let year = 1970 + (days / DAYS_PER_YEAR_APPROX) as i32;
+    let day_of_year = (days % DAYS_PER_YEAR_APPROX) as i32;
+    let mut month = 1i32;
+    let mut remaining = day_of_year;
+    for days_in_month in &[31i32, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] {
+        if remaining < *days_in_month {
+            break;
+        }
+        remaining -= *days_in_month;
+        month += 1;
+    }
+    let day = remaining + 1;
+    format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
 fn parse_checksum_algorithms(alg: Option<&str>) -> Vec<ChecksumAlgorithm> {

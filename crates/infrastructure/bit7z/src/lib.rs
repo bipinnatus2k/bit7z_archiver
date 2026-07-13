@@ -14,18 +14,23 @@ pub struct Handle(usize);
 
 impl Handle {
     #[inline]
-    pub fn from_raw<T>(ptr: *mut T) -> Self {
+    pub(crate) fn from_raw<T>(ptr: *mut T) -> Self {
         Handle(ptr as usize)
     }
 
     #[inline]
-    pub fn as_ptr<T>(self) -> *mut T {
+    pub(crate) fn as_ptr<T>(self) -> *mut T {
         self.0 as *mut T
     }
 
     #[inline]
-    pub fn null() -> Self {
+    pub(crate) fn null() -> Self {
         Handle(0)
+    }
+
+    #[inline]
+    pub fn as_raw_ptr(self) -> *mut std::ffi::c_void {
+        self.0 as *mut std::ffi::c_void
     }
 
     #[inline]
@@ -57,9 +62,9 @@ pub struct FfiHandle {
     kind: HandleKind,
 }
 
-// SAFETY: FfiHandle wraps a raw FFI pointer. All access is serialized
-// through the repository's Mutex, which ensures only one thread calls
-// into the C++ bit7z library at a time on the same handle.
+// SAFETY: FfiHandle wraps a raw FFI pointer to a C++ resource. Instances
+// are exclusively owned by an actor thread and never cross thread boundaries.
+// The actor model ensures only one thread accesses the handle at a time.
 unsafe impl Send for FfiHandle {}
 unsafe impl Sync for FfiHandle {}
 
@@ -166,13 +171,6 @@ pub struct ArchiveReader {
     raw: Handle,
 }
 
-// SAFETY: ArchiveReader wraps a raw FFI handle to a C++ archive reader.
-// The handle is only used for read operations which are thread-safe in bit7z.
-// The handle is stored in Bit7zRepository's HashMap protected by Mutex, and
-// all access goes through methods that lock the mutex first.
-unsafe impl Send for ArchiveReader {}
-unsafe impl Sync for ArchiveReader {}
-
 impl ArchiveReader {
     pub fn open(lib: &Library, path: &str, password: Option<&Password>) -> Result<Self, String> {
         let c_path = std::ffi::CString::new(path).map_err(|e| format!("Invalid path: {}", e))?;
@@ -245,7 +243,7 @@ impl ArchiveReader {
     }
 
     /// Create from a raw handle (takes ownership).
-    pub unsafe fn from_raw(raw: Handle) -> Self {
+    pub(crate) unsafe fn from_raw(raw: Handle) -> Self {
         Self { raw }
     }
 
@@ -277,6 +275,41 @@ impl ArchiveReader {
     /// Check if opened archive has any encrypted items.
     pub fn has_encrypted_items(&self) -> bool {
         unsafe { bit7z_reader_has_encrypted_items(self.raw.as_ptr()) != 0 }
+    }
+
+    /// Return the raw FFI pointer for direct FFI calls.
+    pub fn raw_ptr(&self) -> *mut std::ffi::c_void {
+        self.raw.as_ptr()
+    }
+
+    /// Check if the archive is solid (compressed as a single stream).
+    pub fn is_solid(&self) -> bool {
+        unsafe { bit7z_ffi::bit7z_reader_is_solid(self.raw.as_ptr()) != 0 }
+    }
+
+    /// Check if the archive is multi-volume.
+    pub fn is_multi_volume(&self) -> bool {
+        unsafe { bit7z_ffi::bit7z_reader_is_multi_volume(self.raw.as_ptr()) != 0 }
+    }
+
+    /// Get the number of volumes in a multi-volume archive.
+    pub fn volumes_count(&self) -> u32 {
+        unsafe { bit7z_ffi::bit7z_reader_volumes_count(self.raw.as_ptr()) }
+    }
+
+    /// Get the headers size of the archive.
+    pub fn headers_size(&self) -> u64 {
+        unsafe { bit7z_ffi::bit7z_reader_headers_size(self.raw.as_ptr()) }
+    }
+
+    /// Check if the archive has a comment.
+    pub fn has_comment(&self) -> bool {
+        unsafe { bit7z_ffi::bit7z_reader_has_comment(self.raw.as_ptr()) != 0 }
+    }
+
+    /// Get the dictionary size (0 if not applicable).
+    pub fn dictionary_size(&self) -> u64 {
+        unsafe { bit7z_ffi::bit7z_reader_dictionary_size(self.raw.as_ptr()) }
     }
 }
 
@@ -485,12 +518,6 @@ pub struct Writer {
     raw: Handle,
 }
 
-// SAFETY: Writer wraps a raw FFI handle to a C++ archive writer.
-// Writer instances are short-lived and used within a single operation.
-// All access is serialized through Bit7zRepository's Mutex-protected library lock.
-unsafe impl Send for Writer {}
-unsafe impl Sync for Writer {}
-
 impl Writer {
     pub fn create(lib: &Library, format: WriterFormat) -> Result<Self, String> {
         let raw = unsafe { bit7z_writer_create(lib.raw_handle().as_ptr(), format as i32) };
@@ -498,7 +525,7 @@ impl Writer {
         else { Ok(Self { raw: Handle::from_raw(raw) }) }
     }
 
-    pub unsafe fn from_raw(raw: Handle) -> Self {
+    pub(crate) unsafe fn from_raw(raw: Handle) -> Self {
         Self { raw }
     }
 
@@ -525,9 +552,11 @@ impl Writer {
         unsafe { bit7z_writer_set_compression_level(self.raw.as_ptr(), level as i32); }
     }
 
-    pub fn set_password(&self, password: &str) {
-        let c_pw = std::ffi::CString::new(password).unwrap();
+    pub fn set_password(&self, password: &str) -> Result<(), String> {
+        let c_pw = std::ffi::CString::new(password)
+            .map_err(|e| format!("invalid password: {}", e))?;
         unsafe { bit7z_writer_set_password(self.raw.as_ptr(), c_pw.as_ptr()); }
+        Ok(())
     }
 
     pub fn set_update_mode(&self, mode: UpdateMode) {
@@ -602,9 +631,11 @@ impl Writer {
         unsafe { bit7z_ffi::bit7z_writer_set_volume_size(self.raw.as_ptr(), bytes); }
     }
 
-    pub fn set_password_ex(&self, password: &str, encrypt_header: bool) {
-        let c_pw = std::ffi::CString::new(password).unwrap();
+    pub fn set_password_ex(&self, password: &str, encrypt_header: bool) -> Result<(), String> {
+        let c_pw = std::ffi::CString::new(password)
+            .map_err(|e| format!("invalid password: {}", e))?;
         unsafe { bit7z_ffi::bit7z_writer_set_password_ex(self.raw.as_ptr(), c_pw.as_ptr(), c_int(encrypt_header as i32)); }
+        Ok(())
     }
 
     pub fn set_store_timestamps(&self, modified: bool, created: bool, accessed: bool) {
@@ -681,12 +712,6 @@ impl Drop for Writer {
 pub struct Editor {
     raw: Handle,
 }
-
-// SAFETY: Editor wraps a raw FFI handle to a C++ archive editor.
-// Editor instances are short-lived and used within a single operation.
-// All access is serialized through Bit7zRepository's Mutex-protected library lock.
-unsafe impl Send for Editor {}
-unsafe impl Sync for Editor {}
 
 impl Editor {
     pub fn open(lib: &Library, path: &str, format: WriterFormat, password: Option<&str>) -> Result<Self, String> {

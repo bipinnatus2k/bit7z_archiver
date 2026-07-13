@@ -6,5 +6,7 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-bit7z-ffi = { path = "../../ffi" }
+
+[dev-dependencies]
+bit7z-domain = { path = "../../domain", features = ["testing"] }
 

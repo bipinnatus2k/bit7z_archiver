@@ -188,7 +188,8 @@ pub fn spawn_compress(
     writer.set_threads(threads);
     writer.set_compression_level(compression_level);
     if let Some(ref pw) = password {
-        writer.set_password(pw);
+        writer.set_password(pw)
+            .map_err(|e| format!("set_password: {}", e))?;
     }
     writer.set_update_mode(update_mode);
     for f in &files {
@@ -228,7 +229,7 @@ pub fn spawn_compress(
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
+    use super::*;
     use crossbeam_channel::{Receiver, Sender};
     use std::ffi::CString;
     use std::sync::atomic::{AtomicBool, Ordering};

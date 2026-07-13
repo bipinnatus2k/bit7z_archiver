@@ -14,28 +14,28 @@ pub(crate) fn next_archive_id() -> u64 {
 /// An entry (file or directory) inside a compressed archive.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArchiveEntry {
-    pub name: String,
-    pub path: String,
-    pub size: u64,
-    pub compressed_size: u64,
-    pub is_directory: bool,
-    pub is_encrypted: bool,
-    pub is_symlink: bool,
-    pub modified: Option<DateTime<Utc>>,
-    pub created: Option<DateTime<Utc>>,
-    pub accessed: Option<DateTime<Utc>>,
-    pub crc: Option<u32>,
-    pub attributes: Option<u32>,
-    pub posix_attrib: Option<u32>,
-    pub host_os: Option<u8>,
-    pub compression_method: Option<String>,
-    pub comment: Option<String>,
-    pub user: Option<String>,
-    pub group: Option<String>,
-    pub extension: Option<String>,
-    pub hardlink: Option<String>,
+    pub(crate) name: String,
+    pub(crate) path: String,
+    pub(crate) size: u64,
+    pub(crate) compressed_size: u64,
+    pub(crate) is_directory: bool,
+    pub(crate) is_encrypted: bool,
+    pub(crate) is_symlink: bool,
+    pub(crate) modified: Option<DateTime<Utc>>,
+    pub(crate) created: Option<DateTime<Utc>>,
+    pub(crate) accessed: Option<DateTime<Utc>>,
+    pub(crate) crc: Option<u32>,
+    pub(crate) attributes: Option<u32>,
+    pub(crate) posix_attrib: Option<u32>,
+    pub(crate) host_os: Option<u8>,
+    pub(crate) compression_method: Option<String>,
+    pub(crate) comment: Option<String>,
+    pub(crate) user: Option<String>,
+    pub(crate) group: Option<String>,
+    pub(crate) extension: Option<String>,
+    pub(crate) hardlink: Option<String>,
     /// Original index in the archive (for preview/extraction).
-    pub original_index: u32,
+    pub(crate) original_index: u32,
 }
 
 impl Default for ArchiveEntry {
@@ -67,11 +67,139 @@ impl Default for ArchiveEntry {
 }
 
 impl ArchiveEntry {
+    pub fn name(&self) -> &str { &self.name }
+    pub fn path(&self) -> &str { &self.path }
+    pub fn size(&self) -> u64 { self.size }
+    pub fn compressed_size(&self) -> u64 { self.compressed_size }
+    pub fn is_directory(&self) -> bool { self.is_directory }
+    pub fn is_encrypted(&self) -> bool { self.is_encrypted }
+    pub fn is_symlink(&self) -> bool { self.is_symlink }
+    pub fn original_index(&self) -> u32 { self.original_index }
+    pub fn mtime(&self) -> Option<i64> { self.modified.map(|dt| dt.timestamp()) }
+    pub fn ctime(&self) -> Option<i64> { self.created.map(|dt| dt.timestamp()) }
+    pub fn atime(&self) -> Option<i64> { self.accessed.map(|dt| dt.timestamp()) }
+    pub fn crc(&self) -> u32 { self.crc.unwrap_or(0) }
+    pub fn attributes(&self) -> u32 { self.attributes.unwrap_or(0) }
+    pub fn posix_attrib(&self) -> u32 { self.posix_attrib.unwrap_or(0) }
+    pub fn host_os(&self) -> u8 { self.host_os.unwrap_or(0) }
+    pub fn compression_method(&self) -> Option<&str> { self.compression_method.as_deref() }
+    pub fn comment(&self) -> Option<&str> { self.comment.as_deref() }
+    pub fn user(&self) -> Option<&str> { self.user.as_deref() }
+    pub fn group(&self) -> Option<&str> { self.group.as_deref() }
+    pub fn extension(&self) -> Option<&str> { self.extension.as_deref() }
+    pub fn hardlink(&self) -> Option<&str> { self.hardlink.as_deref() }
+
     pub fn compression_ratio(&self) -> f64 {
         if self.size == 0 {
             0.0
         } else {
             1.0 - (self.compressed_size as f64 / self.size as f64)
+        }
+    }
+
+    pub fn builder() -> ArchiveEntryBuilder {
+        ArchiveEntryBuilder::default()
+    }
+}
+
+pub struct ArchiveEntryBuilder {
+    name: String,
+    path: String,
+    size: u64,
+    compressed_size: u64,
+    is_directory: bool,
+    is_encrypted: bool,
+    is_symlink: bool,
+    modified: Option<DateTime<Utc>>,
+    created: Option<DateTime<Utc>>,
+    accessed: Option<DateTime<Utc>>,
+    crc: Option<u32>,
+    attributes: Option<u32>,
+    posix_attrib: Option<u32>,
+    host_os: Option<u8>,
+    compression_method: Option<String>,
+    comment: Option<String>,
+    user: Option<String>,
+    group: Option<String>,
+    extension: Option<String>,
+    hardlink: Option<String>,
+    original_index: u32,
+}
+
+impl Default for ArchiveEntryBuilder {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            path: String::new(),
+            size: 0,
+            compressed_size: 0,
+            is_directory: false,
+            is_encrypted: false,
+            is_symlink: false,
+            modified: None,
+            created: None,
+            accessed: None,
+            crc: None,
+            attributes: None,
+            posix_attrib: None,
+            host_os: None,
+            compression_method: None,
+            comment: None,
+            user: None,
+            group: None,
+            extension: None,
+            hardlink: None,
+            original_index: 0,
+        }
+    }
+}
+
+impl ArchiveEntryBuilder {
+    pub fn name(mut self, v: String) -> Self { self.name = v; self }
+    pub fn path(mut self, v: String) -> Self { self.path = v; self }
+    pub fn size(mut self, v: u64) -> Self { self.size = v; self }
+    pub fn compressed_size(mut self, v: u64) -> Self { self.compressed_size = v; self }
+    pub fn is_directory(mut self, v: bool) -> Self { self.is_directory = v; self }
+    pub fn is_encrypted(mut self, v: bool) -> Self { self.is_encrypted = v; self }
+    pub fn is_symlink(mut self, v: bool) -> Self { self.is_symlink = v; self }
+    pub fn modified(mut self, v: Option<DateTime<Utc>>) -> Self { self.modified = v; self }
+    pub fn created(mut self, v: Option<DateTime<Utc>>) -> Self { self.created = v; self }
+    pub fn accessed(mut self, v: Option<DateTime<Utc>>) -> Self { self.accessed = v; self }
+    pub fn crc(mut self, v: Option<u32>) -> Self { self.crc = v; self }
+    pub fn attributes(mut self, v: Option<u32>) -> Self { self.attributes = v; self }
+    pub fn posix_attrib(mut self, v: Option<u32>) -> Self { self.posix_attrib = v; self }
+    pub fn host_os(mut self, v: Option<u8>) -> Self { self.host_os = v; self }
+    pub fn compression_method(mut self, v: Option<String>) -> Self { self.compression_method = v; self }
+    pub fn comment(mut self, v: Option<String>) -> Self { self.comment = v; self }
+    pub fn user(mut self, v: Option<String>) -> Self { self.user = v; self }
+    pub fn group(mut self, v: Option<String>) -> Self { self.group = v; self }
+    pub fn extension(mut self, v: Option<String>) -> Self { self.extension = v; self }
+    pub fn hardlink(mut self, v: Option<String>) -> Self { self.hardlink = v; self }
+    pub fn original_index(mut self, v: u32) -> Self { self.original_index = v; self }
+
+    pub fn build(self) -> ArchiveEntry {
+        ArchiveEntry {
+            name: self.name,
+            path: self.path,
+            size: self.size,
+            compressed_size: self.compressed_size,
+            is_directory: self.is_directory,
+            is_encrypted: self.is_encrypted,
+            is_symlink: self.is_symlink,
+            modified: self.modified,
+            created: self.created,
+            accessed: self.accessed,
+            crc: self.crc,
+            attributes: self.attributes,
+            posix_attrib: self.posix_attrib,
+            host_os: self.host_os,
+            compression_method: self.compression_method,
+            comment: self.comment,
+            user: self.user,
+            group: self.group,
+            extension: self.extension,
+            hardlink: self.hardlink,
+            original_index: self.original_index,
         }
     }
 }
@@ -157,19 +285,28 @@ impl ArchiveFormat {
 /// the repository removes the entry, and subsequent operations on any clone will
 /// fail with "handle not found" - this is safe and expected behavior.
 #[must_use = "ArchiveHandle tracks a C++ resource; dropping it loses the reference"]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ArchiveId(pub(crate) u64);
+
+/// Opaque handle to an opened archive.
 #[derive(Debug, Clone)]
 pub struct ArchiveHandle {
-    pub id: u64,
-    pub path: Option<PathBuf>,
+    pub(crate) id: ArchiveId,
+    pub(crate) path: Option<PathBuf>,
     pub(crate) format: Option<ArchiveFormat>,
     pub(crate) is_header_encrypted: bool,
     pub(crate) has_encrypted_items: bool,
 }
 
 impl ArchiveHandle {
-    pub fn new_reader() -> Self {
+    /// Construct a new handle with the given raw id.
+    ///
+    /// Only `ArchiveRepository` implementations (e.g. `RepoSupervisor`) should call this;
+    /// a handle constructed with an unregistered id will return `NotOpen` from any operation.
+    /// Fields remain private to prevent struct-literal construction.
+    pub fn new(id: u64) -> Self {
         Self {
-            id: next_archive_id(),
+            id: ArchiveId(id),
             path: None,
             format: None,
             is_header_encrypted: false,
@@ -177,14 +314,18 @@ impl ArchiveHandle {
         }
     }
 
-    pub fn new_writer() -> Self {
-        Self {
-            id: next_archive_id(),
-            path: None,
-            format: None,
-            is_header_encrypted: false,
-            has_encrypted_items: false,
-        }
+    /// Returns the raw u64 id. Used by repository implementations to look up the
+    /// associated actor. The id is a monotonic counter, not a pointer or secret.
+    pub fn raw_id(&self) -> u64 {
+        self.id.0
+    }
+
+    pub fn path(&self) -> Option<&std::path::Path> {
+        self.path.as_deref()
+    }
+
+    pub fn format(&self) -> Option<ArchiveFormat> {
+        self.format
     }
 
     pub fn with_path(mut self, path: PathBuf) -> Self {
@@ -197,7 +338,7 @@ impl ArchiveHandle {
         self
     }
 
-    pub fn with_format_opt(mut self, format: Option<ArchiveFormat>) -> Self {
+    pub(crate) fn with_format_opt(mut self, format: Option<ArchiveFormat>) -> Self {
         self.format = format;
         self
     }
@@ -434,53 +575,29 @@ mod tests {
 
     #[test]
     fn test_compression_ratio_zero_size() {
-        let entry = ArchiveEntry {
-            name: String::new(),
-            path: String::new(),
-            size: 0,
-            compressed_size: 0,
-            is_directory: false,
-            is_encrypted: false,
-            is_symlink: false,
-            modified: None,
-            created: None,
-            accessed: None,
-            crc: None,
-            attributes: None,
-            posix_attrib: None,
-            host_os: None,
-            compression_method: None,
-            comment: None,
-            user: None,
-            group: None,
-            extension: None,
-            hardlink: None,
-            original_index: 0,
-        };
+        let entry = ArchiveEntry::default();
         assert_eq!(entry.compression_ratio(), 0.0);
     }
 
     #[test]
     fn test_compression_ratio_no_compression() {
-        let entry = ArchiveEntry {
-            name: "test.bin".into(),
-            path: "test.bin".into(),
-            size: 1000,
-            compressed_size: 1000,
-            ..Default::default()
-        };
+        let entry = ArchiveEntry::builder()
+            .name("test.bin".into())
+            .path("test.bin".into())
+            .size(1000)
+            .compressed_size(1000)
+            .build();
         assert_eq!(entry.compression_ratio(), 0.0);
     }
 
     #[test]
     fn test_compression_ratio_positive() {
-        let entry = ArchiveEntry {
-            name: "test.txt".into(),
-            path: "test.txt".into(),
-            size: 1000,
-            compressed_size: 300,
-            ..Default::default()
-        };
+        let entry = ArchiveEntry::builder()
+            .name("test.txt".into())
+            .path("test.txt".into())
+            .size(1000)
+            .compressed_size(300)
+            .build();
         let ratio = entry.compression_ratio();
         assert!((ratio - 0.7).abs() < 0.001, "Expected ~0.7, got {}", ratio);
     }

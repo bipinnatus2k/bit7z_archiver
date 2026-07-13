@@ -14,7 +14,7 @@ fn main() {
     let lib = bit7z_infra_bit7z::Library::open(&lib_path_str)
         .expect("Failed to load 7-Zip library");
     let repo: Arc<dyn bit7z_domain::repository::ArchiveRepository> =
-        Arc::new(bit7z_infra_persistence::Bit7zRepository::new(lib));
+        Arc::new(bit7z_infra_repo::supervisor::RepoSupervisor::new(&lib_path_str).expect("Failed to create RepoSupervisor"));
 
     if cli.worker {
         bit7z_rt_worker::run_worker(repo);

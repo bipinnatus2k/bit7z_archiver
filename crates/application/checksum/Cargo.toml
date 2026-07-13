@@ -12,3 +12,6 @@ sha1 = "0.10"
 crc32fast = "1.4"
 serde = { version = "1", features = ["derive"] }
 
+[dev-dependencies]
+bit7z-domain = { path = "../../domain", features = ["testing"] }
+

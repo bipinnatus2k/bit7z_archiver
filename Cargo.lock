@@ -877,6 +877,7 @@ dependencies = [
  "bit7z-infra-bit7z",
  "bit7z-infra-persistence",
  "bit7z-infra-platform",
+ "bit7z-infra-repo",
  "bit7z-infra-shell",
  "bit7z-infra-tray",
  "bit7z-pres-theme",
@@ -893,7 +894,6 @@ name = "bit7z-app-archive"
 version = "0.1.0"
 dependencies = [
  "bit7z-domain",
- "bit7z-ffi",
 ]
 
 [[package]]
@@ -920,7 +920,6 @@ name = "bit7z-app-test"
 version = "0.1.0"
 dependencies = [
  "bit7z-domain",
- "bit7z-infra-progress",
  "crc32fast",
 ]
 
@@ -959,7 +958,6 @@ dependencies = [
 name = "bit7z-infra-events"
 version = "0.1.0"
 dependencies = [
- "bit7z-app-checksum",
  "bit7z-domain",
 ]
 
@@ -967,16 +965,9 @@ dependencies = [
 name = "bit7z-infra-persistence"
 version = "0.1.0"
 dependencies = [
- "autocxx",
  "bit7z-domain",
- "bit7z-ffi",
  "bit7z-infra-bit7z",
- "bit7z-infra-platform",
- "bit7z-infra-progress",
- "chrono",
- "crossbeam-channel",
  "directories",
- "humansize",
  "serde_json",
 ]
 
@@ -993,6 +984,19 @@ version = "0.1.0"
 dependencies = [
  "bit7z-domain",
  "crossbeam-channel",
+]
+
+[[package]]
+name = "bit7z-infra-repo"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "bit7z-ffi",
+ "bit7z-infra-bit7z",
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -1043,7 +1047,6 @@ dependencies = [
  "bit7z-pres-progress",
  "bit7z-pres-settings",
  "bit7z-pres-view-models",
- "bit7z-rt-app-state",
  "crossbeam-channel",
  "gpui",
  "gpui-component",
@@ -1055,6 +1058,7 @@ dependencies = [
 name = "bit7z-pres-progress"
 version = "0.1.0"
 dependencies = [
+ "bit7z-domain",
  "bit7z-infra-progress",
  "bit7z-infra-tray",
  "crossbeam-channel",
@@ -1116,8 +1120,6 @@ dependencies = [
  "bit7z-pres-dialogs",
  "bit7z-pres-settings",
  "bit7z-pres-view-models",
- "bit7z-rt-app-state",
- "bit7z-rt-ipc",
  "crossbeam-channel",
  "gpui",
  "gpui-component",
@@ -1165,6 +1167,7 @@ dependencies = [
  "bit7z-infra-events",
  "bit7z-infra-persistence",
  "bit7z-infra-platform",
+ "bit7z-infra-repo",
  "bit7z-infra-tray",
  "bit7z-pres-components",
  "bit7z-pres-progress",

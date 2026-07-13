@@ -1,0 +1,21 @@
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Intent {
+    Extract,
+    DeleteSelected,
+    ShowProperties,
+    TestSelected,
+    TestAll,
+    OpenEntry,
+    ViewEntry,
+    EditEntry,
+    RequestNewFolder,
+    RequestNewFile,
+    RequestChecksum { algorithm: String },
+    RequestAddFiles,
+    RequestOpenArchive,
+    RequestCreateArchive,
+    CloseArchive,
+    Refresh,
+    ToggleViewMode,
+    ToggleFlatView,
+}

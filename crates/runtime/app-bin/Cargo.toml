@@ -13,6 +13,7 @@ bit7z-infra-persistence = { path = "../../infrastructure/persistence" }
 bit7z-infra-platform = { path = "../../infrastructure/platform" }
 bit7z-infra-shell = { path = "../../infrastructure/shell" }
 bit7z-infra-tray = { path = "../../infrastructure/tray" }
+bit7z-infra-repo = { path = "../../infrastructure/repo" }
 bit7z-rt-ipc = { path = "../ipc" }
 bit7z-rt-instance = { path = "../instance" }
 bit7z-rt-worker = { path = "../worker" }

@@ -1,10 +1,17 @@
 use bit7z_domain::archive::*;
 use bit7z_domain::plan::{ExecutionPlan, ConflictResolution};
 use bit7z_domain::repository::*;
-use bit7z_domain::repository::NoopNotifier;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+
+fn default_ctx() -> OpCtx {
+    OpCtx {
+        cancel: CancellationToken::new(),
+        pause: PauseToken::new(),
+        progress: Arc::new(NoopSink),
+    }
+}
 
 pub struct ModifyArchiveUseCase {
     repo: Arc<dyn ArchiveRepository>,
@@ -18,7 +25,7 @@ impl ModifyArchiveUseCase {
     pub fn plan(&self, archive: &ArchiveHandle, change_set: ChangeSet)
         -> Result<ExecutionPlan, ArchiveError>
     {
-        self.repo.plan_changes(archive, &change_set)
+        self.repo.plan(archive, &change_set)
     }
 
     pub fn execute(&self, archive: &ArchiveHandle, plan: &ExecutionPlan, options: &WriteOptions)
@@ -27,7 +34,7 @@ impl ModifyArchiveUseCase {
         if plan.has_conflicts() {
             return Err(ArchiveError::Conflict);
         }
-        self.repo.apply_changes(archive, plan, options)
+        self.repo.apply(archive, plan, options, &default_ctx())
     }
 
     pub fn execute_with_resolutions(
@@ -39,7 +46,7 @@ impl ModifyArchiveUseCase {
     ) -> Result<(), ArchiveError>
     {
         plan.apply_resolutions(resolutions);
-        self.repo.apply_changes(archive, &plan, options)
+        self.repo.apply(archive, &plan, options, &default_ctx())
     }
 
     pub fn add_files(
@@ -62,7 +69,7 @@ impl ModifyArchiveUseCase {
             change_set.add(f.clone(), archive_path);
         }
 
-        let plan = self.repo.plan_changes(archive, &change_set)?;
+        let plan = self.repo.plan(archive, &change_set)?;
 
         if plan.has_conflicts() {
             return Err(ArchiveError::Conflict);
@@ -74,7 +81,7 @@ impl ModifyArchiveUseCase {
             notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
         };
 
-        self.repo.apply_changes(archive, &plan, &options)
+        self.repo.apply(archive, &plan, &options, &default_ctx())
     }
 
     pub fn delete_entries(
@@ -88,7 +95,7 @@ impl ModifyArchiveUseCase {
             change_set.delete(idx);
         }
 
-        let plan = self.repo.plan_changes(archive, &change_set)?;
+        let plan = self.repo.plan(archive, &change_set)?;
 
         if plan.has_conflicts() {
             return Err(ArchiveError::Conflict);
@@ -100,7 +107,7 @@ impl ModifyArchiveUseCase {
             notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
         };
 
-        self.repo.apply_changes(archive, &plan, &options)
+        self.repo.apply(archive, &plan, &options, &default_ctx())
     }
 
     pub fn rename_entry(
@@ -112,7 +119,7 @@ impl ModifyArchiveUseCase {
         let mut change_set = ChangeSet::new();
         change_set.rename(index, new_name.to_string());
 
-        let plan = self.repo.plan_changes(archive, &change_set)?;
+        let plan = self.repo.plan(archive, &change_set)?;
 
         if plan.has_conflicts() {
             return Err(ArchiveError::Conflict);
@@ -124,6 +131,6 @@ impl ModifyArchiveUseCase {
             notifier: Arc::new(NoopNotifier),
         };
 
-        self.repo.apply_changes(archive, &plan, &options)
+        self.repo.apply(archive, &plan, &options, &default_ctx())
     }
 }

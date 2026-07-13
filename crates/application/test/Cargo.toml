@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-bit7z-infra-progress = { path = "../../infrastructure/progress" }
 
 crc32fast = "1.4"
+
+[dev-dependencies]
+bit7z-domain = { path = "../../domain", features = ["testing"] }

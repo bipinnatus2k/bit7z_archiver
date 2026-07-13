@@ -35,15 +35,19 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
                         current: 0, total: indices.len() as u64,
                         file: String::new(), bytes: 0,
                     });
-                    let options = ExtractOptions {
-                        overwrite_mode: bit7z_domain::archive::OverwriteMode::Overwrite,
-                        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                        paused: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                        notifier: std::sync::Arc::new(bit7z_domain::repository::NoopNotifier),
+                    let req = bit7z_domain::repository::ExtractRequest {
+                        indices: indices.clone(),
+                        dest: dest.clone(),
+                        overwrite: bit7z_domain::archive::OverwriteMode::Overwrite,
                     };
-                    let result = repo.extract(&archive, &indices, &dest, &options);
+                    let ctx = bit7z_domain::repository::OpCtx {
+                        cancel: bit7z_domain::repository::CancellationToken::new(),
+                        pause: bit7z_domain::repository::PauseToken::new(),
+                        progress: std::sync::Arc::new(bit7z_domain::repository::NoopSink),
+                    };
+                    let result = repo.extract(&archive, &req, &ctx);
                     match result {
-                        Ok(()) => send_msg(&mut stdout, &WorkerMessage::Complete {
+                        Ok(_report) => send_msg(&mut stdout, &WorkerMessage::Complete {
                             total_files: indices.len() as u64,
                             total_bytes: 0, duration_ms: 0,
                         }),

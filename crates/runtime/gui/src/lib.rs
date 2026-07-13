@@ -1,8 +1,6 @@
 use gpui::*;
 use gpui_component::Theme;
 use gpui_component_assets::Assets;
-use bit7z_infra_bit7z::Library;
-use bit7z_infra_persistence::Bit7zRepository;
 use bit7z_infra_platform;
 use bit7z_infra_tray::TrayManager;
 use bit7z_pres_settings::{self, SettingsStore};
@@ -32,11 +30,10 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
         let lib_path = bit7z_infra_platform::find_7z_library()
             .expect("7-Zip library not found. Install 7-Zip or p7zip.");
         let lib_path_str = lib_path.to_string_lossy();
-        let lib = Library::open(&lib_path_str)
-            .expect("Failed to load 7-Zip library");
 
         let repo: Arc<dyn bit7z_domain::repository::ArchiveRepository> =
-            Arc::new(Bit7zRepository::new(lib));
+            Arc::new(bit7z_infra_repo::supervisor::RepoSupervisor::new(&lib_path_str)
+                .expect("Failed to create RepoSupervisor"));
 
         let tray = Arc::new(TrayManager::new());
 
@@ -89,7 +86,8 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
                 };
                 Theme::change(theme_mode, Some(w), cx);
                 cx.bind_keys([]);
-                RootView::view(w, cx, open_path2.clone(), open_password)
+                let app_shell = cx.new(|cx| bit7z_pres_views::app_shell::AppShell::new(w, cx, repo, open_path2.clone(), open_password));
+                app_shell.update(cx, |shell, _| shell.root_view.clone())
             },
             cx,
         );
