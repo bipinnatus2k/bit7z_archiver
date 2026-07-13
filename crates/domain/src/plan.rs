@@ -70,22 +70,16 @@ pub fn plan_changes(
     for (i, change) in change_set.iter().enumerate() {
         match change {
             ArchiveChange::Add { fs_path, archive_path } => {
-                if let Some(existing) = existing_paths.get(archive_path.as_str()) {
-                    let incoming_size = std::fs::metadata(fs_path)
-                        .map(|m| m.len())
-                        .unwrap_or(0);
-                    let incoming_mtime = std::fs::metadata(fs_path)
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs() as i64);
-
+                if existing_paths.contains_key(archive_path.as_str()) {
+                    // Conflict detected. The incoming_size and incoming_mtime are left
+                    // as defaults (0 and None). Callers that need this metadata for
+                    // conflict resolution UI should read it from the filesystem.
                     plan.conflicts.push(Conflict {
                         change_index: i,
                         archive_path: archive_path.clone(),
-                        existing: (*existing).clone(),
-                        incoming_size,
-                        incoming_mtime,
+                        existing: existing_paths[archive_path.as_str()].clone(),
+                        incoming_size: 0,
+                        incoming_mtime: None,
                     });
                 } else {
                     plan.adds.push((fs_path.clone(), archive_path.clone()));

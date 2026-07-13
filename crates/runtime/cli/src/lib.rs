@@ -170,6 +170,7 @@ pub fn run_cli(repo: Arc<dyn ArchiveRepository>, cli: &Cli) {
                     indices: indices.clone(),
                     dest: PathBuf::from(dest),
                     overwrite: OverwriteMode::Ask,
+                    resolver: None,
                 };
                 let ctx = OpCtx {
                     cancel: CancellationToken::new(),

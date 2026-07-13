@@ -33,6 +33,7 @@ impl OpenEntryUseCase {
             indices: vec![index],
             dest: temp_path.clone(),
             overwrite: OverwriteMode::Overwrite,
+            resolver: None,
         };
         let ctx = OpCtx {
             cancel: CancellationToken::new(),

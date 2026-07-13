@@ -22,6 +22,10 @@ pub struct UseCases {
     test_entries_uc: bit7z_app_test::TestEntriesUseCase,
     open_entry_uc: bit7z_app_archive::open_entry::OpenEntryUseCase,
     preview_uc: bit7z_app_preview::PreviewEntryUseCase,
+    /// Shared cancel token for the current operation. Can be set externally to cancel.
+    pub current_cancel: CancellationToken,
+    /// Shared pause token for the current operation. Can be set externally to pause.
+    pub current_pause: PauseToken,
 }
 
 impl UseCases {
@@ -34,17 +38,30 @@ impl UseCases {
             open_entry_uc: bit7z_app_archive::open_entry::OpenEntryUseCase::new(repo.clone()),
             preview_uc: bit7z_app_preview::PreviewEntryUseCase::new(repo.clone()),
             repo,
+            current_cancel: CancellationToken::new(),
+            current_pause: PauseToken::new(),
         }
     }
 
+    /// Reset the cancel and pause tokens for a new operation.
+    pub fn reset_tokens(&mut self) {
+        self.current_cancel = CancellationToken::new();
+        self.current_pause = PauseToken::new();
+    }
+
     pub fn extract(&self, h: &ArchiveHandle, idx: &[u32], dest: &Path, om: OverwriteMode) -> Result<(), ArchiveError> {
-        let options = ExtractOptions {
-            overwrite_mode: om,
-            cancel: Arc::new(AtomicBool::new(false)),
-            paused: Arc::new(AtomicBool::new(false)),
-            notifier: Arc::new(NoopNotifier),
+        let req = ExtractRequest {
+            indices: idx.to_vec(),
+            dest: dest.to_path_buf(),
+            overwrite: om,
+            resolver: None,
         };
-        self.extract_uc.execute(h, idx, dest, &options).map(|_| ())
+        let ctx = OpCtx {
+            cancel: self.current_cancel.clone(),
+            pause: self.current_pause.clone(),
+            progress: Arc::new(NoopSink),
+        };
+        self.repo.extract(h, &req, &ctx).map(|_| ())
     }
 
     pub fn delete(&self, h: &ArchiveHandle, idx: &[u32]) -> Result<(), ArchiveError> {

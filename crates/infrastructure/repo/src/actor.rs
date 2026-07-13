@@ -384,7 +384,14 @@ fn handle_extract(
 
     let cancel = ctx.cancel.clone();
     let overwrite = req.overwrite;
-    let extract_ctx = crate::trampolines::ExtractCtx { ctx, overwrite };
+    let resolver = req.resolver;
+    let extract_ctx = crate::trampolines::ExtractCtx {
+        ctx,
+        overwrite,
+        resolver,
+        global_decision: std::sync::atomic::AtomicBool::new(false),
+        has_global_decision: std::sync::atomic::AtomicBool::new(false),
+    };
     let progress_ptr = Box::into_raw(Box::new(extract_ctx)) as *mut std::ffi::c_void;
     let _guard = crate::trampolines::CtxGuard(progress_ptr as *mut crate::trampolines::ExtractCtx);
 
@@ -424,11 +431,46 @@ fn handle_test(
         return Err(ArchiveError::Cancelled);
     }
 
-    // bit7z test() tests all items; per-index test requires FFI support.
+    // If specific indices are requested, test each one individually by extracting to buffer.
+    // This is slower than the bulk test() but allows per-index testing.
     if !indices.is_empty() {
-        // TODO: per-index test requires FFI support. Currently testing all items.
+        let mut failed = Vec::new();
+        let total = indices.len() as u32;
+
+        for &idx in indices {
+            if ctx.cancel.is_cancelled() {
+                return Err(ArchiveError::Cancelled);
+            }
+
+            ctx.pause.wait_while_paused(&ctx.cancel);
+            if ctx.cancel.is_cancelled() {
+                return Err(ArchiveError::Cancelled);
+            }
+
+            match rd.extract_to_buffer(idx) {
+                Ok(_) => {
+                    ctx.progress.on_progress(idx as u64, total as u64);
+                }
+                Err(e) => {
+                    failed.push(TestFailure {
+                        entry_path: format!("index {}", idx),
+                        error: e.clone(),
+                        index: idx as usize,
+                        path: String::new(),
+                        reason: TestFailureReason::ReadError(e),
+                    });
+                }
+            }
+        }
+
+        return Ok(TestReport {
+            all_ok: failed.is_empty(),
+            total,
+            failed,
+        });
     }
 
+    // Bulk test: test all items at once using the FFI test() method
     let (all_ok, total, failed_count, _failed_paths, failed_errors) =
         rd.test().map_err(|e| ArchiveError::Internal(e))?;
 
@@ -448,8 +490,6 @@ fn handle_test(
         });
     }
 
-    // If indices are provided and test was on all items, filter to just the requested indices
-    // For now, we report the aggregate result since the C API tests all items at once.
     Ok(TestReport {
         all_ok,
         total,
@@ -559,14 +599,47 @@ fn execute_with_editor(
 fn handle_compress_to(
     w: &Writer,
     out_path: &Path,
-    _ctx: OpCtx,
+    ctx: OpCtx,
 ) -> Result<(), ArchiveError> {
     let out_str = out_path.to_str().ok_or_else(|| {
         ArchiveError::Internal("output path is not valid UTF-8".into())
     })?;
 
-    w.compress_to(out_str)
-        .map_err(|e| ArchiveError::Internal(e))
+    let cancel = ctx.cancel.clone();
+
+    // Reuse the same trampoline context as extraction (no overwrite needed for compress)
+    let compress_ctx = crate::trampolines::ExtractCtx {
+        ctx,
+        overwrite: bit7z_domain::archive::OverwriteMode::Overwrite,
+        resolver: None,
+        global_decision: std::sync::atomic::AtomicBool::new(false),
+        has_global_decision: std::sync::atomic::AtomicBool::new(false),
+    };
+    let ctx_ptr = Box::into_raw(Box::new(compress_ctx)) as *mut std::ffi::c_void;
+    let _guard = crate::trampolines::CtxGuard(ctx_ptr as *mut crate::trampolines::ExtractCtx);
+
+    // SAFETY: compress_to_cb calls the trampolines on the same thread (actor thread).
+    // The ExtractCtx (behind ctx_ptr) lives for the duration of this FFI call,
+    // protected by the CtxGuard RAII guard.
+    let result = unsafe {
+        w.compress_to_cb(
+            out_str,
+            ctx_ptr,
+            Some(crate::trampolines::progress_trampoline),
+            Some(crate::trampolines::compress_file_callback),
+        )
+    };
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            if cancel.is_cancelled() {
+                Err(ArchiveError::Cancelled)
+            } else {
+                Err(ArchiveError::Internal(e))
+            }
+        }
+    }
 }
 
 // ============================================================================

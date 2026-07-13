@@ -12,7 +12,6 @@ use bit7z_rt_ipc::GuiCommand;
 use crossbeam_channel::unbounded;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 pub fn run_gui() {
     run_gui_with_path(None, None);
@@ -88,29 +87,37 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
                 cx.bind_keys([]);
                 let app_shell = cx.new(|cx| bit7z_pres_views::app_shell::AppShell::new(w, cx, repo, open_path2.clone(), open_password));
 
-                // IPC polling: spawn from the AppShell entity context
+                // IPC event-driven receiver: spawn from the AppShell entity context
                 let ipc_rx_clone = app_state.ipc_receiver.clone();
                 app_shell.update(cx, |_shell, cx| {
                     let weak = cx.entity().downgrade();
                     cx.spawn(async move |this, cx| {
                         loop {
-                            while let Ok(cmd) = ipc_rx_clone.lock().unwrap().try_recv() {
-                                match cmd {
-                                    GuiCommand::Open { path, password } => {
-                                        let _ = this.update(cx, |shell, cx| {
-                                            shell.handle_open_archive(
-                                                std::path::Path::new(&path),
-                                                password,
-                                                cx,
-                                            );
-                                        });
-                                    }
-                                    GuiCommand::Activate => {
-                                        // TODO: bring window to front
-                                    }
+                            // Block on the crossbeam receiver using smol::unblock
+                            // This is event-driven: the task sleeps until a message arrives
+                            let cmd = smol::unblock({
+                                let rx = ipc_rx_clone.clone();
+                                move || rx.lock().unwrap().recv()
+                            }).await;
+
+                            match cmd {
+                                Ok(GuiCommand::Open { path, password }) => {
+                                    let _ = this.update(cx, |shell, cx| {
+                                        shell.handle_open_archive(
+                                            std::path::Path::new(&path),
+                                            password,
+                                            cx,
+                                        );
+                                    });
+                                }
+                                Ok(GuiCommand::Activate) => {
+                                    // TODO: bring window to front
+                                }
+                                Err(_) => {
+                                    // Channel closed, exit the loop
+                                    break;
                                 }
                             }
-                            smol::Timer::after(Duration::from_millis(50)).await;
                         }
                     }).detach();
                 });

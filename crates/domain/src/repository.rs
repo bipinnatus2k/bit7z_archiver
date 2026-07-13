@@ -140,6 +140,50 @@ impl ProgressSink for NoopSink {
     fn on_file(&self, _path: &str) {}
 }
 
+/// Decision for how to handle a file conflict during extraction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverwriteDecision {
+    Overwrite,
+    Skip,
+    OverwriteAll,
+    SkipAll,
+}
+
+/// Information about a file conflict during extraction.
+#[derive(Debug, Clone)]
+pub struct OverwriteInfo {
+    pub src_path: String,
+    pub dest_path: String,
+    pub existing_size: u64,
+    pub src_size: u64,
+    pub src_mtime: i64,
+    pub dest_mtime: i64,
+}
+
+/// Trait for resolving overwrite conflicts during extraction.
+/// Called synchronously from the extraction thread when a file already exists.
+pub trait OverwriteResolver: Send + Sync {
+    fn resolve(&self, info: &OverwriteInfo) -> OverwriteDecision;
+}
+
+/// A resolver that always overwrites (for batch/CLI operations).
+pub struct AlwaysOverwrite;
+
+impl OverwriteResolver for AlwaysOverwrite {
+    fn resolve(&self, _info: &OverwriteInfo) -> OverwriteDecision {
+        OverwriteDecision::Overwrite
+    }
+}
+
+/// A resolver that always skips (for non-destructive operations).
+pub struct AlwaysSkip;
+
+impl OverwriteResolver for AlwaysSkip {
+    fn resolve(&self, _info: &OverwriteInfo) -> OverwriteDecision {
+        OverwriteDecision::Skip
+    }
+}
+
 /// Per-call context for extract/test/apply operations.
 /// Contains cancellation, pause, and progress reporting.
 pub struct OpCtx {
@@ -153,6 +197,7 @@ pub struct ExtractRequest {
     pub indices: Vec<u32>,
     pub dest: PathBuf,
     pub overwrite: OverwriteMode,
+    pub resolver: Option<Arc<dyn OverwriteResolver>>,
 }
 
 /// Result of an extract operation.

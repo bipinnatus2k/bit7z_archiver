@@ -147,7 +147,8 @@ impl ArchiveRepository for RepoSupervisor {
     }
 
     fn create(&self, path: &Path, format: ArchiveFormat, encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
-        let wf = archive_format_to_writer(format);
+        let wf = archive_format_to_writer(format)
+            .ok_or(ArchiveError::UnsupportedOperation)?;
         let password = encryption.map(|e| e.password.clone());
 
         let (id, actor) = self.spawn()?;
@@ -200,6 +201,7 @@ impl ArchiveRepository for RepoSupervisor {
                 indices: req.indices.clone(),
                 dest: req.dest.clone(),
                 overwrite: req.overwrite,
+                resolver: req.resolver.clone(),
             },
             ctx: ctx_owned,
             reply,
@@ -246,13 +248,13 @@ impl ArchiveRepository for RepoSupervisor {
         };
 
         let format = handle.format()
-            .map(archive_format_to_writer)
+            .and_then(archive_format_to_writer)
             .or_else(|| {
                 handle.path()
                     .and_then(archive_format_from_extension)
-                    .map(archive_format_to_writer)
+                    .and_then(archive_format_to_writer)
             })
-            .unwrap_or(WriterFormat::SevenZip);
+            .ok_or(ArchiveError::UnsupportedOperation)?;
 
         self.set_running_tokens(handle.raw_id(), &ctx.cancel, &ctx.pause);
         let result = self.send_recv(handle, |reply| ActorCmd::Apply {
@@ -326,10 +328,46 @@ impl ArchiveRepository for RepoSupervisor {
 
             let (reply_tx, reply_rx) = bounded(1);
             let _ = actor.cmd_tx.send(ActorCmd::Close { reply: reply_tx });
-            let _ = reply_rx.recv();
+            let _ = reply_rx.recv_timeout(std::time::Duration::from_secs(5));
             if let Some(join) = actor.join.take() {
-                let _ = join.join();
+                join_with_timeout(join, std::time::Duration::from_secs(10));
             }
+        }
+    }
+}
+
+/// Join a thread with a timeout. If the thread doesn't finish within the timeout,
+/// log a warning and detach the thread (it will be cleaned up when the process exits).
+fn join_with_timeout(join: std::thread::JoinHandle<()>, timeout: std::time::Duration) {
+    let (tx, rx) = crossbeam_channel::bounded(1);
+    
+    // Spawn a thread that joins the actor and signals completion
+    let joiner = std::thread::spawn(move || {
+        let result = join.join();
+        let _ = tx.send(result);
+    });
+
+    // Wait for either completion or timeout
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(())) => {
+            // Actor finished successfully
+            let _ = joiner.join();
+        }
+        Ok(Err(e)) => {
+            // Actor panicked
+            log::error!("Actor thread panicked: {:?}", e);
+            let _ = joiner.join();
+        }
+        Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+            // Timeout: the actor is still running, detach it
+            log::warn!("Actor thread did not finish within {:?}, detaching", timeout);
+            // The joiner thread is blocked on join(), and will be cleaned up when the process exits.
+            // We cannot safely detach a JoinHandle in Rust, but we can stop waiting.
+        }
+        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+            // Channel disconnected unexpectedly
+            log::error!("Actor join channel disconnected");
+            let _ = joiner.join();
         }
     }
 }
@@ -351,23 +389,23 @@ impl Drop for RepoSupervisor {
             }
             let (reply_tx, reply_rx) = bounded(1);
             let _ = actor.cmd_tx.send(ActorCmd::Close { reply: reply_tx });
-            let _ = reply_rx.recv();
+            let _ = reply_rx.recv_timeout(std::time::Duration::from_secs(5));
             if let Some(join) = actor.join.take() {
-                let _ = join.join();
+                join_with_timeout(join, std::time::Duration::from_secs(10));
             }
         }
     }
 }
 
-fn archive_format_to_writer(fmt: ArchiveFormat) -> WriterFormat {
+fn archive_format_to_writer(fmt: ArchiveFormat) -> Option<WriterFormat> {
     match fmt {
-        ArchiveFormat::SevenZip => WriterFormat::SevenZip,
-        ArchiveFormat::Zip => WriterFormat::Zip,
-        ArchiveFormat::Tar => WriterFormat::Tar,
-        ArchiveFormat::TarGz => WriterFormat::GZip,
-        ArchiveFormat::TarBz2 => WriterFormat::BZip2,
-        ArchiveFormat::TarXz => WriterFormat::Xz,
-        ArchiveFormat::Rar => WriterFormat::SevenZip,
+        ArchiveFormat::SevenZip => Some(WriterFormat::SevenZip),
+        ArchiveFormat::Zip => Some(WriterFormat::Zip),
+        ArchiveFormat::Tar => Some(WriterFormat::Tar),
+        ArchiveFormat::TarGz => Some(WriterFormat::GZip),
+        ArchiveFormat::TarBz2 => Some(WriterFormat::BZip2),
+        ArchiveFormat::TarXz => Some(WriterFormat::Xz),
+        ArchiveFormat::Rar => None,
     }
 }
 

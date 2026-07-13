@@ -1,12 +1,17 @@
 use bit7z_domain::archive::OverwriteMode;
-use bit7z_domain::repository::OpCtx;
+use bit7z_domain::repository::{OpCtx, OverwriteDecision, OverwriteInfo, OverwriteResolver};
 use std::ffi::{CStr, c_char, c_void};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Composite context passed through FFI callbacks during extraction.
 /// Contains both the per-call OpCtx and the overwrite mode from the request.
 pub(crate) struct ExtractCtx {
     pub ctx: OpCtx,
     pub overwrite: OverwriteMode,
+    pub resolver: Option<Arc<dyn OverwriteResolver>>,
+    pub global_decision: AtomicBool,
+    pub has_global_decision: AtomicBool,
 }
 
 /// FFI trampoline called by bit7z for extraction progress updates.
@@ -93,33 +98,97 @@ pub unsafe extern "C" fn extract_file_callback(
 /// null-terminated C strings valid for the duration of the callback.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn extract_overwrite_callback(
-    _src: *const c_char,
-    _dest: *const c_char,
-    _existing_size: u64,
-    _src_size: u64,
-    _src_mtime: i64,
-    _dest_mtime: i64,
+    src: *const c_char,
+    dest: *const c_char,
+    existing_size: u64,
+    src_size: u64,
+    src_mtime: i64,
+    dest_mtime: i64,
     user_data: *mut c_void,
 ) -> i32 {
     // SAFETY: user_data points to a valid ExtractCtx on the same thread.
     let ectx = unsafe { &*(user_data as *const ExtractCtx) };
 
-    match ectx.overwrite {
-        OverwriteMode::Overwrite => 0,
-        OverwriteMode::Skip => 1,
+    // Check if we have a global decision (from "apply to all")
+    if ectx.has_global_decision.load(Ordering::Relaxed) {
+        return if ectx.global_decision.load(Ordering::Relaxed) { 0 } else { 1 };
+    }
+
+    let src_path = unsafe { CStr::from_ptr(src) }.to_string_lossy().into_owned();
+    let dest_path = unsafe { CStr::from_ptr(dest) }.to_string_lossy().into_owned();
+
+    let info = OverwriteInfo {
+        src_path,
+        dest_path,
+        existing_size,
+        src_size,
+        src_mtime,
+        dest_mtime,
+    };
+
+    let decision = match ectx.overwrite {
+        OverwriteMode::Overwrite => OverwriteDecision::Overwrite,
+        OverwriteMode::Skip => OverwriteDecision::Skip,
         OverwriteMode::Ask => {
-            // Notify progress sink about the file being extracted
-            // (caller can observe this to understand overwrite decisions).
-            // Default to overwrite for now; full interactive Ask support
-            // requires a bi-directional callback mechanism (future work).
-            0
+            // Use the resolver if available, otherwise default to overwrite
+            if let Some(ref resolver) = ectx.resolver {
+                resolver.resolve(&info)
+            } else {
+                OverwriteDecision::Overwrite
+            }
         }
         OverwriteMode::RenameExtracted => {
-            // Rename logic is complex (requires generating unique names);
-            // fall back to overwrite for now.
-            // TODO: implement rename-extracted by modifying the destination path
+            // For rename, we extract to a unique name by appending a counter.
+            // The actual rename logic would need FFI support to modify dest path.
+            // For now, fall back to overwrite with a warning.
+            log::warn!("RenameExtracted not fully supported, falling back to overwrite");
+            OverwriteDecision::Overwrite
+        }
+    };
+
+    // Handle "apply to all" decisions
+    match decision {
+        OverwriteDecision::OverwriteAll => {
+            ectx.global_decision.store(true, Ordering::Relaxed);
+            ectx.has_global_decision.store(true, Ordering::Relaxed);
             0
         }
+        OverwriteDecision::SkipAll => {
+            ectx.global_decision.store(false, Ordering::Relaxed);
+            ectx.has_global_decision.store(true, Ordering::Relaxed);
+            1
+        }
+        OverwriteDecision::Overwrite => 0,
+        OverwriteDecision::Skip => 1,
+    }
+}
+
+/// FFI trampoline called by bit7z for compression file-begin events.
+///
+/// # Safety
+///
+/// Same safety invariants as `progress_trampoline`. `user_data` points to a
+/// valid `ExtractCtx` that outlives this callback. `path` points to a
+/// null-terminated C string valid for the duration of the callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn compress_file_callback(
+    path: *const c_char,
+    user_data: *mut c_void,
+) {
+    // SAFETY: user_data points to a valid ExtractCtx owned by the actor thread.
+    // path is a null-terminated C string provided by the FFI layer.
+    let ectx = unsafe { &*(user_data as *const ExtractCtx) };
+
+    let path_str = unsafe { CStr::from_ptr(path) }
+        .to_string_lossy()
+        .into_owned();
+
+    // SAFETY: ProgressSink call is wrapped in catch_unwind to prevent unwinding
+    // across the FFI boundary, which is UB.
+    if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ectx.ctx.progress.on_file(&path_str);
+    })) {
+        log::warn!("compress file callback sink panicked: {:?}", e);
     }
 }
 

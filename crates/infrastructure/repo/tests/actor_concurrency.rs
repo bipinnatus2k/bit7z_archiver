@@ -78,6 +78,7 @@ fn test_extract_req() -> ExtractRequest {
         indices: vec![0, 1],
         dest: temp_dir(),
         overwrite: OverwriteMode::Overwrite,
+        resolver: None,
     }
 }
 
@@ -213,6 +214,7 @@ fn test_cancel_mid_extract() {
         indices: vec![0, 1, 2, 3],
         dest: temp_dir(),
         overwrite: OverwriteMode::Overwrite,
+        resolver: None,
     };
 
     let join = std::thread::spawn(move || {
@@ -272,6 +274,7 @@ fn test_pause_resume() {
         indices: vec![0, 1, 2, 3],
         dest: temp_dir(),
         overwrite: OverwriteMode::Overwrite,
+        resolver: None,
     };
 
     let join = std::thread::spawn(move || {

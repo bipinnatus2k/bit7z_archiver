@@ -39,6 +39,7 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
                         indices: indices.clone(),
                         dest: dest.clone(),
                         overwrite: bit7z_domain::archive::OverwriteMode::Overwrite,
+                        resolver: None,
                     };
                     let ctx = bit7z_domain::repository::OpCtx {
                         cancel: bit7z_domain::repository::CancellationToken::new(),

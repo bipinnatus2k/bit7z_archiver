@@ -1,4 +1,4 @@
-use bit7z_domain::archive::ArchiveHandle;
+use bit7z_domain::archive::{ArchiveHandle, OverwriteMode};
 use bit7z_domain::repository::*;
 use std::path::Path;
 use std::path::PathBuf;
@@ -24,11 +24,30 @@ impl ExtractEntriesUseCase {
             indices: indices.to_vec(),
             dest: dest.to_path_buf(),
             overwrite: options.overwrite_mode,
+            resolver: None,
         };
         let ctx = OpCtx {
             cancel: CancellationToken::new(),
             pause: PauseToken::new(),
             progress: Arc::new(NoopSink),
+        };
+        self.repo.extract(archive, &req, &ctx)
+    }
+
+    pub fn execute_with_resolver(
+        &self,
+        archive: &ArchiveHandle,
+        indices: &[u32],
+        dest: &Path,
+        overwrite: OverwriteMode,
+        resolver: Option<Arc<dyn OverwriteResolver>>,
+        ctx: OpCtx,
+    ) -> Result<ExtractReport, ArchiveError> {
+        let req = ExtractRequest {
+            indices: indices.to_vec(),
+            dest: dest.to_path_buf(),
+            overwrite,
+            resolver,
         };
         self.repo.extract(archive, &req, &ctx)
     }
