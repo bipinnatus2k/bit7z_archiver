@@ -40,76 +40,6 @@ impl Handle {
 }
 
 // ============================================================================
-// FfiHandle — RAII wrapper for C++ resource lifecycle
-// ============================================================================
-
-/// Identifies the kind of C++ resource held by an [`FfiHandle`], so that
-/// `Drop` can call the correct C destructor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HandleKind {
-    Reader,
-    Writer,
-    Editor,
-}
-
-/// RAII wrapper around a raw C++ pointer stored in `Bit7zRepository.handles`.
-///
-/// When an `FfiHandle` is dropped it automatically calls the appropriate
-/// C destructor (`bit7z_reader_close`, `bit7z_writer_close`, or
-/// `bit7z_editor_close`), preventing resource leaks even on panic paths.
-pub struct FfiHandle {
-    ptr: *mut std::ffi::c_void,
-    kind: HandleKind,
-}
-
-// SAFETY: FfiHandle wraps a raw FFI pointer to a C++ resource. Instances
-// are exclusively owned by an actor thread and never cross thread boundaries.
-// The actor model ensures only one thread accesses the handle at a time.
-unsafe impl Send for FfiHandle {}
-unsafe impl Sync for FfiHandle {}
-
-impl FfiHandle {
-    pub fn reader(ptr: *mut std::ffi::c_void) -> Self {
-        Self { ptr, kind: HandleKind::Reader }
-    }
-
-    pub fn writer(ptr: *mut std::ffi::c_void) -> Self {
-        Self { ptr, kind: HandleKind::Writer }
-    }
-
-    pub fn editor(ptr: *mut std::ffi::c_void) -> Self {
-        Self { ptr, kind: HandleKind::Editor }
-    }
-
-    pub fn ptr(&self) -> *mut std::ffi::c_void {
-        self.ptr
-    }
-
-    pub fn kind(&self) -> HandleKind {
-        self.kind
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.ptr.is_null()
-    }
-}
-
-impl Drop for FfiHandle {
-    fn drop(&mut self) {
-        if self.ptr.is_null() {
-            return;
-        }
-        unsafe {
-            match self.kind {
-                HandleKind::Reader => bit7z_ffi::bit7z_reader_close(self.ptr as *mut _),
-                HandleKind::Writer => bit7z_writer_close(self.ptr as *mut _),
-                HandleKind::Editor => bit7z_editor_close(self.ptr as *mut _),
-            }
-        }
-    }
-}
-
-// ============================================================================
 // Library
 // ============================================================================
 
@@ -117,10 +47,13 @@ pub struct Library {
     raw: Handle,
 }
 
-// SAFETY: Library wraps a raw FFI handle to a C++ bit7z library instance.
-// The underlying C++ library is thread-safe for concurrent read operations.
-// All FFI calls go through the repository's Mutex-protected methods, ensuring
-// serialized access to mutable operations.
+// SAFETY: Bit7zLibrary wraps a loaded 7-Zip DLL. The bit7z C++ library
+// documents that Bit7zLibrary is safe to share across threads for creating
+// readers/writers (it internally guards library state). The Library handle
+// itself contains no mutable state after construction. Multiple actor
+// threads share one Arc<Library> and each creates its own ArchiveReader/Writer
+// from it — never sharing the reader/writer instances.
+// TODO(verify): confirm Bit7zLibrary is thread-safe for concurrent reader creation
 unsafe impl Send for Library {}
 unsafe impl Sync for Library {}
 

@@ -43,6 +43,7 @@ pub enum ActorCmd {
     },
     Apply {
         plan: ExecutionPlan,
+        format: WriterFormat,
         opts: WriteOptions,
         ctx: OpCtx,
         reply: Sender<Result<(), ArchiveError>>,
@@ -245,8 +246,8 @@ fn handle_command(
             };
             let _ = reply.send(result);
         }
-        ActorCmd::Apply { plan, opts, ctx, reply } => {
-            let result = handle_apply_editor(lib, reader, archive_path, password.as_ref(), plan, opts, ctx);
+        ActorCmd::Apply { plan, format, opts, ctx, reply } => {
+            let result = handle_apply_editor(lib, reader, archive_path, password.as_ref(), format, plan, opts, ctx);
             let _ = reply.send(result);
         }
         ActorCmd::ApplyEditor { archive_path: ap, format, plan, opts, ctx, reply } => {
@@ -484,22 +485,12 @@ fn handle_apply_editor(
     reader: &mut Option<ArchiveReader>,
     archive_path: &Option<PathBuf>,
     password: Option<&Password>,
+    format: WriterFormat,
     plan: ExecutionPlan,
     opts: WriteOptions,
     ctx: OpCtx,
 ) -> Result<(), ArchiveError> {
     let ap = archive_path.as_ref().ok_or(ArchiveError::NotOpen)?;
-    // Derive format from path extension
-    let format = match ap.extension().and_then(|e| e.to_str()) {
-        Some("7z") => WriterFormat::SevenZip,
-        Some("zip") => WriterFormat::Zip,
-        Some("tar") => WriterFormat::Tar,
-        Some("gz") | Some("tgz") => WriterFormat::GZip,
-        Some("bz2") | Some("tbz2") => WriterFormat::BZip2,
-        Some("xz") | Some("txz") => WriterFormat::Xz,
-        _ => WriterFormat::SevenZip,
-    };
-
     execute_with_editor(lib, reader, ap, format, &plan, opts, ctx, password)
 }
 

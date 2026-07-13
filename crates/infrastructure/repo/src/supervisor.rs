@@ -134,8 +134,13 @@ impl ArchiveRepository for RepoSupervisor {
 
         let has_encrypted_items = is_header_encrypted;
 
+        let format = archive_format_from_extension(path);
+
         let mut handle = ArchiveHandle::new(id)
             .with_path(path.to_path_buf());
+        if let Some(fmt) = format {
+            handle = handle.with_format(fmt);
+        }
         handle.set_encryption_info(is_header_encrypted, has_encrypted_items);
 
         self.actors.lock().insert(handle.raw_id(), actor);
@@ -243,6 +248,15 @@ impl ArchiveRepository for RepoSupervisor {
             progress: ctx.progress.clone(),
         };
 
+        let format = handle.format()
+            .map(archive_format_to_writer)
+            .or_else(|| {
+                handle.path()
+                    .and_then(archive_format_from_extension)
+                    .map(archive_format_to_writer)
+            })
+            .unwrap_or(WriterFormat::SevenZip);
+
         self.set_running_tokens(handle.raw_id(), &ctx.cancel, &ctx.pause);
         let result = self.send_recv(handle, |reply| ActorCmd::Apply {
             plan: ExecutionPlan {
@@ -252,6 +266,7 @@ impl ArchiveRepository for RepoSupervisor {
                 updates: plan.updates.clone(),
                 conflicts: plan.conflicts.clone(),
             },
+            format,
             opts: WriteOptions {
                 cancel: _opts.cancel.clone(),
                 paused: _opts.paused.clone(),
@@ -358,5 +373,19 @@ fn archive_format_to_writer(fmt: ArchiveFormat) -> WriterFormat {
         ArchiveFormat::TarBz2 => WriterFormat::BZip2,
         ArchiveFormat::TarXz => WriterFormat::Xz,
         ArchiveFormat::Rar => WriterFormat::SevenZip, // RAR is read-only; default to 7z
+    }
+}
+
+fn archive_format_from_extension(path: &Path) -> Option<ArchiveFormat> {
+    let ext = path.extension()?.to_str()?;
+    match ext {
+        "7z" => Some(ArchiveFormat::SevenZip),
+        "zip" => Some(ArchiveFormat::Zip),
+        "tar" => Some(ArchiveFormat::Tar),
+        "gz" | "tgz" => Some(ArchiveFormat::TarGz),
+        "bz2" | "tbz2" => Some(ArchiveFormat::TarBz2),
+        "xz" | "txz" => Some(ArchiveFormat::TarXz),
+        "rar" => Some(ArchiveFormat::Rar),
+        _ => None,
     }
 }

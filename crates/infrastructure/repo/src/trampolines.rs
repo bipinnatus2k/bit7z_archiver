@@ -40,7 +40,11 @@ pub unsafe extern "C" fn progress_trampoline(
         return 0;
     }
 
-    ctx.progress.on_progress(processed, total);
+    // SAFETY: ProgressSink call is wrapped in catch_unwind to prevent unwinding
+    // across the FFI boundary, which is UB.
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ctx.progress.on_progress(processed, total);
+    }));
     1
 }
 
@@ -66,7 +70,11 @@ pub unsafe extern "C" fn extract_file_callback(
         .into_owned();
 
     let _ = file_size;
-    ectx.ctx.progress.on_file(&path_str);
+    // SAFETY: ProgressSink call is wrapped in catch_unwind to prevent unwinding
+    // across the FFI boundary, which is UB.
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ectx.ctx.progress.on_file(&path_str);
+    }));
 }
 
 /// FFI trampoline called by bit7z for overwrite-confirmation queries.
