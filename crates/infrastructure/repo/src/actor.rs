@@ -8,12 +8,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+pub struct OpenReply {
+    pub has_encrypted_items: bool,
+}
+
 /// Commands sent to an archive actor thread.
 pub enum ActorCmd {
     Open {
         path: PathBuf,
         password: Option<Password>,
-        reply: Sender<Result<(), ArchiveError>>,
+        reply: Sender<Result<OpenReply, ArchiveError>>,
     },
     List {
         range: Range<usize>,
@@ -151,10 +155,11 @@ fn handle_command(
             let result = ArchiveReader::open(lib, &path_str, pw_ref);
             match result {
                 Ok(rd) => {
+                    let has_encrypted_items = rd.has_encrypted_items();
                     *archive_path = Some(path);
                     *reader = Some(rd);
                     *password = pw;
-                    let _ = reply.send(Ok(()));
+                    let _ = reply.send(Ok(OpenReply { has_encrypted_items }));
                 }
                 Err(e) => {
                     let _ = reply.send(Err(ArchiveError::Internal(e)));

@@ -1,4 +1,4 @@
-use crate::actor::{spawn_actor, ActorCmd};
+use crate::actor::{spawn_actor, ActorCmd, OpenReply};
 use bit7z_domain::archive::*;
 use bit7z_domain::plan::ExecutionPlan;
 use bit7z_domain::repository::*;
@@ -113,9 +113,7 @@ impl ArchiveRepository for RepoSupervisor {
 
         let (id, actor) = self.spawn()?;
 
-        // Check if header is encrypted
-        let is_header_encrypted = (path_str.to_lowercase().ends_with(".rar") && password.is_some())
-            || self.lib.is_header_encrypted(path_str);
+        let is_header_encrypted = self.lib.is_header_encrypted(path_str);
         let needs_password = is_header_encrypted && password.is_none();
 
         if needs_password {
@@ -129,10 +127,10 @@ impl ArchiveRepository for RepoSupervisor {
             reply: reply_tx,
         }).map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
 
-        reply_rx.recv()
+        let open_reply: OpenReply = reply_rx.recv()
             .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))??;
 
-        let has_encrypted_items = is_header_encrypted;
+        let has_encrypted_items = open_reply.has_encrypted_items;
 
         let format = archive_format_from_extension(path);
 
@@ -196,7 +194,6 @@ impl ArchiveRepository for RepoSupervisor {
             progress: ctx.progress.clone(),
         };
 
-        // Set running tokens so close() can cancel+resume in-flight operations
         self.set_running_tokens(handle.raw_id(), &ctx.cancel, &ctx.pause);
         let result = self.send_recv(handle, |reply| ActorCmd::Extract {
             req: ExtractRequest {
@@ -289,7 +286,6 @@ impl ArchiveRepository for RepoSupervisor {
 
         let cmd_tx = self.actor_cmd_tx(handle)?;
 
-        // Step 1: add files to writer
         let (reply_tx, reply_rx) = bounded(1);
         let fs_paths: Vec<PathBuf> = files.iter().map(|(p, _)| p.clone()).collect();
         cmd_tx.send(ActorCmd::AddFiles { files: fs_paths, reply: reply_tx })
@@ -297,7 +293,6 @@ impl ArchiveRepository for RepoSupervisor {
         reply_rx.recv()
             .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))??;
 
-        // Step 2: compress
         let (reply_tx2, reply_rx2) = bounded(1);
         cmd_tx.send(ActorCmd::CompressTo { out_path: out_path.to_path_buf(), ctx: ctx_owned, reply: reply_tx2 })
             .map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
@@ -313,9 +308,6 @@ impl ArchiveRepository for RepoSupervisor {
         if let Some(mut actor) = actors.remove(&id) {
             drop(actors);
 
-            // Cancel + resume any in-progress long operation to prevent deadlock.
-            // If the actor thread is blocked in wait_while_paused or an FFI call,
-            // this unblocks it so it can process the Close command.
             {
                 let cancel = actor.running_cancel.lock();
                 if let Some(ref token) = *cancel {
@@ -342,7 +334,6 @@ impl Drop for RepoSupervisor {
     fn drop(&mut self) {
         let actors = std::mem::take(&mut *self.actors.lock());
         for (_id, mut actor) in actors {
-            // Cancel + resume in-progress operation to prevent deadlock
             {
                 let cancel = actor.running_cancel.lock();
                 if let Some(ref token) = *cancel {
@@ -372,7 +363,7 @@ fn archive_format_to_writer(fmt: ArchiveFormat) -> WriterFormat {
         ArchiveFormat::TarGz => WriterFormat::GZip,
         ArchiveFormat::TarBz2 => WriterFormat::BZip2,
         ArchiveFormat::TarXz => WriterFormat::Xz,
-        ArchiveFormat::Rar => WriterFormat::SevenZip, // RAR is read-only; default to 7z
+        ArchiveFormat::Rar => WriterFormat::SevenZip,
     }
 }
 

@@ -325,6 +325,9 @@ impl Default for ArchiveProperties {
 pub mod test_utils {
     use super::*;
     use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static MOCK_NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
     pub struct MockArchiveRepository {
         pub entries: Mutex<Vec<ArchiveEntry>>,
@@ -382,13 +385,13 @@ pub mod test_utils {
 
     impl ArchiveRepository for MockArchiveRepository {
         fn open(&self, _path: &Path, _password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
-            let handle = ArchiveHandle::new(crate::archive::next_archive_id());
+            let handle = ArchiveHandle::new(MOCK_NEXT_ID.fetch_add(1, Ordering::Relaxed));
             *self.crate_handle.lock().unwrap() = Some(handle.clone());
             Ok(handle)
         }
 
         fn create(&self, path: &Path, _format: ArchiveFormat, _encryption: Option<&EncryptionConfig>) -> Result<ArchiveHandle, ArchiveError> {
-            let handle = ArchiveHandle::new(crate::archive::next_archive_id())
+            let handle = ArchiveHandle::new(MOCK_NEXT_ID.fetch_add(1, Ordering::Relaxed))
                 .with_path(path.to_path_buf());
             *self.crate_handle.lock().unwrap() = Some(handle.clone());
             Ok(handle)

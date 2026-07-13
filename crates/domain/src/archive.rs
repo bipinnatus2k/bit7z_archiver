@@ -3,13 +3,6 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static NEXT_ARCHIVE_ID: AtomicU64 = AtomicU64::new(1);
-
-pub(crate) fn next_archive_id() -> u64 {
-    NEXT_ARCHIVE_ID.fetch_add(1, Ordering::Relaxed)
-}
 
 /// An entry (file or directory) inside a compressed archive.
 #[derive(Debug, Clone, PartialEq)]

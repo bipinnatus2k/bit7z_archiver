@@ -45,8 +45,11 @@ extern "C" fn overwrite_trampoline(
     _dest_mtime: i64,
     ctx: *mut c_void,
 ) -> i32 {
+    // SAFETY: FFI trampoline callback. The ctx pointer is valid for the duration of the FFI call.
     let ctx = unsafe { &*(ctx as *const WorkerCtx) };
+    // SAFETY: FFI trampoline callback. The ctx pointer is valid for the duration of the FFI call.
     let src_str = unsafe { CStr::from_ptr(src) }.to_string_lossy().into_owned();
+    // SAFETY: FFI trampoline callback. The ctx pointer is valid for the duration of the FFI call.
     let dest_str = unsafe { CStr::from_ptr(dest) }.to_string_lossy().into_owned();
 
     if ctx.event_tx.send(WorkerEvent::Conflict {
@@ -64,6 +67,7 @@ extern "C" fn overwrite_trampoline(
 }
 
 extern "C" fn progress_trampoline(processed: u64, total: u64, ctx: *mut c_void) -> i32 {
+    // SAFETY: FFI trampoline callback. The ctx pointer is valid for the duration of the FFI call.
     let ctx = unsafe { &*(ctx as *const WorkerCtx) };
 
     if ctx.cancel.load(Ordering::Relaxed) {
@@ -86,7 +90,9 @@ extern "C" fn progress_trampoline(processed: u64, total: u64, ctx: *mut c_void) 
 }
 
 extern "C" fn file_trampoline(path: *const c_char, ctx: *mut c_void) {
+    // SAFETY: FFI trampoline callback. The ctx pointer is valid for the duration of the FFI call.
     let ctx = unsafe { &*(ctx as *const WorkerCtx) };
+    // SAFETY: FFI trampoline callback. The ctx pointer is valid for the duration of the FFI call.
     let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();
     let _ = ctx.event_tx.send(WorkerEvent::Progress {
         current: 0,
@@ -131,6 +137,7 @@ pub fn spawn_extract(
             conflict_rx,
         };
 
+        // SAFETY: FFI trampoline callback. The ctx pointer is valid for the duration of the FFI call.
         let result = unsafe {
             reader.extract_to_cb(
                 &indices,
@@ -204,6 +211,7 @@ pub fn spawn_compress(
             conflict_rx: crossbeam_channel::bounded(1).1, // dummy, never used
         };
 
+        // SAFETY: FFI trampoline callback. The ctx pointer is valid for the duration of the FFI call.
         let result = unsafe {
             writer.compress_to_cb(
                 &dest,

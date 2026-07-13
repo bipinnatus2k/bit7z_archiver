@@ -14,38 +14,53 @@ use crate::archive_file_list::ArchiveFileList;
 use crate::preview_panel::PreviewPanel;
 use crate::root::RootView;
 
-#[derive(Clone)]
 pub struct UseCases {
     pub repo: Arc<dyn ArchiveRepository>,
+    extract_uc: bit7z_app_archive::extract::ExtractEntriesUseCase,
+    delete_uc: bit7z_app_archive::delete::DeleteEntriesUseCase,
+    test_uc: bit7z_app_test::TestArchiveUseCase,
+    test_entries_uc: bit7z_app_test::TestEntriesUseCase,
+    open_entry_uc: bit7z_app_archive::open_entry::OpenEntryUseCase,
+    preview_uc: bit7z_app_preview::PreviewEntryUseCase,
 }
 
 impl UseCases {
-    pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self { Self { repo } }
+    pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self {
+        Self {
+            extract_uc: bit7z_app_archive::extract::ExtractEntriesUseCase::new(repo.clone()),
+            delete_uc: bit7z_app_archive::delete::DeleteEntriesUseCase::new(repo.clone()),
+            test_uc: bit7z_app_test::TestArchiveUseCase::new(repo.clone()),
+            test_entries_uc: bit7z_app_test::TestEntriesUseCase::new(repo.clone()),
+            open_entry_uc: bit7z_app_archive::open_entry::OpenEntryUseCase::new(repo.clone()),
+            preview_uc: bit7z_app_preview::PreviewEntryUseCase::new(repo.clone()),
+            repo,
+        }
+    }
 
     pub fn extract(&self, h: &ArchiveHandle, idx: &[u32], dest: &Path, om: OverwriteMode) -> Result<(), ArchiveError> {
-        let req = ExtractRequest { indices: idx.to_vec(), dest: dest.to_path_buf(), overwrite: om };
-        self.repo.extract(h, &req, &OpCtx { cancel: CancellationToken::new(), pause: PauseToken::new(), progress: Arc::new(NoopSink) }).map(|_| ())
+        let options = ExtractOptions {
+            overwrite_mode: om,
+            cancel: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            notifier: Arc::new(NoopNotifier),
+        };
+        self.extract_uc.execute(h, idx, dest, &options).map(|_| ())
     }
 
     pub fn delete(&self, h: &ArchiveHandle, idx: &[u32]) -> Result<(), ArchiveError> {
-        let mut cs = ChangeSet::new();
-        for &i in idx { cs.delete(i); }
-        let plan = self.repo.plan(h, &cs)?;
-        self.repo.apply(h, &plan, &WriteOptions { cancel: Arc::new(AtomicBool::new(false)), paused: Arc::new(AtomicBool::new(false)), notifier: Arc::new(NoopNotifier) }, &OpCtx { cancel: CancellationToken::new(), pause: PauseToken::new(), progress: Arc::new(NoopSink) })
+        self.delete_uc.execute(h, idx, None)
     }
 
-    pub fn test(&self, h: &ArchiveHandle) -> Result<TestReport, ArchiveError> {
-        let page = self.repo.list(h, 0..1)?;
-        let all: Vec<u32> = (0..page.total.unwrap_or(0) as u32).collect();
-        self.repo.test(h, &all, &OpCtx { cancel: CancellationToken::new(), pause: PauseToken::new(), progress: Arc::new(NoopSink) })
+    pub fn test(&self, h: &ArchiveHandle) -> Result<bit7z_domain::archive::TestResult, ArchiveError> {
+        self.test_uc.execute(h)
     }
 
-    pub fn test_selected(&self, h: &ArchiveHandle, idx: &[u32]) -> Result<TestReport, ArchiveError> {
-        self.repo.test(h, idx, &OpCtx { cancel: CancellationToken::new(), pause: PauseToken::new(), progress: Arc::new(NoopSink) })
+    pub fn test_selected(&self, h: &ArchiveHandle, idx: &[u32]) -> Result<bit7z_domain::archive::TestResult, ArchiveError> {
+        self.test_entries_uc.execute(h, Some(idx), None)
     }
 
     pub fn open_entry(&self, h: &ArchiveHandle, idx: u32) -> Result<(), ArchiveError> {
-        bit7z_app_archive::open_entry::OpenEntryUseCase::new(self.repo.clone()).execute(h, idx)
+        self.open_entry_uc.execute(h, idx)
     }
 
     pub fn properties(&self, h: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> { self.repo.properties(h) }
@@ -56,7 +71,7 @@ impl UseCases {
     }
 
     pub fn preview(&self, h: &ArchiveHandle, idx: u32, max: usize) -> Result<bit7z_app_preview::PreviewData, ArchiveError> {
-        bit7z_app_preview::PreviewEntryUseCase::new(self.repo.clone()).execute(h, idx, max)
+        self.preview_uc.execute(h, idx, max)
     }
 
     pub fn new_file(&self, h: &ArchiveHandle) -> Result<(), ArchiveError> {
