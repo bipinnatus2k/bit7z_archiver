@@ -286,6 +286,8 @@ impl ArchiveRepository for RepoSupervisor {
 
         let cmd_tx = self.actor_cmd_tx(handle)?;
 
+        self.set_running_tokens(handle.raw_id(), &ctx.cancel, &ctx.pause);
+
         let (reply_tx, reply_rx) = bounded(1);
         let fs_paths: Vec<PathBuf> = files.iter().map(|(p, _)| p.clone()).collect();
         cmd_tx.send(ActorCmd::AddFiles { files: fs_paths, reply: reply_tx })
@@ -298,6 +300,8 @@ impl ArchiveRepository for RepoSupervisor {
             .map_err(|_| ArchiveError::Internal("actor channel closed".into()))?;
         reply_rx2.recv()
             .map_err(|_| ArchiveError::Internal("actor reply channel closed".into()))??;
+
+        self.clear_running_tokens(handle.raw_id());
 
         Ok(())
     }

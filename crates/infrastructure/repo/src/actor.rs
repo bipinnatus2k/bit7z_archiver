@@ -485,6 +485,7 @@ fn handle_plan(
     Ok(bit7z_domain::plan::plan_changes(&entries, &changes))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_apply_editor(
     lib: &bit7z_infra_bit7z::Library,
     reader: &mut Option<ArchiveReader>,
@@ -499,6 +500,7 @@ fn handle_apply_editor(
     execute_with_editor(lib, reader, ap, format, &plan, opts, ctx, password)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_with_editor(
     lib: &bit7z_infra_bit7z::Library,
     reader: &mut Option<ArchiveReader>,
