@@ -1,10 +1,5 @@
-use gpui::{
-    App, AppContext, AsyncApp, Bounds, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Render, SharedString, Size, Styled, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, px,
-    size,
-};
-use gpui_component::{Root, TitleBar, v_flex};
+use gpui::{px, size, App, AppContext, AsyncApp, Bounds, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Render, SharedString, Size, Styled, Window, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowId, WindowKind, WindowOptions};
+use gpui_component::{v_flex, Root, TitleBar};
 
 // ---------------------------------------------------------------------------
 // Re-export gpui-component's dialog sub-components for convenience.
@@ -54,9 +49,13 @@ impl Default for WindowDialogOptions {
             close_action: CloseAction::CloseDialog,
             window_decorations: {
                 #[cfg(target_os = "linux")]
-                { Some(WindowDecorations::Client) }
+                {
+                    Some(WindowDecorations::Client)
+                }
                 #[cfg(not(target_os = "linux"))]
-                { None }
+                {
+                    None
+                }
             },
             window_background: WindowBackgroundAppearance::Opaque,
         }
@@ -83,7 +82,10 @@ impl WindowDialogOptions {
             ..Default::default()
         };
         if let (Some(w), Some(h)) = (self.min_width, self.min_height) {
-            opts.window_min_size = Some(Size { width: w, height: h });
+            opts.window_min_size = Some(Size {
+                width: w,
+                height: h,
+            });
         }
         opts
     }
@@ -154,11 +156,8 @@ impl<E: Render> Render for WindowDialogEntity<E> {
 /// ```ignore
 /// open_window_dialog(cx, opts, |_window, cx| cx.new(|_| AboutContent));
 /// ```
-pub fn open_window_dialog<E, F>(
-    cx: &mut App,
-    options: WindowDialogOptions,
-    build: F,
-) where
+pub fn open_window_dialog<E, F>(cx: &mut App, options: WindowDialogOptions, build: F)
+where
     E: Render + 'static,
     F: FnOnce(&mut Window, &mut App) -> Entity<E> + 'static,
 {
@@ -175,11 +174,8 @@ pub fn open_window_dialog<E, F>(
 }
 
 /// Same as [`open_window_dialog`] but accepts `&mut AsyncApp`.
-pub fn open_window_dialog_async<E, F>(
-    cx: &mut AsyncApp,
-    options: WindowDialogOptions,
-    build: F,
-) where
+pub fn open_window_dialog_async<E, F>(cx: &mut AsyncApp, options: WindowDialogOptions, build: F)
+where
     E: Render + 'static,
     F: FnOnce(&mut Window, &mut App) -> Entity<E> + 'static,
 {
@@ -194,7 +190,8 @@ pub fn open_window_dialog_async<E, F>(
             let content = build(window, cx);
             entity_in_window(content, window, cx)
         });
-    }).detach();
+    })
+    .detach();
 }
 
 fn entity_in_window<E: Render>(
@@ -207,4 +204,17 @@ fn entity_in_window<E: Render>(
         content,
     });
     cx.new(|cx| Root::new(entity, window, cx))
+}
+
+pub fn hide_window(id: WindowId, cx: &mut App) {
+    cx.defer(move |cx| {
+        let handles: Vec<_> = cx.windows().to_vec();
+        for handle in handles {
+            if handle.window_id() == id {
+                if let Err(error) = handle.update(cx, |_, window, _| window.remove_window()) {
+                    eprintln!("failed to remove window: {error:#}");
+                }
+            }
+        }
+    });
 }
