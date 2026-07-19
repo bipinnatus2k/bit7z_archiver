@@ -1,41 +1,18 @@
 use bit7z_domain::archive::*;
 use bit7z_domain::repository::ArchiveProperties;
 use std::collections::{HashMap, HashSet};
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ViewStatus {
-    Empty,
-    Loading,
-    Ready,
-    Error(String),
-}
-
-#[derive(Clone, Debug)]
-pub struct LevelEntry {
-    pub display_name: String,
-    pub is_directory: bool,
-    pub original_index: u32,
-    pub size: u64,
-    pub compressed_size: u64,
-    pub modified: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct OpHandle {
-    pub can_cancel: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct ProgressSnapshot {
-    pub current: u64,
-    pub total: u64,
-    pub message: String,
-}
+use gpui::{div, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window};
+use gpui_component::input::InputState;
+use bit7z_pres_components::ext_table::{Column, DataTable, TableEvent, TableState};
+use crate::file_list::archive_file_list::{FileListEvent};
+use crate::file_list::{LevelEntry, OpHandle, ProgressSnapshot, ViewStatus};
+use crate::file_list::file_list_table_delegate::FileListTableDelegate;
 
 #[derive(Clone)]
-pub struct AppState {
-    pub handle: Option<ArchiveHandle>,
-    pub properties: Option<ArchiveProperties>,
+pub struct FileListState {
+    pub(crate) focus_handle: FocusHandle,
+    // pub handle: Option<ArchiveHandle>,
+    // pub properties: Option<ArchiveProperties>,
     pub directory_cache: HashMap<String, Vec<ArchiveEntry>>,
     pub selection: HashSet<u32>,
     pub filter_text: String,
@@ -46,17 +23,75 @@ pub struct AppState {
     pub current_path: String,
     pub path_history: Vec<String>,
     pub selection_anchor: Option<u32>,
-    pub archive_password: Option<Password>,
-    pub show_preview: bool,
-    pub operation: Option<OpHandle>,
-    pub progress: Option<ProgressSnapshot>,
+    // pub archive_password: Option<Password>,
+    // pub show_preview: bool,
+    // pub operation: Option<OpHandle>,
+    // pub progress: Option<ProgressSnapshot>,
+    table_state: Entity<TableState<FileListTableDelegate>>,
 }
 
-impl AppState {
-    pub fn new() -> Self {
+impl EventEmitter<FileListEvent> for FileListState {}
+
+impl FileListState {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+
+        let delegate = FileListTableDelegate {
+                entries: vec![],
+                columns: vec![],
+            };
+
+        let table_state = cx.new(|cx| {
+                TableState::new(delegate, window, cx)
+                    .row_selectable(true)
+                    .multi_select(true)
+                    .col_selectable(true)
+                    .cell_selectable(false)
+            });
+
+        cx.subscribe_in(&table_state, window, |view, table, event, _window, cx| {
+            match event {
+                TableEvent::SelectRow(rows) => {
+                    let indices: Vec<u32> = rows.into_iter()
+                        .filter_map(|&row| view.level_entries.get(row))
+                        .map(|e| e.original_index)
+                        .collect();
+                    view.selection = indices.iter().copied().collect();
+                    cx.emit(FileListEvent::SelectionChanged(indices));
+                }
+                TableEvent::DoubleClickedRow(_row_ix) => {
+                    let indices: Vec<u32> = view.table_state.read(cx).selected_rows().iter()
+                        .filter_map(|&row| view.level_entries.get(row))
+                        .map(|e| e.original_index)
+                        .collect();
+                    view.selection = indices.iter().copied().collect();
+                    cx.emit(FileListEvent::SelectionChanged(indices));
+                    cx.emit(FileListEvent::OpenEntry);
+                }
+                TableEvent::ClearSelection => {
+                    view.selection.clear();
+                    cx.emit(FileListEvent::SelectionChanged(vec![]));
+                }
+                // TableEvent::SelectColumn(_) => {}
+                // TableEvent::SelectCell(_, _) => {}
+                // TableEvent::DoubleClickedCell(_, _) => {}
+                TableEvent::ColumnWidthsChanged(_w) => {
+                    //TODO: save widths config
+                }
+                TableEvent::MoveColumn(_, _) => {
+                    //TODO: save sort config
+                }
+                TableEvent::RightClickedRow(_) => {}
+                // TableEvent::RightClickedCell(_, _) => {}
+                _ => {}
+            }
+        }).detach();
+
+        let focus_handle = cx.focus_handle().tab_stop(true);
+
         Self {
-            handle: None,
-            properties: None,
+            focus_handle,
+            // handle: None,
+            // properties: None,
             directory_cache: HashMap::new(),
             selection: HashSet::new(),
             filter_text: String::new(),
@@ -67,19 +102,32 @@ impl AppState {
             current_path: String::new(),
             path_history: Vec::new(),
             selection_anchor: None,
-            archive_password: None,
-            show_preview: false,
-            operation: None,
-            progress: None,
+            // archive_password: None,
+            // show_preview: false,
+            // operation: None,
+            // progress: None,
+            table_state,
         }
     }
 
-    pub fn update_selection(&mut self, row: usize) {
-        let index = self.level_entries.get(row).map(|e| e.original_index).unwrap_or(0);
-        self.selection.clear();
-        self.selection.insert(index);
-        self.selection_anchor = Some(index);
+    pub fn set_column(&mut self, cx: &mut Context<Self>, columns: Vec<Column>) {
+        self.table_state.update(cx,|table, cx| {
+            table.delegate_mut().columns = columns.clone();
+            table.refresh(cx);
+        })
     }
+
+    pub fn column(mut self, cx: &mut Context<Self>, columns: Vec<Column>) -> Self {
+        self.set_column(cx,columns);
+        self
+    }
+
+    // pub fn update_selection(&mut self, row: usize) {
+    //     let index = self.level_entries.get(row).map(|e| e.original_index).unwrap_or(0);
+    //     self.selection.clear();
+    //     self.selection.insert(index);
+    //     self.table_state.selection_anchor = Some(index);
+    // }
 
     pub fn select_all(&mut self) {
         for entry in &self.level_entries {
@@ -266,5 +314,23 @@ impl AppState {
             }
             ViewStatus::Error(msg) => format!("Error: {}", msg),
         }
+    }
+}
+
+impl Focusable for FileListState {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for FileListState {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .id("entry-table-area")
+            .flex_1()
+            .child(
+                DataTable::new(&self.table_state)
+                    .scrollbar_visible(true, true)
+            )
     }
 }

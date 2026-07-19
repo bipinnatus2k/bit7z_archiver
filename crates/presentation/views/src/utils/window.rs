@@ -1,12 +1,5 @@
-use std::path::Path;
-use gpui::{px, size, AnyView, App, AppContext, Bounds, Focusable, Pixels, SharedString, Size, Window, WindowBounds, WindowKind, WindowOptions};
-use gpui_component::{
-    Root, TitleBar
-
-
-    ,
-};
-use crate::root::RootView;
+use gpui::{px, size, AnyView, App, AppContext, Bounds, Pixels, SharedString, Size, TitlebarOptions, Window, WindowBounds, WindowKind, WindowOptions};
+use gpui_component::{ Root, TitleBar};
 
 pub fn create_new_window<F, E>(title: &str,crate_view_fn: F, cx: &mut App)
 where
@@ -65,4 +58,13 @@ pub fn create_new_window_with_size<F, E>(
         Ok::<_, anyhow::Error>(())
     })
         .detach();
+}
+
+/// Returns the default title bar options for compatible with the [`crate::TitleBar`].
+pub fn title_bar_options(title: Option<SharedString>) -> TitlebarOptions {
+    TitlebarOptions {
+        title,
+        appears_transparent: true,
+        traffic_light_position: Some(gpui::point(px(9.0), px(9.0))),
+    }
 }

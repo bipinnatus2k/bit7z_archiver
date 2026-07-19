@@ -6,10 +6,10 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-bit7z-pres-view-models = { path = "../view-models" }
 bit7z-pres-components = { path = "../components" }
 bit7z-pres-settings = { path = "../settings" }
 bit7z-pres-dialogs = { path = "../dialogs" }
+bit7z-pres-theme = { path = "../theme" }
 bit7z-app-archive = { path = "../../application/archive" }
 bit7z-app-preview = { path = "../../application/preview" }
 bit7z-app-test = { path = "../../application/test" }
@@ -21,6 +21,14 @@ gpui = { workspace = true }
 gpui-component = { workspace = true }
 gpui-component-assets = { workspace = true }
 crossbeam-channel = "0.5"
-serde = { version = "1", features = ["derive"] }
+serde.workspace = true
+smallvec.workspace = true
+chrono.workspace = true
 log = "0.4"
 anyhow = "1"
+rust-i18n = { workspace = true }
+tracing-subscriber = { version = "0.3.23", features = ["default","env-filter"] }
+
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

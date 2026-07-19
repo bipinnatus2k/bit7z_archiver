@@ -1,10 +1,10 @@
 use gpui::prelude::FluentBuilder;
 use crate::app_shell::AppShell;
-use crate::archive_browser::{ArchiveBrowser, BrowserIntent};
+use crate::archive_sidebar::{ArchiveSideBar, BrowserIntent};
 use crate::archive_file_list::{ArchiveFileList, FileListIntent};
 use crate::menu::{self, Menu};
 use crate::preview_panel::PreviewPanel;
-use crate::status_bar::StatusBar;
+use crate::status_bar::AppStatusBar;
 use crate::toolbar::{Toolbar, ToolbarIntent};
 use bit7z_pres_view_models::intent::Intent;
 use bit7z_pres_view_models::AppState;
@@ -19,23 +19,23 @@ pub struct RootView {
     focus_handle: FocusHandle,
     pub menu: Entity<Menu>,
     pub toolbar: Entity<Toolbar>,
-    pub archive_browser: Entity<ArchiveBrowser>,
+    pub archive_browser: Entity<ArchiveSideBar>,
     pub entry_list: Entity<ArchiveFileList>,
     pub preview_panel: Entity<PreviewPanel>,
-    pub status_bar: Entity<StatusBar>,
+    pub status_bar: Entity<AppStatusBar>,
 }
 
 impl RootView {
     pub fn new(
         app_shell: WeakEntity<AppShell>,
         preview_panel: Entity<PreviewPanel>,
-        archive_browser: Entity<ArchiveBrowser>,
+        archive_browser: Entity<ArchiveSideBar>,
         entry_list: Entity<ArchiveFileList>,
         cx: &mut Context<Self>,
     ) -> Self {
         let menu = cx.new(|cx| Menu::new(false, cx));
         let toolbar = cx.new(|_| Toolbar::new());
-        let status_bar = cx.new(|_| StatusBar::default());
+        let status_bar = cx.new(|_| AppStatusBar::default());
 
         cx.subscribe::<Toolbar, ToolbarIntent>(&toolbar, move |this, _, intent, cx| {
             match intent {
@@ -50,7 +50,7 @@ impl RootView {
         }).detach();
 
         let pp = preview_panel.clone();
-        cx.subscribe::<ArchiveBrowser, BrowserIntent>(&archive_browser, move |this, _, intent, cx| {
+        cx.subscribe::<ArchiveSideBar, BrowserIntent>(&archive_browser, move |this, _, intent, cx| {
             match intent {
                 BrowserIntent::NavigateInto(dir) => { if let Some(s) = this.app_shell.upgrade() { s.update(cx, |s, cx| s.navigate_into(dir, cx)); } }
                 BrowserIntent::SetFilter(text) => { if let Some(s) = this.app_shell.upgrade() { s.update(cx, |s, cx| s.set_filter(text, cx)); } }
@@ -61,9 +61,14 @@ impl RootView {
         cx.subscribe::<ArchiveFileList, FileListIntent>(&entry_list, move |this, _, intent, cx| {
             match intent {
                 FileListIntent::SelectionChanged(indices) => {
-                    this.state.selection = indices.iter().copied().collect(); this.state.selection_anchor = None; this.sync_child_views(cx);
+                    this.state.selection = indices.iter().copied().collect();
+                    this.state.selection_anchor = None;
+                    this.sync_child_views(cx);
                     if let (Some(idx), Some(s)) = (indices.first(), this.app_shell.upgrade()) {
-                        let h = s.read(cx).state.handle.clone(); let panel = pp.clone(); let idx = *idx; let uc = s.read(cx).use_cases.clone();
+                        let h = s.read(cx).state.handle.clone();
+                        let panel = pp.clone();
+                        let idx = *idx;
+                        let uc = s.read(cx).use_cases.clone();
                         cx.spawn(async move |this, cx| {
                             panel.update(cx, |p, _| p.set_loading());
                             if let Some(ref handle) = h {
@@ -109,12 +114,14 @@ impl RootView {
     }
 
     fn sync_child_views(&mut self, cx: &mut Context<Self>) {
-        let e = self.state.displayed_entries().to_vec(); let st = self.state.status.clone(); let p = self.state.current_path.clone();
+        let e = self.state.displayed_entries().to_vec();
+        let st = self.state.status.clone();
+        let p = self.state.current_path.clone();
         let is_open = self.state.handle.is_some();
         self.entry_list.update(cx, |c, cx| c.set_state(e, st, p, cx));
         self.toolbar.update(cx, |c, _| c.set_state(is_open, self.state.is_ready(), self.state.has_selection()));
         self.archive_browser.update(cx, |c, cx| { c.set_collapsed(false, cx); c.set_state(self.state.filtered_subdirs(), vec![]); });
-        self.status_bar.update(cx, |c, _| c.set_status(&self.state.status_text()));
+        self.status_bar.update(cx, |c, _| c.left(&self.state.status_text()));
     }
 }
 

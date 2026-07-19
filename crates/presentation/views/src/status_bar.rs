@@ -1,50 +1,50 @@
 use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::separator::Separator;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable};
+use smallvec::SmallVec;
 
-pub struct StatusBar {
-    status_text: String,
-    show_preview :bool,
+#[derive(IntoElement)]
+pub struct AppStatusBar {
+    left_icon: SmallVec<[AnyElement; 1]>,
+    left_status_text: SharedString,
+    right_status_text: SharedString,
 }
 
-impl StatusBar {
-    pub fn new(status_text: String, show_preview: bool) -> Self {
+impl AppStatusBar {
+    pub fn new() -> Self {
         Self {
-            status_text,
-            show_preview,
+            left_icon: SmallVec::new(),
+            left_status_text: SharedString::default(),
+            right_status_text: SharedString::default(),
         }
     }
 
     pub fn default() -> Self {
-        Self {
-            status_text: String::new(),
-            show_preview: false,
-        }
+        Self::new()
     }
 
-    pub fn set_status(&mut self, text: &str) {
-        self.status_text = text.to_string();
+    /// Append an element to the left region. Call multiple times to add more.
+    pub fn left_icon(mut self, child: impl IntoElement) -> Self {
+        self.left_icon.push(child.into_any_element());
+        self
+    }
+
+    pub fn left(mut self, text: impl Into<SharedString>) -> Self {
+        self.left_status_text = text.into();
+        self
+    }
+
+    pub fn right(mut self, text: impl Into<SharedString>) -> Self {
+        self.right_status_text = text.into();
+        self
     }
 }
 
-impl Render for StatusBar {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl RenderOnce for AppStatusBar {
+    fn render(self, _window: &mut Window, cx: &mut gpui::App) -> impl IntoElement {
         gpui_component::status_bar::StatusBar::new()
-            .child(Icon::new(IconName::GalleryVerticalEnd).xsmall())
-            .child(self.status_text.clone())
+            .left(div().children(self.left_icon))
+            .left(self.left_status_text.clone())
             .child(Separator::vertical())
-            .right(cx.theme().theme_name().clone())
-            .right(format!("v{}", env!("CARGO_PKG_VERSION")))
-            .right(
-                Button::new("assistant")
-                    .ghost()
-                    .xsmall()
-                    .icon(IconName::Github)
-                    .tooltip("GPUI Component GitHub repository")
-                    .on_click(|_, _, cx| {
-                        cx.open_url("https://github.com/longbridge/gpui-component")
-                    }),
-            )
+            .right(self.right_status_text.clone())
     }
 }
