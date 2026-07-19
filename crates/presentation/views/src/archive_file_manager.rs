@@ -19,6 +19,8 @@ use gpui_component::{
     Sizable,
 };
 use std::sync::Arc;
+use gpui_component::resizable::v_resizable;
+use crate::preview_panel::PreviewPanel;
 
 //处理文件管理器相关业务action
 pub struct ArchiveFileManager {
@@ -29,6 +31,7 @@ pub struct ArchiveFileManager {
     collapsed: bool,
     side: Side,
     show_address_input: bool,
+    show_preview: bool,
     use_cases: Arc<UseCases>,
     // selection: HashSet<u32>,
     // selection_anchor: Option<u32>,
@@ -103,6 +106,7 @@ impl ArchiveFileManager {
             address_input: address_input_state,
             state: list_state,
             side: Side::Left,
+            show_preview: false,
             collapsed: false,
             show_address_input: false,
             _subscriptions,
@@ -187,7 +191,7 @@ impl Render for ArchiveFileManager {
             .w(relative(1.))
             .collapsed(self.collapsed);
 
-        let body = h_resizable("gallery-container")
+        let body = h_resizable("file-manager-container")
             .child(
                 resizable_panel()
                     .when_else(
@@ -198,67 +202,17 @@ impl Render for ArchiveFileManager {
                     .child(sidebar),
             )
             .child(
-                v_flex()
-                    .flex_1()
-                    // .h_full()
-                    .overflow_x_hidden()
+                v_resizable("main-vt")
                     .child(
-                        div().id("story").flex_1().overflow_y_scroll().child(
-                            v_flex()
-                                // .size_full()
-                                .child(
-                                    h_flex()
-                                        .gap_2()
-                                        .min_h_0()
-                                        .child(
-                                            Button::new("navigation-up-dir")
-                                                .icon(IconName::ArrowUp)
-                                                .small()
-                                                .gap_2()
-                                                .tooltip("Navigate Up")
-                                                .on_click( move |e, _w, cx| {
-                                                    cx.new(
-                                                        |cx| {
-
-                                                        }
-                                                    );
-                                                }),
-                                        )
-                                        .child(div().when_else(
-                                            !self.show_address_input,
-                                            |this| {
-                                                this.child(
-                                                    Breadcrumb::new().children(
-                                                        self.state
-                                                            .read(cx)
-                                                            .current_path
-                                                            .split("/")
-                                                            .map(|x| {
-                                                                BreadcrumbItem::new(x)
-                                                                    .on_click(|e, window, cx| {
-
-                                                                    })
-                                                            }),
-                                                    ),
-                                                )
-                                            },
-                                            |this| {
-                                                this.child(
-                                                    Input::new(&self.address_input)
-                                                        .w_full()
-                                                        .suffix(
-                                                            Button::new("navigation-to-button")
-                                                                .icon(IconName::ArrowRight)
-                                                                .on_click(|e, w, cx| {}),
-                                                        ),
-                                                )
-                                            },
-                                        )),
-                                )
-                                .child(ArchiveFileList::new(&self.state).size_full()),
-                        ),
+                        resizable_panel().child(ArchiveFileList::new(&self.state))
                     )
-                    .into_any_element(),
+                    .child(
+                        resizable_panel()
+                            .visible(self.show_preview)
+                            .size(px(200.))
+                            .size_range(px(100.)..px(500.))
+                            .child(PreviewPanel::new())
+                    )
             );
 
         v_flex()
