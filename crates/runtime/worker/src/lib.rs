@@ -35,15 +35,15 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
                         current: 0, total: indices.len() as u64,
                         file: String::new(), bytes: 0,
                     });
-                    let req = bit7z_domain::repository::ExtractRequest {
+                    let req = ExtractRequest {
                         indices: indices.clone(),
                         dest: dest.clone(),
                         overwrite: bit7z_domain::archive::OverwriteMode::Overwrite,
                     };
-                    let ctx = bit7z_domain::repository::OpCtx {
-                        cancel: bit7z_domain::repository::CancellationToken::new(),
-                        pause: bit7z_domain::repository::PauseToken::new(),
-                        progress: std::sync::Arc::new(bit7z_domain::repository::NoopSink),
+                    let ctx = OpCtx {
+                        cancel: CancellationToken::new(),
+                        pause: PauseToken::new(),
+                        progress: Arc::new(NoopSink),
                     };
                     let result = repo.extract(&archive, &req, &ctx);
                     match result {

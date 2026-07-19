@@ -47,7 +47,7 @@ impl SelectionMode {
 
 #[derive(Clone)]
 pub enum TableEvent {
-    SelectRow(usize),
+    SelectRow(Vec<usize>),
     DoubleClickedRow(usize),
     SelectColumn(usize),
     SelectCell(usize, usize),
@@ -207,6 +207,9 @@ where
     }
 
     pub fn set_selected_rows(&mut self, rows: HashSet<usize>, cx: &mut Context<Self>) {
+        if !self.multi_select {
+            return;
+        }
         self.selected_rows = rows;
         self.selection_anchor = None;
         cx.notify();
@@ -277,7 +280,7 @@ where
                 },
             );
         }
-        cx.emit(TableEvent::SelectRow(row_ix));
+        cx.emit(TableEvent::SelectRow(vec![row_ix]));
         cx.emit(TableEvent::RightClickedRow(None));
         cx.notify();
     }
@@ -490,6 +493,7 @@ where
             let mods = e.modifiers();
             let ctrl = mods.control || mods.platform;
             let shift = mods.shift;
+            let mut range: Vec<usize> = vec![];
 
             if ctrl {
                 if !self.selected_rows.remove(&row_ix) {
@@ -503,6 +507,7 @@ where
                 for i in min..=max {
                     if i < self.delegate.rows_count(cx) {
                         self.selected_rows.insert(i);
+                        range.push(i);
                     }
                 }
             } else {
@@ -521,7 +526,7 @@ where
                     if is_down { ScrollStrategy::Bottom } else { ScrollStrategy::Top },
                 );
             }
-            cx.emit(TableEvent::SelectRow(row_ix));
+            cx.emit(TableEvent::SelectRow(range));
             cx.emit(TableEvent::RightClickedRow(None));
             cx.notify();
         } else {

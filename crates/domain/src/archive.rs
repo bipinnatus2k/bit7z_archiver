@@ -409,7 +409,7 @@ impl Password {
         self.0.expose_secret().is_empty()
     }
 
-    pub fn empty() -> Self { Self("".into()) }
+    pub fn none() -> Self { Self("".into()) }
 }
 
 impl fmt::Debug for Password {

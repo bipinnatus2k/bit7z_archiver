@@ -81,7 +81,7 @@ pub struct ArchiveFileList {
     state: Entity<FileListState>,
     style: StyleRefinement,
     // size: gpui_component::Size,
-    
+
     // selection: HashSet<u32>,
     // status: ViewStatus,
     // current_path: String,
@@ -133,7 +133,7 @@ impl ArchiveFileList {
         //         .col_selectable(true)
         //         .cell_selectable(false)
         // });
-        // 
+        //
         // cx.subscribe_in(&table_state, window, |view, _table, event, _window, cx| {
         //     match event {
         //         TableEvent::SelectRow(_row_ix) => {
@@ -171,24 +171,24 @@ impl ArchiveFileList {
         //         _ => {}
         //     }
         // }).detach();
-        // 
-        
+        //
 
-        Self { 
+
+        Self {
             state: state.clone(),
             style: StyleRefinement::default(),
             context_menu_builder: None,
-            // entries: vec![], 
-            // selection: HashSet::new(), 
-            // status: ViewStatus::Empty, 
-            // current_path: String::new(), 
+            // entries: vec![],
+            // selection: HashSet::new(),
+            // status: ViewStatus::Empty,
+            // current_path: String::new(),
             // is_ready: false,
             // table_state,
         }
     }
-    
-    
-    // pub fn view(window: &mut Window, cx: &mut App) -> Entity<ArchiveFileList> { 
+
+
+    // pub fn view(window: &mut Window, cx: &mut App) -> Entity<ArchiveFileList> {
     //     cx.new(|cx| { Self::new(window,cx) })
     // }
 
@@ -199,7 +199,7 @@ impl ArchiveFileList {
     //         state.set_selected_rows(rows, cx);
     //     });
     // }
-    // 
+    //
     // pub fn clear_selection(&mut self, cx: &mut Context<Self>) {
     //     self.selection.clear();
     //     self.table_state.update(cx, |state, cx| {
@@ -207,7 +207,7 @@ impl ArchiveFileList {
     //         state.clear_selection(cx);
     //     });
     // }
-    // 
+    //
     // pub fn set_state(&mut self, entries: Vec<LevelEntry>, status: ViewStatus, current_path: String, cx: &mut Context<Self>) {
     //     self.entries = entries.clone();
     //     self.status = status;
@@ -223,12 +223,12 @@ impl RenderOnce for ArchiveFileList {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         v_flex()
             .w_full()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            // .border_b_1()
+            // .border_color(cx.theme().border)
             .key_context("archive_file_list")
             .track_focus(&self.state.read(cx).focus_handle.clone())
             .child(self.state.clone())
-        
+
     }
 }
 
@@ -240,7 +240,7 @@ impl RenderOnce for ArchiveFileList {
 //             .border_color(cx.theme().border)
 //             .key_context("archive_file_list")
 //             .track_focus(&self.focus_handle);
-// 
+//
 //         // let base = emit_intents!(base, cx,
 //         //     NavigateUp => FileListEvent::NavigateUp,
 //         //     OpenEntry => FileListEvent::OpenEntry,
@@ -258,7 +258,7 @@ impl RenderOnce for ArchiveFileList {
 //         //     ChecksumSHA1 => FileListEvent::Checksum(ChecksumAlgorithm::Sha1),
 //         //     ChecksumSHA256 => FileListEvent::Checksum(ChecksumAlgorithm::Sha256),
 //         // );
-// 
+//
 //         match &self.status {
 //             ViewStatus::Empty => {
 //                 base.child(empty_view(cx, "Open an archive to browse its contents"))
@@ -273,7 +273,7 @@ impl RenderOnce for ArchiveFileList {
 //                 // let path_str = self.current_path.trim_end_matches('/').to_string();
 //                 // let paths = path_str.split('/').collect::<Vec<&str>>();
 //                 let self_handle = cx.entity();
-// 
+//
 //                 let mut container = base;
 //                 let h = self_handle.clone();
 //                 // container = container
@@ -287,7 +287,7 @@ impl RenderOnce for ArchiveFileList {
 //                 //                 h.update(cx, |_, cx| cx.emit(FileListEvent::NavigateUp));
 //                 //             })
 //                 //     );
-//                 
+//
 //                 // container = container
 //                 //     .child(
 //                 //         Breadcrumb::new()
@@ -296,7 +296,7 @@ impl RenderOnce for ArchiveFileList {
 //                 //                 paths.iter().map(|p| BreadcrumbItem::new(*p)).collect::<Vec<BreadcrumbItem>>()
 //                 //             )
 //                 // );
-// 
+//
 //                 let table_entity = self.table_state.clone();
 //                 container.child(
 //                     div().flex_1().child(DataTable::new(&table_entity).scrollbar_visible(true, true))

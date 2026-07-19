@@ -8,3 +8,7 @@ license.workspace = true
 bit7z-domain = { path = "../../domain" }
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
+gpui-component = { workspace = true }
+serde.workspace = true
+tracing = { version = "0.1.44" }
+serde_json.workspace = true

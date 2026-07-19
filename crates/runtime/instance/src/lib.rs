@@ -25,7 +25,7 @@ mod win {
             if handle.is_null() { return Err(super::InstanceError::Internal("CreateMutex failed".into())); }
             if windows_sys::Win32::Foundation::GetLastError() == windows_sys::Win32::Foundation::ERROR_ALREADY_EXISTS {
                 windows_sys::Win32::Foundation::CloseHandle(handle);
-                return Err(super::InstanceError::AlreadyOpen);
+                return Err(InstanceError::AlreadyOpen);
             }
             Ok(super::InstanceLockWin { handle, key })
         }

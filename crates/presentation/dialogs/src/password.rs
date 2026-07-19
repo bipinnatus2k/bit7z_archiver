@@ -48,7 +48,7 @@ impl PasswordDialog {
         });
         Self {
             archive_name,
-            password: Password::empty(),
+            password: Password::none(),
             input_state,
             error: None,
             _subscription: subscription,

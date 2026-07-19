@@ -16,13 +16,15 @@ members = [
     "crates/infrastructure/tray",
     "crates/infrastructure/events",
     "crates/infrastructure/progress",
-    "crates/presentation/view-models",
+#    "crates/presentation/view-models",
     "crates/presentation/components",
     "crates/presentation/progress",
     "crates/presentation/views",
     "crates/presentation/settings",
+#    "crates/presentation/settings_ui",
     "crates/presentation/dialogs",
     "crates/presentation/theme",
+    "crates/presentation/image_viewer",
     "crates/runtime/ipc",
     "crates/runtime/instance",
     "crates/runtime/worker",
@@ -30,6 +32,7 @@ members = [
     "crates/runtime/gui",
     "crates/runtime/app-bin",
     "crates/runtime/app-state",
+    "crates/explorer_command_injector"
 ]
 
 [workspace.package]
@@ -88,6 +91,7 @@ ashpd = { version = "0.13", default-features = false, features = [
 parking_lot = "0.12.1"
 libc = "0.2"
 strum = { version = "0.26", features = ["derive"] }
+rust-i18n = { version = "4.1.0" }
 async-channel = "2.5.0"
 ##async-compat = "0.2.1"
 ##async-compression = { version = "0.4", features = ["bzip2", "gzip", "futures-io"] }
@@ -115,12 +119,14 @@ async-trait = "0.1"
 #text.workspace = true
 #time.workspace = true
 #util.workspace = true
-#
-#windows.workspace = true
+image = "0.25.1"
+windows-core = "0.61"
 #dunce.workspace = true
 
 [patch."https://github.com/longbridge/gpui-component"]
 gpui-component-assets = { path = "crates/assets" }
+
+
 
 [workspace.dependencies.windows]
 version = "0.61"

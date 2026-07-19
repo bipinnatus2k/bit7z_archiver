@@ -1,4 +1,6 @@
 pub mod design;
+pub mod theme;
+mod embedded_themes;
 
 use bit7z_domain::preferences::ThemeMode;
 use gpui::{rgb, Global, Hsla, Window};

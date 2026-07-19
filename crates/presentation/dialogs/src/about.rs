@@ -1,10 +1,9 @@
+use std::borrow::BorrowMut;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::dialog::DialogClose;
 use gpui_component::v_flex;
-use bit7z_pres_components::window_dialog::{
-    DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-    open_window_dialog, WindowDialogOptions, CloseAction,
-};
+use bit7z_pres_components::window_dialog::{DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, open_window_dialog, WindowDialogOptions, CloseAction, hide_window};
 
 pub struct AboutContent;
 
@@ -60,7 +59,15 @@ impl Render for AboutContent {
     }
 }
 
-pub struct AboutDialog;
+pub struct AboutDialog {
+    focus_handle: FocusHandle
+}
+
+impl Focusable for AboutDialog {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
 
 impl AboutDialog {
     pub fn open(cx: &mut App) {
@@ -75,9 +82,10 @@ impl AboutDialog {
                 kind: WindowKind::Dialog,
                 close_action: CloseAction::RemoveWindow,
                 window_decorations: Some(WindowDecorations::Client),
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::MicaBackdrop,
             },
             |_window, cx| cx.new(|_| AboutContent),
         );
+        cx.activate(true);
     }
 }

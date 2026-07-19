@@ -1,6 +1,5 @@
 use bit7z_domain::archive::*;
 use bit7z_domain::repository::*;
-use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -32,8 +31,8 @@ impl OpenArchiveUseCase {
 #[cfg(test)]
 mod tests {
     use bit7z_domain::archive::*;
-    use bit7z_domain::repository::*;
     use bit7z_domain::repository::test_utils::MockArchiveRepository;
+    use bit7z_domain::repository::*;
     use std::ops::Range;
     use std::path::Path;
     use std::sync::Arc;

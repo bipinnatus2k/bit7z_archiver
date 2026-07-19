@@ -249,15 +249,15 @@ impl Render for TestErrorContent {
     }
 }
 
-fn failed_entry(f: &bit7z_domain::archive::TestFailure) -> impl IntoElement {
+fn failed_entry(f: &TestFailure) -> impl IntoElement {
     let reason = match &f.reason {
-        bit7z_domain::archive::TestFailureReason::CrcMismatch { expected, actual } => {
+        TestFailureReason::CrcMismatch { expected, actual } => {
             format!("CRC mismatch: expected {:08X}, got {:08X}", expected, actual)
         }
-        bit7z_domain::archive::TestFailureReason::ReadError(msg) => {
+        TestFailureReason::ReadError(msg) => {
             format!("Read error: {}", msg)
         }
-        bit7z_domain::archive::TestFailureReason::UnsupportedOperation => {
+        TestFailureReason::UnsupportedOperation => {
             "Unsupported operation".to_string()
         }
     };

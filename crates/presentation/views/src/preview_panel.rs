@@ -6,6 +6,8 @@ use gpui_component::scroll::ScrollableElement;
 
 const HEX_DUMP_BYTES: usize = 4096;
 
+
+#[derive(IntoElement)]
 pub struct PreviewPanel {
     data: Option<PreviewData>,
     is_loading: bool,
@@ -26,8 +28,8 @@ impl PreviewPanel {
     }
 }
 
-impl Render for PreviewPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl RenderOnce for PreviewPanel {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         div().flex_1().overflow_hidden().border_t_1().border_color(cx.theme().border).p_2()
             .child(match &self.data {
                 None if self.is_loading => loading_view(cx).into_any_element(),
@@ -48,7 +50,7 @@ impl Render for PreviewPanel {
     }
 }
 
-fn render_hex_view(bytes: &[u8], cx: &mut Context<PreviewPanel>) -> impl IntoElement {
+fn render_hex_view(bytes: &[u8], cx: &mut App) -> impl IntoElement {
     let truncated = if bytes.len() > HEX_DUMP_BYTES { &bytes[..HEX_DUMP_BYTES] } else { bytes };
     let rows = truncated.chunks(16);
     let offset_width = format!("{:X}", truncated.len().max(1)).len().max(4);
@@ -73,7 +75,7 @@ fn render_hex_view(bytes: &[u8], cx: &mut Context<PreviewPanel>) -> impl IntoEle
     )
 }
 
-fn render_image_view(bytes: &[u8], cx: &mut Context<PreviewPanel>) -> impl IntoElement {
+fn render_image_view(bytes: &[u8], cx: &mut App) -> impl IntoElement {
     let (fmt_desc, _) = detect_image_format(bytes);
     let dims = try_get_dimensions(bytes).map(|(w, h)| format!("{}x{}", w, h)).unwrap_or_else(|| String::from("unknown dimensions"));
     let size_str = if bytes.len() >= 1_048_576 {
