@@ -18,13 +18,15 @@ impl PreviewPanel {
         Self { data: None, is_loading: false }
     }
 
-    pub fn set_data(&mut self, data: Option<PreviewData>) {
+    pub fn with_data(mut self, data: Option<PreviewData>) -> Self {
+        self.is_loading = data.is_none();
         self.data = data;
-        self.is_loading = false;
+        self
     }
 
-    pub fn set_loading(&mut self) {
-        self.is_loading = true;
+    pub fn with_loading(mut self, loading: bool) -> Self {
+        self.is_loading = loading;
+        self
     }
 }
 

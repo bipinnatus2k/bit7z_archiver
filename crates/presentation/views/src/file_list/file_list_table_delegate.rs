@@ -1,14 +1,15 @@
-use gpui::{div, App, Context, IntoElement, ParentElement, Styled, WeakEntity, Window};
-use gpui::prelude::FluentBuilder;
-use gpui_component::menu::{PopupMenu, PopupMenuItem};
+use crate::file_list::archive_fm_state::FileListState;
+use crate::file_list::LevelEntry;
 use bit7z_pres_components::ext_table::{Column, ColumnSort, TableDelegate, TableState};
 use bit7z_pres_components::state_view::{empty_view, loading_view};
-use crate::file_list::archive_file_list::{ArchiveFileList, ChecksumCRC32, ChecksumMD5, ChecksumSHA1, ChecksumSHA256, ClearSelection, DeleteSelected, ExtractSelected, FileListEvent, OpenEntry, PreviewEntry, Refresh, RenameEntry, SelectAll, ShowProperties, TestSelected};
-use crate::file_list::LevelEntry;
+use gpui::{prelude::FluentBuilder, App, Context, IntoElement, WeakEntity, Window};
+use gpui_component::menu::PopupMenu;
 
 pub(crate) struct FileListTableDelegate {
     pub(crate) entries: Vec<LevelEntry>,
     pub(crate) columns: Vec<Column>,
+    pub(crate) state: WeakEntity<FileListState>,
+
 }
 
 impl TableDelegate for FileListTableDelegate {
@@ -17,7 +18,9 @@ impl TableDelegate for FileListTableDelegate {
     }
 
     fn rows_count(&self, _: &App) -> usize {
-        self.entries.len()
+        let n = self.entries.len();
+        log::info!("DataTable rows_count: {}", n);
+        n
     }
 
     fn column(&self, col_ix: usize, _: &App) -> Column {
@@ -43,8 +46,11 @@ impl TableDelegate for FileListTableDelegate {
             };
             if ascending { ord } else { ord.reverse() }
         });
-        // if let Some(fl) = self.file_list.upgrade() {
-        //     fl.update(_cx, |_, cx| cx.emit(FileListEvent::SortByColumn(col_ix as u32, ascending)));
+        // if let Some(state) = self.state.upgrade() {
+        //     state.update(cx, |state, _| {
+        //         state.sort_column = col_ix as u32;
+        //         state.sort_ascending = ascending;
+        //     });
         // }
     }
 
@@ -55,44 +61,35 @@ impl TableDelegate for FileListTableDelegate {
         _window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> PopupMenu {
-        menu
-        // let fl = match self.file_list.upgrade() {
-        //     Some(f) => f,
-        //     None => return menu,
-        // };
-        // let has_selection = fl.read(cx).selection.len() > 0;
-        // let single_selection = fl.read(cx).selection.len() == 1;
-        // let ready = fl.read(cx).is_ready;
+        // let has_selection = self.state.upgrade().map_or(false, |s| s.read(cx).has_selection());
+        // let single_selection = self.state.upgrade().map_or(false, |s| s.read(cx).selection.len() == 1);
+        // let is_ready = self.state.upgrade().map_or(false, |s| s.read(cx).is_ready());
         //
-        // menu
-        //     .when(has_selection,|m| {
-        //         m
-        //             .menu("Open",Box::new(OpenEntry))
-        //             .when(single_selection,|m| {
-        //                 m.menu("Preview",Box::new(PreviewEntry))
-        //             })
-        //             .menu("Extract",Box::new(ExtractSelected))
-        //             .menu("Test",Box::new(TestSelected))
+        menu
+        //     .when(has_selection, |m| {
+        //         m.menu("Open", Box::new(OpenEntry))
+        //             .when(single_selection, |m| m.menu("Preview", Box::new(PreviewEntry)))
+        //             .menu("Extract", Box::new(ExtractSelected))
+        //             .menu("Test", Box::new(TestSelected))
         //             .separator()
-        //             .menu("Rename",Box::new(RenameEntry))
+        //             .menu("Rename", Box::new(RenameEntry))
         //             .menu("Delete", Box::new(DeleteSelected))
         //             .separator()
-        //             .item(PopupMenuItem::submenu("Checksum", PopupMenu::build(_window, cx, |menu, _window, _cx| {
-        //                 menu.menu("CRC32",Box::new(ChecksumCRC32))
-        //                     .menu("MD5",Box::new(ChecksumMD5))
-        //                     .menu("SHA-1", Box::new(ChecksumSHA1))
-        //                     .menu("SHA-256", Box::new(ChecksumSHA256))
-        //             })))
+        //             .item(PopupMenuItem::submenu(
+        //                 "Checksum",
+        //                 PopupMenu::build(_window, cx, |menu, _window, _cx| {
+        //                     menu.menu("CRC32", Box::new(ChecksumCRC32))
+        //                         .menu("MD5", Box::new(ChecksumMD5))
+        //                         .menu("SHA-1", Box::new(ChecksumSHA1))
+        //                         .menu("SHA-256", Box::new(ChecksumSHA256))
+        //                 }),
+        //             ))
         //     })
         //     .separator()
-        //     .menu("Select All",Box::new(SelectAll))
-        //     .when(has_selection, |m|{
-        //         m.menu("Clear Selection", Box::new(ClearSelection))
-        //     })
+        //     .menu("Select All", Box::new(SelectAll))
+        //     .when(has_selection, |m| m.menu("Clear Selection", Box::new(ClearSelection)))
         //     .separator()
-        //     .when(ready, |m|{
-        //         m.menu("Refresh", Box::new(Refresh))
-        //     })
+        //     .when(is_ready, |m| m.menu("Refresh", Box::new(Refresh)))
         //     .menu("Properties", Box::new(ShowProperties))
     }
 
@@ -108,30 +105,29 @@ impl TableDelegate for FileListTableDelegate {
                 let ratio = if row.size == 0 {
                     "0%".to_string()
                 } else {
-                    format!("{:.0}%", (1.0 - (row.compressed_size as f64 / row.size as f64)) * 100.)
+                    format!(
+                        "{:.0}%",
+                        (1.0 - (row.compressed_size as f64 / row.size as f64)) * 100.
+                    )
                 };
                 ratio
-            },
+            }
             "date" => {
-                let date = row.modified
+                let date = row
+                    .modified
                     .map(|t| t.naive_local().to_string())
                     .unwrap_or_default();
                 date
-            },
+            }
             _ => "".to_string(),
         }
     }
 
-    fn render_empty(&mut self, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
-        empty_view(cx,"")
-    }
-
-    // fn loading(&self, cx: &App) -> bool {
-    //     self.loading()
+    // fn render_empty(&mut self, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
+    //     empty_view(cx, "")
     // }
-
-    fn render_loading(&mut self, _size: gpui_component::Size, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
-        div().flex_1().child(loading_view(cx))
-    }
+    //
+    // fn render_loading(&mut self, _size: gpui_component::Size, _window: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
+    //     loading_view(cx)
+    // }
 }
-

@@ -2,6 +2,7 @@ use bit7z_domain::archive::*;
 use bit7z_domain::repository::*;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub enum PreviewData {
     Text(String),
     Hex(Vec<u8>),

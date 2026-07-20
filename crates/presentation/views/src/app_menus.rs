@@ -1,4 +1,4 @@
-use crate::{About, Benchmark, Checksum, CleanRecentFiles, CloseArchive, CreateArchive, DebugInfo, Open, OpenSettings, Quit, RequestAddFiles, SaveAs, SelectLocale, ShowProperties, TestAll, TestSelected, ToggleSearch};
+use crate::{About, Benchmark, Checksum, CleanRecentFiles, CloseArchive, CreateArchive, DebugInfo, Open, OpenArchive, OpenSettings, Quit, RequestAddFiles, SaveAs, SelectLocale, ShowProperties, TestAll, TestSelected, ToggleSearch};
 use bit7z_domain::checksum::ChecksumAlgorithm;
 use bit7z_pres_theme::theme::{SwitchTheme, SwitchThemeMode};
 use gpui::{App, Entity, Menu, MenuItem, SharedString};
@@ -90,7 +90,7 @@ fn build_menus(title: impl Into<SharedString>, is_open:bool, cx: &App) -> Vec<Me
         Menu {
             name: "File".into(),
             items: vec![
-                MenuItem::action("Open...", Open),
+                MenuItem::action("Open...", OpenArchive()),
                 recent_menu(cx),
                 MenuItem::Separator,
                 MenuItem::action("Save as...",SaveAs),

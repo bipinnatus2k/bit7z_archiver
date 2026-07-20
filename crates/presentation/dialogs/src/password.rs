@@ -16,7 +16,7 @@ pub enum PasswordDialogEvent {
 impl EventEmitter<PasswordDialogEvent> for PasswordDialog {}
 
 pub enum PasswordResult {
-    Submitted(String),
+    Submitted(Password),
     Canceled,
 }
 
@@ -86,7 +86,7 @@ impl PasswordDialog {
 
     fn submit(&mut self) {
         if let Some(tx) = self.result_tx.take() {
-            let _ = tx.send(PasswordResult::Submitted(self.password.as_str().parse().unwrap()));
+            let _ = tx.send(PasswordResult::Submitted(self.password.clone()));
         }
     }
 

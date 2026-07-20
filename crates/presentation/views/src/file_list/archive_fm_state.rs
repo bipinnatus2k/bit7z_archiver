@@ -1,10 +1,9 @@
-use bit7z_domain::archive::*;
-use bit7z_domain::repository::ArchiveProperties;
 use std::collections::{HashMap, HashSet};
 use gpui::{div, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window};
-use gpui_component::input::InputState;
 use bit7z_pres_components::ext_table::{Column, DataTable, TableEvent, TableState};
-use crate::file_list::archive_file_list::{FileListEvent};
+use bit7z_domain::archive::*;
+use bit7z_domain::repository::ArchiveProperties;
+use crate::file_list::archive_file_list::FileListEvent;
 use crate::file_list::{LevelEntry, OpHandle, ProgressSnapshot, ViewStatus};
 use crate::file_list::file_list_table_delegate::FileListTableDelegate;
 
@@ -38,6 +37,7 @@ impl FileListState {
         let delegate = FileListTableDelegate {
                 entries: vec![],
                 columns: vec![],
+                state: cx.entity().downgrade(),
             };
 
         let table_state = cx.new(|cx| {
@@ -153,27 +153,27 @@ impl FileListState {
         self.selection_anchor = None;
     }
 
-    pub fn sort_by_column(&mut self, column: u32) {
+    pub fn sort_by_column(&mut self, column: u32, cx: &mut Context<Self>) {
         if self.sort_column == column {
             self.sort_ascending = !self.sort_ascending;
         } else {
             self.sort_column = column;
             self.sort_ascending = true;
         }
-        self.reapply_filter_and_sort();
+        self.reapply_filter_and_sort(cx);
     }
 
-    pub fn apply_sort(&mut self, column: u32, ascending: bool) {
+    pub fn apply_sort(&mut self, column: u32, ascending: bool, cx: &mut Context<Self>) {
         self.sort_column = column;
         self.sort_ascending = ascending;
-        self.reapply_filter_and_sort();
+        self.reapply_filter_and_sort(cx);
     }
 
-    pub fn set_filter(&mut self, text: &str) {
+    pub fn set_filter(&mut self, text: &str, cx: &mut Context<Self>) {
         self.filter_text = text.to_string();
         self.selection.clear();
         self.selection_anchor = None;
-        self.reapply_filter_and_sort();
+        self.reapply_filter_and_sort(cx);
     }
 
     pub fn navigate_into(&mut self, dir_name: &str) {
@@ -204,17 +204,33 @@ impl FileListState {
         self.selection_anchor = None;
     }
 
-    pub fn reapply_filter_and_sort(&mut self) {
+    pub fn reapply_filter_and_sort(&mut self, cx: &mut Context<Self>) {
         let snapshot = self.directory_cache.get(&self.current_path).cloned().unwrap_or_default();
         self.apply_filter_and_sort(&snapshot);
+        self.table_state.update(cx, |table, _| {
+            table.delegate_mut().entries = self.level_entries.clone();
+        });
     }
 
     fn apply_filter_and_sort(&mut self, entries: &[ArchiveEntry]) {
         let filter_lower = self.filter_text.to_lowercase();
+        let cp = self.current_path.trim_end_matches('/');
+        let prefix = if cp.is_empty() { String::new() } else { format!("{}/", cp) };
+        let plen = prefix.len();
         let mut items: Vec<LevelEntry> = Vec::new();
 
         for entry in entries {
             if !self.filter_text.is_empty() && !entry.path().to_lowercase().contains(&filter_lower) {
+                continue;
+            }
+            // client-side hierarchy filter: only direct children of current_path
+            let p = entry.path();
+            let is_child = if plen == 0 {
+                !p.contains('/')
+            } else {
+                p.starts_with(&prefix) && p[plen..].find('/').is_none()
+            };
+            if !is_child {
                 continue;
             }
             items.push(LevelEntry {
@@ -244,7 +260,7 @@ impl FileListState {
 
     fn ratio_key(e: &LevelEntry) -> u64 {
         if e.size == 0 { 0 }
-        else { (((1.0 - e.compressed_size as f64 / e.size as f64) * 10000.0).max(0.0)) as u64 }
+        else { ((1.0 - e.compressed_size as f64 / e.size as f64) * 10000.0).max(0.0) as u64 }
     }
 
     pub fn displayed_entries(&self) -> &[LevelEntry] {
@@ -297,6 +313,24 @@ impl FileListState {
         self.current_subdirs().into_iter()
             .filter(|name| name.to_lowercase().contains(&filter_lower))
             .collect()
+    }
+
+    pub fn populate_directory(&mut self, entries: Vec<ArchiveEntry>, cx: &mut Context<Self>) {
+        self.directory_cache.insert(self.current_path.clone(), entries);
+        self.status = ViewStatus::Ready;
+        self.reapply_filter_and_sort(cx);
+    }
+
+    pub fn clear_archive(&mut self) {
+        // self.handle = None;
+        // self.properties = None;
+        self.directory_cache.clear();
+        self.level_entries.clear();
+        self.current_path = String::new();
+        self.path_history.clear();
+        self.selection.clear();
+        self.selection_anchor = None;
+        self.status = ViewStatus::Empty;
     }
 
     pub fn status_text(&self) -> String {

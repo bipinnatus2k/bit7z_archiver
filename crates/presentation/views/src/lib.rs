@@ -6,8 +6,9 @@ extern crate rust_i18n;
 use crate::archive_file_manager::ArchiveFileManager;
 use crate::story_root::StoryRoot;
 use crate::utils::window::create_new_window_with_size;
+use bit7z_domain::archive::Password;
 use bit7z_domain::checksum::ChecksumAlgorithm;
-use gpui::{actions, div, px, size, Action, App, AppContext, Entity, Global, IntoElement, KeyBinding, ParentElement, SharedString, Styled, TextRenderingMode};
+use gpui::{actions, div, px, size, Action, App, AppContext, Entity, IntoElement, KeyBinding, ParentElement, SharedString, Styled, TextRenderingMode};
 use gpui_component::text::Text;
 use gpui_component::{ActiveTheme, Root, WindowExt};
 use serde::Deserialize;
@@ -86,7 +87,7 @@ pub struct RequestAddFiles();
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = story, no_json)]
-pub struct OpenArchive {}
+pub struct OpenArchive();
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = story, no_json)]
@@ -170,6 +171,16 @@ fn render_mode_to_string(mode: TextRenderingMode) -> String {
 }
 
 pub fn init(cx: &mut App, repo: Arc<dyn ArchiveRepository>) {
+    init_with_path(cx, repo, None, None);
+}
+
+pub fn init_with_path(
+    cx: &mut App,
+    repo: Arc<dyn ArchiveRepository>,
+    open_path: Option<PathBuf>,
+    open_password: Option<Password>,
+) {
+    // let open_path = open_path.map(|s| s.to_string());
     // Try to initialize tracing subscriber, but ignore if already initialized
     #[cfg(not(target_family = "wasm"))]
     {
@@ -201,8 +212,8 @@ pub fn init(cx: &mut App, repo: Arc<dyn ArchiveRepository>) {
     bit7z_pres_components::init(cx);
     // Initialize settings subsystem
     bit7z_pres_settings::init(cx);
-    // AppState::init(cx);
     bit7z_pres_theme::theme::init(cx);
+    crate::file_list::archive_file_list::ArchiveFileList::init(cx);
     // stories::init(cx);
 
     // #[cfg(not(target_family = "wasm"))]
@@ -329,7 +340,7 @@ pub fn init(cx: &mut App, repo: Arc<dyn ArchiveRepository>) {
                 }
             });
 
-            let fm_app = ArchiveFileManager::view(None, None, repo,w, cx);
+            let fm_app = ArchiveFileManager::view(open_path, open_password, repo, w, cx);
 
             let app_shell = cx.new(|cx| StoryRoot::new("Bit7z Archiver", fm_app, w, cx));
 

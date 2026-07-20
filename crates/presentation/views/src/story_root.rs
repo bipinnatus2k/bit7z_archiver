@@ -1,5 +1,5 @@
 use crate::title_bar::AppTitleBar;
-use crate::{About, OpenSettings, ShowNotificationInfo, ToggleSearch};
+use crate::{About, OpenArchive, OpenSettings, ShowNotificationInfo, ToggleSearch};
 use gpui::{
     div, AnyView, App, AppContext, Context, Entity, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Window,
@@ -49,43 +49,13 @@ impl StoryRoot {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        cx.spawn(async move |_, cx| { 
-            SettingsDialog::open(cx); 
+        cx.spawn(async move |_, cx| {
+            SettingsDialog::open(cx);
         }).detach();
-        
+
     }
 
-    // fn on_action_about(&mut self, _: &About, window: &mut Window, cx: &mut Context<Self>) {
-    //     if let Some(window) = cx.active_window().and_then(|w| w.downcast::<Root>()) {
-    //         cx.defer(move |cx| {
-    //             window
-    //                 .update(cx, |_, window, cx| {
-    //                     window.defer(cx, |window, cx| {
-    //                         bit7z_pres_dialogs::about::AboutDialog::open(cx);
-    //                     });
-    //                 })
-    //                 .unwrap();
-    //         });
-    //     }
-    // }
 
-    fn on_action_toggle_search(
-        &mut self,
-        _: &ToggleSearch,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        cx.propagate();
-        if window.has_focused_input(cx) {
-            return;
-        }
-
-        struct Search;
-        let note = Notification::new()
-            .message("You have toggled search.")
-            .id::<Search>();
-        window.push_notification(note, cx);
-    }
 }
 
 impl Focusable for StoryRoot {
@@ -101,9 +71,7 @@ impl Render for StoryRoot {
         let notification_layer = Root::render_notification_layer(window, cx);
 
         div()
-            .id("story-root")
             .on_action(cx.listener(Self::on_action_notify_info))
-            .on_action(cx.listener(Self::on_action_toggle_search))
             .on_action(cx.listener(Self::on_action_open_settings))
             .size_full()
             .child(

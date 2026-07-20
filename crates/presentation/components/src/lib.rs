@@ -5,6 +5,7 @@ pub mod virtual_list;
 pub mod window_dialog;
 pub mod ext_table;
 pub mod empty_state;
+pub mod toolbar;
 
 pub fn init(cx: &mut gpui::App) {
     ext_table::init(cx);

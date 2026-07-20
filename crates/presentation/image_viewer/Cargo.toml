@@ -1,0 +1,12 @@
+[package]
+name = "bit7z-pres-image-viewer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+gpui = { workspace = true }
+
+[lib]
+name = "bit7z_pres_image_viewer"
+path = "src/lib.rs"

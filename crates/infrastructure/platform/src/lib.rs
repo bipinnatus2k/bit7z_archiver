@@ -50,14 +50,17 @@ pub fn find_7z_library() -> Option<PathBuf> {
 }
 
 /// Open a file picker dialog for archive files using `rfd`.
-pub fn pick_archive_file() -> Option<std::path::PathBuf> {
+pub fn pick_archive_file() -> Option<PathBuf> {
+    println!("call rfd");
     rfd::FileDialog::new()
         .add_filter(
-            "Archives",
+            "All Archive Format",
             &[
                 "7z", "zip", "rar", "tar", "tar.gz", "tar.xz", "tar.bz2", "gz", "bz2", "xz",
             ],
         )
+        .add_filter("All Files",&["*"])
+        .set_title("Open archive file")
         .pick_file()
 }
 
