@@ -38,7 +38,8 @@ pub enum FileListIntent {
     SelectionChanged(Vec<u32>),
     SortByColumn(u32, bool),
     NavigateUp,
-    OpenEntry,
+    /// Open/navigate the entry identified by its display name in the current directory.
+    OpenEntry(String),
     PreviewEntry,
     ExtractSelected,
     TestSelected,
@@ -208,6 +209,7 @@ impl ArchiveFileList {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
 
         bind_keys!(cx, "archive_file_list",
+            "enter" => OpenEntry,
             "ctrl-a" => SelectAll,
             "ctrl-o" => OpenEntry,
             "ctrl-m" => RenameEntry,
@@ -244,14 +246,16 @@ impl ArchiveFileList {
                     view.selection = indices.iter().copied().collect();
                     cx.emit(FileListIntent::SelectionChanged(indices));
                 }
-                TableEvent::DoubleClickedRow(_row_ix) => {
+                TableEvent::DoubleClickedRow(row_ix) => {
                     let indices: Vec<u32> = view.table_state.read(cx).selected_rows().iter()
                         .filter_map(|&row| view.entries.get(row))
                         .map(|e| e.original_index)
                         .collect();
                     view.selection = indices.iter().copied().collect();
                     cx.emit(FileListIntent::SelectionChanged(indices));
-                    cx.emit(FileListIntent::OpenEntry);
+                    if let Some(name) = view.entries.get(*row_ix).map(|e| e.display_name.clone()) {
+                        cx.emit(FileListIntent::OpenEntry(name));
+                    }
                 }
                 TableEvent::ClearSelection => {
                     view.selection.clear();
@@ -273,6 +277,16 @@ impl ArchiveFileList {
         self.table_state.update(cx, |state, cx| {
             state.set_selected_rows(rows, cx);
         });
+    }
+
+    fn open_target_name(&self, cx: &Context<Self>) -> Option<String> {
+        self.table_state
+            .read(cx)
+            .selected_rows()
+            .iter()
+            .next()
+            .and_then(|&row| self.entries.get(row))
+            .map(|e| e.display_name.clone())
     }
 
     pub fn clear_selection(&mut self, cx: &mut Context<Self>) {
@@ -305,7 +319,6 @@ impl Render for ArchiveFileList {
 
         let base = emit_intents!(base, cx,
             NavigateUp => FileListIntent::NavigateUp,
-            OpenEntry => FileListIntent::OpenEntry,
             PreviewEntry => FileListIntent::PreviewEntry,
             ExtractSelected => FileListIntent::ExtractSelected,
             TestSelected => FileListIntent::TestSelected,
@@ -320,6 +333,12 @@ impl Render for ArchiveFileList {
             ChecksumSHA1 => FileListIntent::Checksum(ChecksumAlgorithm::Sha1),
             ChecksumSHA256 => FileListIntent::Checksum(ChecksumAlgorithm::Sha256),
         );
+
+        let base = base.on_action(cx.listener(|this, _: &OpenEntry, _window, cx| {
+            if let Some(name) = this.open_target_name(cx) {
+                cx.emit(FileListIntent::OpenEntry(name));
+            }
+        }));
 
         match &self.status {
             ViewStatus::Empty => {

@@ -9,4 +9,5 @@ bit7z-domain = { path = "../../domain" }
 bit7z-rt-ipc = { path = "../ipc" }
 serde.workspace = true
 serde_json.workspace = true
+log.workspace = true
 

@@ -42,7 +42,7 @@ fn opts(title: impl Into<SharedString>) -> WindowDialogOptions {
         height: Some(px(500.)),
         min_width: None,
         min_height: None,
-        kind: WindowKind::Dialog,
+        kind: WindowKind::Normal,
         close_action: CloseAction::RemoveWindow,
         ..Default::default()
     }

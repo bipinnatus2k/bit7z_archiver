@@ -138,9 +138,16 @@ impl RootView {
                             }).detach();
                         }
                         ToolbarIntent::CloseArchive => {
-                            if let Some(h) = this.state.archive.take() { this.controller.close_archive(h); }
-                            this.state = ArchiveState::new();
-                            this.sync_children(cx);
+                            this.handle_close_archive(cx);
+                        }
+                        ToolbarIntent::SaveArchive => {
+                            this.handle_save_archive(cx);
+                        }
+                        ToolbarIntent::Undo => {
+                            this.handle_undo(cx);
+                        }
+                        ToolbarIntent::Redo => {
+                            this.handle_redo(cx);
                         }
                         ToolbarIntent::ShowSettings => {
                             cx.spawn(async move |_, cx| {
@@ -220,23 +227,18 @@ impl RootView {
                                 this.state.directory_cache.remove(&key);
                             }
                         }
-                        FileListIntent::OpenEntry => {
+                        FileListIntent::OpenEntry(name) => {
                             if let Some(ref h) = this.state.archive {
-                                if let Some(idx) = this.state.first_selected_index() {
-                                    let is_dir = this.state.displayed_entries()
-                                        .iter()
-                                        .find(|e| e.original_index == idx)
-                                        .map_or(false, |e| e.is_directory);
-                                    if is_dir {
-                                        let name = this.state.displayed_entries()
-                                            .iter()
-                                            .find(|e| e.original_index == idx)
-                                            .map(|e| e.display_name.clone())
-                                            .unwrap();
+                                if let Some(entry) = this.state.displayed_entries()
+                                    .iter()
+                                    .find(|e| e.display_name == *name)
+                                {
+                                    if entry.is_directory {
                                         this.state.navigate_into(&name);
                                         this.sync_children(cx);
                                         this.load_current_directory(cx);
                                     } else {
+                                        let idx = entry.original_index;
                                         let repo = this.controller.repo();
                                         let handle = h.clone();
                                         cx.background_spawn(async move {
@@ -456,6 +458,7 @@ impl RootView {
             });
         self.status_bar
             .update(cx, |c, _| c.set_status(&status_text));
+        self.sync_edit_state(cx);
     }
 
     fn handle_open_archive(
@@ -542,6 +545,74 @@ impl RootView {
             }
         })
         .detach();
+    }
+
+    fn handle_save_archive(&mut self, cx: &mut Context<Self>) {
+        if let Some(ref h) = self.state.archive {
+            let repo = self.controller.repo();
+            let handle = h.clone();
+            cx.background_spawn(async move {
+                let _ = repo.commit(&handle);
+            }).detach();
+        }
+    }
+
+    fn handle_undo(&mut self, cx: &mut Context<Self>) {
+        if let Some(ref h) = self.state.archive {
+            let repo = self.controller.repo();
+            let handle = h.clone();
+            let result = repo.undo(&handle);
+            if let Ok(true) = result {
+                self.state.directory_cache.clear();
+                self.load_current_directory(cx);
+            } else {
+                self.sync_edit_state(cx);
+            }
+        }
+    }
+
+    fn handle_redo(&mut self, cx: &mut Context<Self>) {
+        if let Some(ref h) = self.state.archive {
+            let repo = self.controller.repo();
+            let handle = h.clone();
+            let result = repo.redo(&handle);
+            if let Ok(true) = result {
+                self.state.directory_cache.clear();
+                self.load_current_directory(cx);
+            } else {
+                self.sync_edit_state(cx);
+            }
+        }
+    }
+
+    fn handle_close_archive(&mut self, cx: &mut Context<Self>) {
+        let h = match self.state.archive.take() {
+            Some(h) => h,
+            None => return,
+        };
+        let repo = self.controller.repo();
+        if repo.has_unsaved_changes(&h) {
+            cx.spawn(async move |_, cx| {
+                // TODO: Show unsaved changes dialog
+                // For now, discard pending changes and close
+                let _ = repo.discard_pending(&h);
+                repo.close(&h);
+            }).detach();
+        } else {
+            repo.close(&h);
+        }
+        self.state = ArchiveState::new();
+        self.sync_children(cx);
+    }
+
+    fn sync_edit_state(&mut self, cx: &mut Context<Self>) {
+        if let Some(ref h) = self.state.archive {
+            let repo = self.controller.repo();
+            let has_unsaved = repo.has_unsaved_changes(h);
+            let can_undo = repo.can_undo(h);
+            let can_redo = repo.can_redo(h);
+            self.toolbar.update(cx, |t, _| t.set_edit_state(has_unsaved, can_undo, can_redo));
+        }
     }
 
     fn menu_checksum(&self, cx: &mut Context<Self>) {
@@ -663,6 +734,18 @@ impl Render for RootView {
                             }
                         }
                     }
+                    "s" if cmd => {
+                        this.handle_save_archive(cx);
+                    }
+                    "z" if cmd && !shift => {
+                        this.handle_undo(cx);
+                    }
+                    "y" if cmd => {
+                        this.handle_redo(cx);
+                    }
+                    "z" if cmd && shift => {
+                        this.handle_redo(cx);
+                    }
                     "t" if cmd => {
                         let handle = this.state.archive.clone();
                         let repo = this.controller.repo();
@@ -711,33 +794,6 @@ impl Render for RootView {
                                     bit7z_pres_dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
                                 }
                             }).detach();
-                        }
-                    }
-                    "enter" => {
-                        if let Some(ref h) = this.state.archive {
-                            if let Some(idx) = this.state.first_selected_index() {
-                                let is_dir = this.state.displayed_entries()
-                                    .iter()
-                                    .find(|e| e.original_index == idx)
-                                    .map_or(false, |e| e.is_directory);
-                                if is_dir {
-                                    let name = this.state.displayed_entries()
-                                        .iter()
-                                        .find(|e| e.original_index == idx)
-                                        .map(|e| e.display_name.clone())
-                                        .unwrap();
-                                    this.state.navigate_into(&name);
-                                    this.sync_children(cx);
-                                    this.load_current_directory(cx);
-                                } else {
-                                    let repo = this.controller.repo();
-                                    let handle = h.clone();
-                                    cx.background_spawn(async move {
-                                        let uc = bit7z_app_archive::open_entry::OpenEntryUseCase::new(repo);
-                                        let _ = uc.execute(&handle, idx);
-                                    }).detach();
-                                }
-                            }
                         }
                     }
                     "Backspace" | "Delete" => {

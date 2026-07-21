@@ -877,12 +877,8 @@ dependencies = [
  "bit7z-infra-bit7z",
  "bit7z-infra-persistence",
  "bit7z-infra-platform",
- "bit7z-infra-shell",
- "bit7z-infra-tray",
- "bit7z-pres-theme",
  "bit7z-rt-cli",
  "bit7z-rt-gui",
- "bit7z-rt-instance",
  "bit7z-rt-ipc",
  "bit7z-rt-worker",
  "clap",
@@ -973,6 +969,7 @@ dependencies = [
  "bit7z-infra-bit7z",
  "bit7z-infra-platform",
  "bit7z-infra-progress",
+ "bit7z-infra-vfs",
  "chrono",
  "crossbeam-channel",
  "directories",
@@ -1014,6 +1011,18 @@ dependencies = [
  "tracing",
  "windows-sys 0.59.0",
  "zbus 4.4.0",
+]
+
+[[package]]
+name = "bit7z-infra-vfs"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "bit7z-ffi",
+ "bit7z-infra-bit7z",
+ "bit7z-infra-progress",
+ "chrono",
+ "crossbeam-channel",
 ]
 
 [[package]]
@@ -1075,15 +1084,6 @@ dependencies = [
  "notify 9.0.0-rc.4",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "bit7z-pres-theme"
-version = "0.1.0"
-dependencies = [
- "bit7z-domain",
- "gpui",
- "gpui_platform",
 ]
 
 [[package]]
@@ -1200,6 +1200,7 @@ version = "0.1.0"
 dependencies = [
  "bit7z-domain",
  "bit7z-rt-ipc",
+ "log",
  "serde",
  "serde_json",
 ]

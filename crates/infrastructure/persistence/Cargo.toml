@@ -10,6 +10,7 @@ bit7z-ffi = { path = "../../ffi" }
 bit7z-infra-bit7z = { path = "../bit7z" }
 bit7z-infra-platform = { path = "../platform" }
 bit7z-infra-progress = { path = "../progress" }
+bit7z-infra-vfs = { path = "../vfs" }
 autocxx = "0.30"
 crossbeam-channel = "0.5"
 serde_json = { workspace = true }

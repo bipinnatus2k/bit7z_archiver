@@ -69,6 +69,41 @@ pub trait ArchiveRepository: Send + Sync {
     fn apply_changes(&self, archive: &ArchiveHandle, plan: &ExecutionPlan, options: &WriteOptions) -> Result<(), ArchiveError>;
 
     fn list_directory(&self, archive: &ArchiveHandle, path: &str) -> Result<Vec<ArchiveEntry>, ArchiveError>;
+
+    /// Commit all staged (uncommitted) changes to the underlying archive.
+    fn commit(&self, _archive: &ArchiveHandle) -> Result<(), ArchiveError> {
+        Err(ArchiveError::UnsupportedOperation)
+    }
+
+    /// Undo the most recent edit transaction. Returns true if a transaction was undone.
+    fn undo(&self, _archive: &ArchiveHandle) -> Result<bool, ArchiveError> {
+        Ok(false)
+    }
+
+    /// Redo a previously undone edit transaction. Returns true if a transaction was redone.
+    fn redo(&self, _archive: &ArchiveHandle) -> Result<bool, ArchiveError> {
+        Ok(false)
+    }
+
+    /// Returns true if the archive has uncommitted (unsaved) changes.
+    fn has_unsaved_changes(&self, _archive: &ArchiveHandle) -> bool {
+        false
+    }
+
+    /// Returns true if there is an edit transaction that can be undone.
+    fn can_undo(&self, _archive: &ArchiveHandle) -> bool {
+        false
+    }
+
+    /// Returns true if there is an edit transaction that can be redone.
+    fn can_redo(&self, _archive: &ArchiveHandle) -> bool {
+        false
+    }
+
+    /// Discard all pending changes, reverting to the last committed state.
+    fn discard_pending(&self, _archive: &ArchiveHandle) -> Result<(), ArchiveError> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

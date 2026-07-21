@@ -11,6 +11,9 @@ pub enum ToolbarIntent {
     TestArchive,
     CloseArchive,
     ShowSettings,
+    SaveArchive,
+    Undo,
+    Redo,
 }
 
 impl EventEmitter<ToolbarIntent> for Toolbar {}
@@ -20,6 +23,9 @@ pub struct Toolbar {
     is_ready: bool,
     has_selection: bool,
     is_loading: bool,
+    has_unsaved_changes: bool,
+    can_undo: bool,
+    can_redo: bool,
 }
 
 impl Toolbar {
@@ -29,6 +35,9 @@ impl Toolbar {
             is_ready: false,
             has_selection: false,
             is_loading: false,
+            has_unsaved_changes: false,
+            can_undo: false,
+            can_redo: false,
         }
     }
 
@@ -36,6 +45,12 @@ impl Toolbar {
         self.is_open = is_open;
         self.is_ready = is_ready;
         self.has_selection = has_selection;
+    }
+
+    pub fn set_edit_state(&mut self, has_unsaved: bool, can_undo: bool, can_redo: bool) {
+        self.has_unsaved_changes = has_unsaved;
+        self.can_undo = can_undo;
+        self.can_redo = can_redo;
     }
 
     pub fn set_loading(&mut self, is_loading: bool) {
@@ -152,6 +167,52 @@ impl Render for Toolbar {
             close_btn
         };
         row = row.child(close_btn);
+
+        // Save / Undo / Redo buttons (separator before them)
+        if self.is_open {
+            row = row.child(div().w(px(4.)));
+
+            let save_btn = Button::new("save")
+                .icon(IconName::Check)
+                .tooltip("Save changes (Ctrl+S)")
+                .disabled(!self.has_unsaved_changes || self.is_loading)
+                .on_click({
+                    let h = self_handle.clone();
+                    move |_, _, cx| {
+                        h.update(cx, |_, cx| cx.emit(ToolbarIntent::SaveArchive));
+                    }
+                });
+            let save_btn = if show_labels {
+                save_btn.label("Save")
+            } else {
+                save_btn
+            };
+            row = row.child(save_btn);
+
+            let undo_btn = Button::new("undo")
+                .icon(IconName::Undo2)
+                .tooltip("Undo (Ctrl+Z)")
+                .disabled(!self.can_undo || self.is_loading)
+                .on_click({
+                    let h = self_handle.clone();
+                    move |_, _, cx| {
+                        h.update(cx, |_, cx| cx.emit(ToolbarIntent::Undo));
+                    }
+                });
+            row = row.child(undo_btn);
+
+            let redo_btn = Button::new("redo")
+                .icon(IconName::Redo2)
+                .tooltip("Redo (Ctrl+Y)")
+                .disabled(!self.can_redo || self.is_loading)
+                .on_click({
+                    let h = self_handle.clone();
+                    move |_, _, cx| {
+                        h.update(cx, |_, cx| cx.emit(ToolbarIntent::Redo));
+                    }
+                });
+            row = row.child(redo_btn);
+        }
 
         row.child(div().flex_1()).child(
             Button::new("settings")

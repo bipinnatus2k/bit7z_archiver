@@ -15,6 +15,7 @@ members = [
     "crates/infrastructure/tray",
     "crates/infrastructure/events",
     "crates/infrastructure/progress",
+    "crates/infrastructure/vfs",
     "crates/presentation/view-models",
     "crates/presentation/components",
     "crates/presentation/progress",
@@ -86,36 +87,11 @@ ashpd = { version = "0.13", default-features = false, features = [
 parking_lot = "0.12.1"
 libc = "0.2"
 strum = { version = "0.26", features = ["derive"] }
+rust-i18n = { version = "4.1.0" }
 async-channel = "2.5.0"
-##async-compat = "0.2.1"
-##async-compression = { version = "0.4", features = ["bzip2", "gzip", "futures-io"] }
-##async-dispatcher = "0.1"
-##async-fs = "2.1"
-##async-io = "2.6.0"
-##async-lock = "3.4.2"
-##async-pipe = { git = "https://github.com/zed-industries/async-pipe-rs", rev = "82d00a04211cf4e1236029aa03e6b6ce2a74c553" }
-##async-recursion = "1.0.0"
-#async-tar = "0.5.1"
-##async-task = "4.7"
 async-trait = "0.1"
-#async-tungstenite = "0.31.0"
-#async-process = "2.5.0"
-#async_zip = { version = "0.0.18", features = ["deflate", "deflate64"] }
-#collections
-#futures
-#ignore =
-#parking_lot =
-#paths
-#rope =
-#smol
-#telemetry
-#tempfile
-#text.workspace = true
-#time.workspace = true
-#util.workspace = true
-#
-#windows.workspace = true
-#dunce.workspace = true
+image = "0.25.1"
+windows-core = "0.61"
 
 [patch."https://github.com/longbridge/gpui-component"]
 gpui-component-assets = { path = "crates/assets" }

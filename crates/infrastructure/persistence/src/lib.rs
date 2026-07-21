@@ -2,6 +2,8 @@ pub mod preferences_json;
 use bit7z_infra_bit7z as bit7z;
 use bit7z_domain::plan::{ExecutionPlan, plan_changes};
 use bit7z_infra_progress::ProgressSender;
+use bit7z_infra_vfs::ArchiveVfs;
+use bit7z_domain::vfs::{EditOperation, EditTransaction, next_vfs_id};
 use bit7z_domain::archive::*;
 use bit7z_domain::repository::*;
 use chrono::DateTime;
@@ -167,6 +169,15 @@ extern "C" fn extract_overwrite_callback(
 }
 
 /// Detect writer format from archive path extension.
+fn parent_dir(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    if let Some(pos) = trimmed.rfind('/') {
+        trimmed[..pos].to_string()
+    } else {
+        String::new()
+    }
+}
+
 fn detect_writer_format(path: &Path) -> bit7z::WriterFormat {
     path.extension()
         .and_then(|ext| {
@@ -354,6 +365,7 @@ fn populate_item_details(entry: &mut ArchiveEntry, list: *mut std::ffi::c_void, 
 struct RepositoryInner {
     lib: bit7z::Library,
     handles: HashMap<u64, bit7z::FfiHandle>,
+    vfs_map: HashMap<u64, ArchiveVfs>,
     overwrite_mode: OverwriteMode,
     cancel: Option<Arc<AtomicBool>>,
     paused: Option<Arc<AtomicBool>>,
@@ -376,6 +388,7 @@ impl Bit7zRepository {
             inner: Mutex::new(RepositoryInner {
                 lib,
                 handles: HashMap::new(),
+                vfs_map: HashMap::new(),
                 overwrite_mode: OverwriteMode::Ask,
                 cancel: None,
                 paused: None,
@@ -498,6 +511,27 @@ impl ArchiveRepository for Bit7zRepository {
         handle.set_encryption_info(is_header_encrypted, has_encrypted_items);
         guard.handles.insert(handle.id, bit7z::FfiHandle::reader(raw.as_ptr()));
         guard.cache_state.insert(handle.id, CacheState::Dirty);
+
+        // Build VFS from initial entries
+        let entries = read_all_entries(raw.as_ptr());
+        let format = entries.first()
+            .and_then(|_| Some(detect_writer_format(path)))
+            .and_then(|wf| match wf {
+                bit7z::WriterFormat::SevenZip => Some(ArchiveFormat::SevenZip),
+                bit7z::WriterFormat::Zip => Some(ArchiveFormat::Zip),
+                bit7z::WriterFormat::Tar => Some(ArchiveFormat::Tar),
+                bit7z::WriterFormat::GZip => Some(ArchiveFormat::TarGz),
+                bit7z::WriterFormat::BZip2 => Some(ArchiveFormat::TarBz2),
+                bit7z::WriterFormat::Xz => Some(ArchiveFormat::TarXz),
+                _ => None,
+            });
+        let vfs = ArchiveVfs::build(
+            path.to_path_buf(),
+            format,
+            &entries,
+        );
+        guard.vfs_map.insert(handle.id, vfs);
+
         Ok(handle)
     }
 
@@ -533,6 +567,15 @@ impl ArchiveRepository for Bit7zRepository {
             .with_path(path.to_path_buf())
             .with_format(format);
         guard.handles.insert(handle.id, bit7z::FfiHandle::writer(raw.as_ptr()));
+
+        // Build an empty VFS for the new archive so that staged edits work.
+        let vfs = ArchiveVfs::build(
+            path.to_path_buf(),
+            Some(format),
+            &[],
+        );
+        guard.vfs_map.insert(handle.id, vfs);
+
         Ok(handle)
     }
 
@@ -541,6 +584,13 @@ impl ArchiveRepository for Bit7zRepository {
         let guard = self.inner.lock().map_err(|_| {
             ArchiveError::Internal("[list_page] lock poisoned".into())
         })?;
+
+        // Use VFS if available (after open)
+        if let Some(vfs) = guard.vfs_map.get(&archive.id) {
+            return Ok(vfs.list_page(offset, limit));
+        }
+
+        // Fallback: legacy FFI path (for handles opened without VFS)
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
             .ok_or_else(|| ArchiveError::Internal(format!("[list_page] handle {} not found", archive.id)))?;
@@ -585,28 +635,14 @@ impl ArchiveRepository for Bit7zRepository {
         let guard = self.inner.lock().map_err(|_| {
             ArchiveError::Internal("[get_properties] lock poisoned".into())
         })?;
+
+        // Use VFS entry data if available
+        let entry_data = guard.vfs_map.get(&archive.id)
+            .map(|vfs| vfs.get_properties());
+
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
             .ok_or_else(|| ArchiveError::Internal(format!("[get_properties] handle {} not found", archive.id)))?;
-
-        let list = unsafe { bit7z_ffi::bit7z_reader_items(raw as *mut _) };
-        if list.is_null() {
-            return Err(ArchiveError::Internal(format!("[get_properties] bit7z_reader_items returned null for archive id {}", archive.id)));
-        }
-        let count = unsafe { bit7z_ffi::bit7z_item_list_count(list as *mut _) };
-
-        let mut folders = 0u32;
-        let mut files = 0u32;
-        let mut total_size = 0u64;
-        let mut packed_size = 0u64;
-        for i in 0..count {
-            let is_dir = unsafe { bit7z_ffi::bit7z_item_list_is_dir(list as *mut _, i) != 0 };
-            if is_dir { folders += 1; } else { files += 1; }
-            total_size += unsafe { bit7z_ffi::bit7z_item_list_size(list as *mut _, i) };
-            packed_size += unsafe { bit7z_ffi::bit7z_item_list_packed_size(list as *mut _, i) };
-        }
-
-        unsafe { bit7z_ffi::bit7z_item_list_free(list as *mut _); }
 
         let is_solid = unsafe { bit7z_ffi::bit7z_reader_is_solid(raw as *mut _) != 0 };
         let is_multi_volume = unsafe { bit7z_ffi::bit7z_reader_is_multi_volume(raw as *mut _) != 0 };
@@ -618,11 +654,38 @@ impl ArchiveRepository for Bit7zRepository {
             if sz > 0 { Some(sz) } else { None }
         };
 
+        let (items_count, folders_count, files_count, total_size, packed_size) =
+            if let Some(ref p) = entry_data {
+                (p.items_count, p.folders_count, p.files_count, p.total_size, p.packed_size)
+            } else {
+                let list = unsafe { bit7z_ffi::bit7z_reader_items(raw as *mut _) };
+                if list.is_null() {
+                    return Err(ArchiveError::Internal(format!(
+                        "[get_properties] bit7z_reader_items returned null for archive id {}",
+                        archive.id
+                    )));
+                }
+                let count = unsafe { bit7z_ffi::bit7z_item_list_count(list as *mut _) };
+                let mut folders = 0u32;
+                let mut files = 0u32;
+                let mut total_size = 0u64;
+                let mut packed_size = 0u64;
+                for i in 0..count {
+                    let is_dir = unsafe { bit7z_ffi::bit7z_item_list_is_dir(list as *mut _, i) != 0 };
+                    if is_dir { folders += 1; } else { files += 1; }
+                    total_size += unsafe { bit7z_ffi::bit7z_item_list_size(list as *mut _, i) };
+                    packed_size += unsafe { bit7z_ffi::bit7z_item_list_packed_size(list as *mut _, i) };
+                }
+                unsafe { bit7z_ffi::bit7z_item_list_free(list as *mut _); }
+                (count, folders, files, total_size, packed_size)
+            };
+
         Ok(ArchiveProperties {
-            items_count: count,
-            folders_count: folders,
-            files_count: files,
-            total_size, packed_size,
+            items_count,
+            folders_count,
+            files_count,
+            total_size,
+            packed_size,
             is_encrypted: archive.is_header_encrypted(),
             has_encrypted_items: archive.has_encrypted_items(),
             is_solid,
@@ -699,7 +762,7 @@ impl ArchiveRepository for Bit7zRepository {
         Ok(plan_changes(&snapshot, change_set))
     }
 
-    fn apply_changes(&self, archive: &ArchiveHandle, plan: &ExecutionPlan, options: &WriteOptions) -> Result<(), ArchiveError> {
+    fn apply_changes(&self, archive: &ArchiveHandle, plan: &ExecutionPlan, _options: &WriteOptions) -> Result<(), ArchiveError> {
         if !plan.has_writes() {
             return Ok(());
         }
@@ -708,14 +771,138 @@ impl ArchiveRepository for Bit7zRepository {
             ArchiveError::Internal("[apply_changes] lock poisoned".into())
         })?;
 
-        guard.cache_state.insert(archive.id, CacheState::Dirty);
-        guard.cancel = Some(options.cancel.clone());
-        guard.paused = Some(options.paused.clone());
+        let vfs = guard.vfs_map.get_mut(&archive.id)
+            .ok_or_else(|| ArchiveError::Internal(format!("[apply_changes] vfs not found for archive id {}", archive.id)))?;
+
+        // Convert ExecutionPlan to EditOperations
+        let mut operations = Vec::new();
+        let mut description = String::new();
+
+        for &idx in &plan.deletes {
+            if let Some(node_id) = vfs.node_id_by_original_index(idx) {
+                if let Some(node) = vfs.base_tree().node(node_id) {
+                    let children: Vec<_> = vfs.working_tree().children(node_id)
+                        .unwrap_or(&[])
+                        .to_vec();
+                    operations.push(EditOperation::Delete {
+                        node_id,
+                        saved_name: node.name.clone(),
+                        saved_parent: node.parent,
+                        saved_is_directory: node.is_directory,
+                        saved_original_index: node.original_index,
+                        saved_fs_path: node.fs_path.clone(),
+                        saved_child_ids: children,
+                    });
+                    if description.is_empty() { description = format!("delete {} entries", plan.deletes.len()); }
+                }
+            }
+        }
+
+        for &(idx, ref new_path) in &plan.renames {
+            if let Some(node_id) = vfs.node_id_by_original_index(idx) {
+                if let Some(node) = vfs.base_tree().node(node_id) {
+                    operations.push(EditOperation::Rename {
+                        node_id,
+                        old_name: node.name.clone(),
+                        new_name: new_path.clone(),
+                    });
+                    if description.is_empty() { description = format!("rename {}", new_path); }
+                }
+            }
+        }
+
+        for (fs_path, archive_path) in &plan.adds {
+            let node_id = next_vfs_id();
+            let parent_path = parent_dir(archive_path);
+            let parent_id = if parent_path.is_empty() {
+                Some(vfs.working_tree().root())
+            } else {
+                vfs.working_tree().resolve_path(&parent_path)
+            };
+            if let Some(parent_id) = parent_id {
+                let name = archive_path
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(archive_path)
+                    .to_string();
+                operations.push(EditOperation::Add {
+                    node_id,
+                    parent_id,
+                    name,
+                    fs_path: Some(fs_path.clone()),
+                    is_directory: false,
+                });
+                if description.is_empty() { description = format!("add {}", archive_path); }
+            }
+        }
+
+        if operations.is_empty() {
+            return Ok(());
+        }
+
+        let tx = EditTransaction::with_ops(description, operations);
+        vfs.apply_edit(tx)
+    }
+
+    fn commit(&self, archive: &ArchiveHandle) -> Result<(), ArchiveError> {
+        // Check for unsaved changes while holding the lock briefly
+        let needs_commit = {
+            let guard = self.inner.lock().map_err(|_| {
+                ArchiveError::Internal("[commit] lock poisoned".into())
+            })?;
+            guard.vfs_map.get(&archive.id)
+                .map(|v| v.has_unsaved_changes())
+                .unwrap_or(false)
+        };
+        if !needs_commit {
+            return Ok(());
+        }
+
+        // Build changeset and plan outside the lock (or with minimal lock)
+        let changeset;
+        let plan;
+        {
+            let guard = self.inner.lock().map_err(|_| {
+                ArchiveError::Internal("[commit] lock poisoned".into())
+            })?;
+            let vfs = guard.vfs_map.get(&archive.id)
+                .ok_or_else(|| ArchiveError::Internal(format!("[commit] vfs not found for archive id {}", archive.id)))?;
+            changeset = vfs.generate_changeset();
+            if changeset.is_empty() {
+                drop(guard);
+                if let Ok(mut g) = self.inner.lock() {
+                    if let Some(v) = g.vfs_map.get_mut(&archive.id) {
+                        v.on_commit_success();
+                    }
+                }
+                return Ok(());
+            }
+            let snapshot: Vec<ArchiveEntry> = vfs.working_tree().all_ids()
+                .iter()
+                .filter_map(|&id| vfs.node_to_entry(id))
+                .collect();
+            plan = plan_changes(&snapshot, &changeset);
+        }
+
+        if !plan.has_writes() {
+            if let Ok(mut guard) = self.inner.lock() {
+                if let Some(vfs) = guard.vfs_map.get_mut(&archive.id) {
+                    vfs.on_commit_success();
+                }
+            }
+            return Ok(());
+        }
+
+        // Execute the actual write — full exclusive access needed
+        let mut guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[commit] lock poisoned".into())
+        })?;
 
         let archive_path = archive.path.clone()
-            .ok_or_else(|| ArchiveError::Internal(format!("[apply_changes] no path in archive handle {}", archive.id)))?;
+            .ok_or_else(|| ArchiveError::Internal(format!("[commit] no path in archive handle {}", archive.id)))?;
         let archive_path_str = archive_path.to_str()
-            .ok_or_else(|| ArchiveError::Internal(format!("[apply_changes] path is not valid UTF-8: {}", archive_path.display())))?
+            .ok_or_else(|| ArchiveError::Internal(format!("[commit] path is not valid UTF-8: {}", archive_path.display())))?
             .to_string();
 
         guard.handles.remove(&archive.id);
@@ -723,10 +910,13 @@ impl ArchiveRepository for Bit7zRepository {
         let format = detect_writer_format(&archive_path);
         let needs_editor = !plan.deletes.is_empty() || !plan.renames.is_empty();
 
+        let cancel_arc = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let paused_arc = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
         let result = if needs_editor {
-            execute_with_editor(&guard.lib, &archive_path_str, format, plan, &options.cancel, &options.paused)
+            execute_with_editor(&guard.lib, &archive_path_str, format, &plan, &cancel_arc, &paused_arc)
         } else {
-            execute_with_writer(&guard.lib, &archive_path_str, format, plan, &options.cancel, &options.paused)
+            execute_with_writer(&guard.lib, &archive_path_str, format, &plan, &cancel_arc, &paused_arc)
         };
 
         match bit7z::ArchiveReader::open(&guard.lib, &archive_path_str, None) {
@@ -738,7 +928,68 @@ impl ArchiveRepository for Bit7zRepository {
             }
         }
 
+        if result.is_ok() {
+            if let Some(vfs) = guard.vfs_map.get_mut(&archive.id) {
+                vfs.on_commit_success();
+            }
+        }
+
         result
+    }
+
+    fn undo(&self, archive: &ArchiveHandle) -> Result<bool, ArchiveError> {
+        let mut guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[undo] lock poisoned".into())
+        })?;
+        let vfs = guard.vfs_map.get_mut(&archive.id)
+            .ok_or_else(|| ArchiveError::Internal(format!("[undo] vfs not found for archive id {}", archive.id)))?;
+        vfs.undo()
+    }
+
+    fn redo(&self, archive: &ArchiveHandle) -> Result<bool, ArchiveError> {
+        let mut guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[redo] lock poisoned".into())
+        })?;
+        let vfs = guard.vfs_map.get_mut(&archive.id)
+            .ok_or_else(|| ArchiveError::Internal(format!("[redo] vfs not found for archive id {}", archive.id)))?;
+        vfs.redo()
+    }
+
+    fn has_unsaved_changes(&self, archive: &ArchiveHandle) -> bool {
+        if let Ok(guard) = self.inner.lock() {
+            if let Some(vfs) = guard.vfs_map.get(&archive.id) {
+                return vfs.has_unsaved_changes();
+            }
+        }
+        false
+    }
+
+    fn can_undo(&self, archive: &ArchiveHandle) -> bool {
+        if let Ok(guard) = self.inner.lock() {
+            if let Some(vfs) = guard.vfs_map.get(&archive.id) {
+                return vfs.edit_queue().can_undo();
+            }
+        }
+        false
+    }
+
+    fn can_redo(&self, archive: &ArchiveHandle) -> bool {
+        if let Ok(guard) = self.inner.lock() {
+            if let Some(vfs) = guard.vfs_map.get(&archive.id) {
+                return vfs.edit_queue().can_redo();
+            }
+        }
+        false
+    }
+
+    fn discard_pending(&self, archive: &ArchiveHandle) -> Result<(), ArchiveError> {
+        let mut guard = self.inner.lock().map_err(|_| {
+            ArchiveError::Internal("[discard_pending] lock poisoned".into())
+        })?;
+        if let Some(vfs) = guard.vfs_map.get_mut(&archive.id) {
+            vfs.discard_pending();
+        }
+        Ok(())
     }
 
     fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
@@ -838,6 +1089,12 @@ impl ArchiveRepository for Bit7zRepository {
         let guard = self.inner.lock().map_err(|_| {
             ArchiveError::Internal("[list_directory] lock poisoned".into())
         })?;
+
+        // Use VFS if available
+        if let Some(vfs) = guard.vfs_map.get(&archive.id) {
+            return Ok(vfs.list_directory(path));
+        }
+
         let raw = guard.handles.get(&archive.id)
             .map(|h| h.ptr())
             .ok_or_else(|| ArchiveError::Internal(format!("[list_directory] handle {} not found", archive.id)))?;
@@ -878,6 +1135,7 @@ impl ArchiveRepository for Bit7zRepository {
     fn close(&self, archive: &ArchiveHandle) {
         if let Ok(mut guard) = self.inner.lock() {
             guard.handles.remove(&archive.id);
+            guard.vfs_map.remove(&archive.id);
             guard.cache_state.remove(&archive.id);
         }
     }

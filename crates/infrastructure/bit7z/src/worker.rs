@@ -1,7 +1,7 @@
-use crate::{ArchiveReader, Library, Writer, WriterCompressionLevel, WriterFormat};
 use crate::UpdateMode;
+use crate::{ArchiveReader, Library, Writer, WriterCompressionLevel, WriterFormat};
 use crossbeam_channel::{Receiver, Sender};
-use std::ffi::{CStr, c_char, c_void};
+use std::ffi::{c_char, c_void, CStr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -112,6 +112,7 @@ extern "C" fn extract_file_trampoline(path: *const c_char, _file_size: u64, ctx:
 /// - `conflict_rx`: channel where the UI sends conflict responses
 ///
 /// # Panics
+///
 /// Panics if the C-linkage callback bridge function cannot be found (linkage error).
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_extract(
@@ -228,7 +229,7 @@ pub fn spawn_compress(
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
+    use crate::worker::{file_trampoline, overwrite_trampoline, progress_trampoline, ConflictAction, WorkerCtx, WorkerEvent};
     use crossbeam_channel::{Receiver, Sender};
     use std::ffi::CString;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -246,8 +247,8 @@ mod tests {
         }
     }
 
-    fn as_ctx_ptr(ctx: &WorkerCtx) -> *mut c_void {
-        ctx as *const WorkerCtx as *mut c_void
+    fn as_ctx_ptr(ctx: &WorkerCtx) -> *mut core::ffi::c_void {
+        ctx as *const WorkerCtx as *mut  core::ffi::c_void
     }
 
     // -- Progress trampoline tests --

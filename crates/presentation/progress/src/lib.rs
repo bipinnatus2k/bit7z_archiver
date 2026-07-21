@@ -192,7 +192,6 @@ impl ProgressState {
 #[cfg(test)]
 mod tests {
     use super::ProgressState;
-    use bit7z_domain::repository::ProgressUpdate;
     use crossbeam_channel;
 
     fn channel_pair() -> (crossbeam_channel::Sender<ProgressUpdate>, crossbeam_channel::Receiver<ProgressUpdate>) {

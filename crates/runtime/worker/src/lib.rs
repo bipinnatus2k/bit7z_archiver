@@ -1,12 +1,13 @@
 //! Worker process entry point (no GPUI, headless archive operations).
 //! Communicates with parent via JSON-line protocol on stdin/stdout.
 
-use bit7z_rt_ipc::WorkerMessage;
 use bit7z_domain::repository::*;
+use bit7z_rt_ipc::WorkerMessage;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::Arc;
 
 pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
+    println!("call run worker");
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
     let mut stdin = BufReader::new(std::io::stdin());
@@ -37,9 +38,9 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
                     });
                     let options = ExtractOptions {
                         overwrite_mode: bit7z_domain::archive::OverwriteMode::Overwrite,
-                        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                        paused: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                        notifier: std::sync::Arc::new(bit7z_domain::repository::NoopNotifier),
+                        cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                        paused: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                        notifier: Arc::new(NoopNotifier),
                     };
                     let result = repo.extract(&archive, &indices, &dest, &options);
                     match result {

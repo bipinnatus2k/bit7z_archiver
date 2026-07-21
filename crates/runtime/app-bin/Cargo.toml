@@ -7,14 +7,10 @@ description = "Cross-platform compressed file viewer and editor"
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-bit7z-pres-theme = { path = "../../presentation/theme" }
 bit7z-infra-bit7z = { path = "../../infrastructure/bit7z" }
 bit7z-infra-persistence = { path = "../../infrastructure/persistence" }
 bit7z-infra-platform = { path = "../../infrastructure/platform" }
-bit7z-infra-shell = { path = "../../infrastructure/shell" }
-bit7z-infra-tray = { path = "../../infrastructure/tray" }
 bit7z-rt-ipc = { path = "../ipc" }
-bit7z-rt-instance = { path = "../instance" }
 bit7z-rt-worker = { path = "../worker" }
 bit7z-rt-cli = { path = "../cli" }
 bit7z-rt-gui = { path = "../gui" }
