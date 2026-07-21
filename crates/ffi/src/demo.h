@@ -16,7 +16,6 @@
 #include <chrono>
 #include <memory>
 #include <type_traits>
-#include <cstdio>
 #include <unordered_set>
 
 // Type aliases for ergonomic Rust naming
@@ -442,22 +441,18 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
         std::string prefix = path ? path : "";
         size_t plen = prefix.size();
 
-        // On Windows, item.path() uses \ as separator, so pattern must use \ too
-        std::string pattern = prefix + "*";
-#ifdef _WIN32
-        for (auto& c : pattern) if (c == '/') c = '\\';
-#endif
-        auto matched = reader.itemsMatching(pattern);
-
-        uint32_t total_items = reader.itemsCount();
         auto* list = new ItemList();
         list->prefix = prefix;
 
         std::unordered_set<std::string> seen_dirs;
+        uint32_t count = reader.itemsCount();
 
-        for (auto& item : matched) {
-            std::string itemPath = item.path();
+        for (uint32_t i = 0; i < count; i++) {
+            auto itemOffset = reader.itemAt(i);
+            std::string itemPath = itemOffset.path();
             for (auto& c : itemPath) if (c == '\\') c = '/';
+
+            if (itemPath.substr(0, plen) != prefix) continue;
 
             auto tail = itemPath.substr(plen);
             if (tail.empty()) continue;
@@ -465,7 +460,7 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
             auto slashPos = tail.find('/');
             if (slashPos == std::string::npos) {
                 list->paths.push_back(itemPath);
-                list->items.push_back(std::move(item));
+                list->items.push_back(bit7z::BitArchiveItemInfo(itemOffset));
             } else {
                 std::string subdir = tail.substr(0, slashPos + 1);
                 std::string dirPath = prefix + subdir;
@@ -477,7 +472,7 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
         }
 
         for (size_t i = 0; i < list->dirs.size(); i++) {
-            list->dir_indices.push_back(total_items + static_cast<uint32_t>(i));
+            list->dir_indices.push_back(count + static_cast<uint32_t>(i));
         }
 
         return static_cast<void*>(list);
