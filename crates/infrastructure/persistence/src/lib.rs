@@ -197,7 +197,7 @@ fn read_all_entries(raw: *mut std::ffi::c_void) -> Vec<ArchiveEntry> {
         let p = unsafe { bit7z_ffi::bit7z_item_list_path(list as *mut _, i) };
         let path_s = if p.is_null() { String::new() }
                      else { unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() } };
-        let name_s = path_s.rsplit('/').next().unwrap_or(&path_s).to_string();
+        let name_s = path_s.trim_end_matches('/').rsplit('/').next().unwrap_or(&path_s).to_string();
         let size = unsafe { bit7z_ffi::bit7z_item_list_size(list as *mut _, i) };
         let csize = unsafe { bit7z_ffi::bit7z_item_list_packed_size(list as *mut _, i) };
         let is_dir = unsafe { bit7z_ffi::bit7z_item_list_is_dir(list as *mut _, i) != 0 };
@@ -313,7 +313,7 @@ fn populate_item_details(entry: &mut ArchiveEntry, list: *mut std::ffi::c_void, 
     entry.crc = Some(unsafe { bit7z_ffi::bit7z_item_list_crc(list as *mut _, index) });
 
     let item_ptr = unsafe { bit7z_ffi::bit7z_item_list_item(list as *mut _, index) };
-    if item_ptr.is_null() { return; }
+    if item_ptr.is_null() { return; } // synthetic directory — no real item
 
     let mtime = unsafe { bit7z_ffi::bit7z_item_mtime(item_ptr) };
     if mtime > 0 { entry.modified = DateTime::from_timestamp(mtime as i64, 0); }
@@ -560,7 +560,7 @@ impl ArchiveRepository for Bit7zRepository {
             let p = unsafe { bit7z_ffi::bit7z_item_list_path(list as *mut _, i) };
             let path_s = if p.is_null() { String::new() }
                          else { unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() } };
-            let name_s = path_s.rsplit('/').next().unwrap_or(&path_s).to_string();
+            let name_s = path_s.trim_end_matches('/').rsplit('/').next().unwrap_or(&path_s).to_string();
             let size = unsafe { bit7z_ffi::bit7z_item_list_size(list as *mut _, i) };
             let csize = unsafe { bit7z_ffi::bit7z_item_list_packed_size(list as *mut _, i) };
             let is_dir = unsafe { bit7z_ffi::bit7z_item_list_is_dir(list as *mut _, i) != 0 };
@@ -855,14 +855,15 @@ impl ArchiveRepository for Bit7zRepository {
                 if p.is_null() { String::new() }
                 else { std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned() }
             };
-            let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+            let name = path.trim_end_matches('/').rsplit('/').next().unwrap_or(&path).to_string();
             let orig_idx = unsafe { bit7z_ffi::bit7z_item_list_index(list, i) };
+            let is_dir = unsafe { bit7z_ffi::bit7z_item_list_is_dir(list, i) != 0 };
             let mut entry = ArchiveEntry {
                 name,
                 path,
                 size: unsafe { bit7z_ffi::bit7z_item_list_size(list, i) },
                 compressed_size: unsafe { bit7z_ffi::bit7z_item_list_packed_size(list, i) },
-                is_directory: unsafe { bit7z_ffi::bit7z_item_list_is_dir(list, i) != 0 },
+                is_directory: is_dir,
                 is_encrypted: unsafe { bit7z_ffi::bit7z_item_list_is_encrypted(list, i) != 0 },
                 original_index: orig_idx,
                 ..Default::default()

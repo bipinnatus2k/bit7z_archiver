@@ -16,6 +16,8 @@
 #include <chrono>
 #include <memory>
 #include <type_traits>
+#include <cstdio>
+#include <unordered_set>
 
 // Type aliases for ergonomic Rust naming
 using ArchiveFormatFeatures = bit7z::FormatFeatures;
@@ -428,7 +430,9 @@ inline uint64_t bit7z_reader_dictionary_size(void* reader_ptr) {
 
 struct ItemList {
     std::vector<bit7z::BitArchiveItemInfo> items;
-    std::vector<std::string> paths;  // cached path strings (path() returns by value)
+    std::vector<std::string> paths;
+    std::vector<std::string> dirs;
+    std::vector<uint32_t> dir_indices;
     std::string prefix;
 };
 
@@ -438,62 +442,107 @@ inline void* bit7z_reader_list_directory(void* reader_ptr, const char* path) {
         std::string prefix = path ? path : "";
         size_t plen = prefix.size();
 
-        // Build wildcard pattern. On Windows, 7-Zip uses \ as separator
-        // in returned paths, so the pattern must use \ too.
+        // On Windows, item.path() uses \ as separator, so pattern must use \ too
         std::string pattern = prefix + "*";
 #ifdef _WIN32
         for (auto& c : pattern) if (c == '/') c = '\\';
 #endif
         auto matched = reader.itemsMatching(pattern);
 
+        uint32_t total_items = reader.itemsCount();
         auto* list = new ItemList();
         list->prefix = prefix;
 
+        std::unordered_set<std::string> seen_dirs;
+
         for (auto& item : matched) {
             std::string itemPath = item.path();
-            // Normalise to / for consistent filtering
             for (auto& c : itemPath) if (c == '\\') c = '/';
 
-            // Skip items whose relative tail still contains '/'
-            // (shouldn't happen with itemsMatching but be safe)
             auto tail = itemPath.substr(plen);
             if (tail.empty()) continue;
-            auto slashPos = tail.find('/');
-            if (slashPos != std::string::npos && slashPos != tail.size() - 1) continue;
 
-            list->paths.push_back(itemPath);
-            list->items.push_back(std::move(item));
+            auto slashPos = tail.find('/');
+            if (slashPos == std::string::npos) {
+                list->paths.push_back(itemPath);
+                list->items.push_back(std::move(item));
+            } else {
+                std::string subdir = tail.substr(0, slashPos + 1);
+                std::string dirPath = prefix + subdir;
+                if (seen_dirs.find(dirPath) == seen_dirs.end()) {
+                    seen_dirs.insert(dirPath);
+                    list->dirs.push_back(dirPath);
+                }
+            }
         }
+
+        for (size_t i = 0; i < list->dirs.size(); i++) {
+            list->dir_indices.push_back(total_items + static_cast<uint32_t>(i));
+        }
+
         return static_cast<void*>(list);
     } catch (...) { return nullptr; }
 }
 
 inline uint32_t bit7z_item_list_count(void* list_ptr) {
-    return static_cast<uint32_t>(static_cast<ItemList*>(list_ptr)->items.size());
+    auto* list = static_cast<ItemList*>(list_ptr);
+    return static_cast<uint32_t>(list->items.size() + list->dirs.size());
 }
 
 inline uint32_t bit7z_item_list_index(void* list_ptr, uint32_t index) {
-    return static_cast<ItemList*>(list_ptr)->items[index].index();
+    auto* list = static_cast<ItemList*>(list_ptr);
+    if (index < list->items.size())
+        return list->items[index].index();
+    return list->dir_indices[index - list->items.size()];
 }
 
 inline const char* bit7z_item_list_path(void* list_ptr, uint32_t index) {
-    return static_cast<ItemList*>(list_ptr)->paths[index].c_str();
+    auto* list = static_cast<ItemList*>(list_ptr);
+    if (index < list->items.size())
+        return list->paths[index].c_str();
+    return list->dirs[index - list->items.size()].c_str();
 }
 
 inline uint64_t bit7z_item_list_size(void* list_ptr, uint32_t index) {
-    return static_cast<ItemList*>(list_ptr)->items[index].size();
+    auto* list = static_cast<ItemList*>(list_ptr);
+    if (index < list->items.size())
+        return list->items[index].size();
+    return 0;
 }
 
 inline uint64_t bit7z_item_list_packed_size(void* list_ptr, uint32_t index) {
-    return static_cast<ItemList*>(list_ptr)->items[index].packSize();
+    auto* list = static_cast<ItemList*>(list_ptr);
+    if (index < list->items.size())
+        return list->items[index].packSize();
+    return 0;
 }
 
 inline int32_t bit7z_item_list_is_dir(void* list_ptr, uint32_t index) {
-    return static_cast<ItemList*>(list_ptr)->items[index].isDir() ? 1 : 0;
+    auto* list = static_cast<ItemList*>(list_ptr);
+    if (index < list->items.size())
+        return list->items[index].isDir() ? 1 : 0;
+    return 1;
 }
 
 inline int32_t bit7z_item_list_is_encrypted(void* list_ptr, uint32_t index) {
-    return static_cast<ItemList*>(list_ptr)->items[index].isEncrypted() ? 1 : 0;
+    auto* list = static_cast<ItemList*>(list_ptr);
+    if (index < list->items.size())
+        return list->items[index].isEncrypted() ? 1 : 0;
+    return 0;
+}
+
+inline uint32_t bit7z_item_list_crc(void* list_ptr, uint32_t index) {
+    auto* list = static_cast<ItemList*>(list_ptr);
+    if (index < list->items.size())
+        return list->items[index].crc();
+    return 0;
+}
+
+inline void* bit7z_item_list_item(void* list_ptr, uint32_t index) {
+    auto* list = static_cast<ItemList*>(list_ptr);
+    if (index < list->items.size())
+        return static_cast<void*>(&list->items[index]);
+    return nullptr;
 }
 
 inline void bit7z_item_list_free(void* list_ptr) {
@@ -518,14 +567,6 @@ inline void* bit7z_reader_items(void* reader_ptr) {
         }
         return static_cast<void*>(list);
     } catch (...) { return nullptr; }
-}
-
-inline uint32_t bit7z_item_list_crc(void* list_ptr, uint32_t index) {
-    return static_cast<ItemList*>(list_ptr)->items[index].crc();
-}
-
-inline void* bit7z_item_list_item(void* list_ptr, uint32_t index) {
-    return static_cast<void*>(&static_cast<ItemList*>(list_ptr)->items[index]);
 }
 
 // ===== Writer wrappers =====
