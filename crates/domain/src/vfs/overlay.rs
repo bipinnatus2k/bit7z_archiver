@@ -1,21 +1,21 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use bit7z_domain::archive::{
+use crate::archive::{
     ArchiveEntry, ArchiveFormat, ChangeSet, Page,
 };
-use bit7z_domain::repository::ArchiveProperties;
-use bit7z_domain::repository::ArchiveError;
-use bit7z_domain::vfs::{
+use crate::repository::{ArchiveError, ArchiveProperties};
+use crate::vfs::{
     DirtyTree, DirtyType, EditOperation, EditQueue, EditTransaction, Tree, VfsMetadata, VfsNode,
     VfsNodeId, next_vfs_id,
 };
 
-/// VFS manager for a single archive handle.
+/// Overlay virtual file system for a single archive session.
 ///
 /// Maintains the three-tree model (Base / Working / Dirty) plus edit queue
-/// and metadata cache. Provides conversion between VFS nodes and ArchiveEntry.
-pub struct ArchiveVfs {
+/// and metadata cache. Provides conversion between VFS nodes and `ArchiveEntry`.
+#[derive(Debug, Clone)]
+pub struct OverlayVfs {
     base_tree: Tree,
     working_tree: Tree,
     dirty_tree: DirtyTree,
@@ -25,8 +25,8 @@ pub struct ArchiveVfs {
     archive_format: Option<ArchiveFormat>,
 }
 
-impl ArchiveVfs {
-    /// Build VFS state from the initial list of archive entries.
+impl OverlayVfs {
+    /// Build overlay VFS state from the initial list of archive entries.
     pub fn build(
         archive_path: PathBuf,
         archive_format: Option<ArchiveFormat>,
@@ -50,7 +50,7 @@ impl ArchiveVfs {
             })
             .ok();
 
-path_map.insert(String::new(), root_id);
+        path_map.insert(String::new(), root_id);
 
         // Helper: ensure a directory path exists in the tree, creating all missing
         // intermediate directories recursively.
@@ -270,34 +270,33 @@ path_map.insert(String::new(), root_id);
         for (node_id, dirty_type) in self.dirty_tree.iter() {
             match dirty_type {
                 DirtyType::Added => {
-                    if let Some(node) = self.working_tree.node(*node_id) {
-                        if let Some(ref fs_path) = node.fs_path {
-                            let archive_path = self
-                                .working_tree
-                                .path_of(*node_id)
-                                .unwrap_or_else(|| node.name.clone());
-                            cs.add(fs_path.clone(), archive_path);
-                        }
+                    if let Some(node) = self.working_tree.node(*node_id)
+                        && let Some(ref fs_path) = node.fs_path
+                    {
+                        let archive_path = self
+                            .working_tree
+                            .path_of(*node_id)
+                            .unwrap_or_else(|| node.name.clone());
+                        cs.add(fs_path.clone(), archive_path);
                     }
                 }
                 DirtyType::Deleted => {
-                    if let Some(node) = self.base_tree.node(*node_id) {
-                        if let Some(idx) = node.original_index {
-                            cs.delete(idx);
-                        }
+                    if let Some(node) = self.base_tree.node(*node_id)
+                        && let Some(idx) = node.original_index
+                    {
+                        cs.delete(idx);
                     }
                 }
                 DirtyType::Renamed => {
-                    if let Some(node) = self.working_tree.node(*node_id) {
-                        if let Some(base_node) = self.base_tree.node(*node_id) {
-                            if let Some(idx) = base_node.original_index {
-                                let new_path = self
-                                    .working_tree
-                                    .path_of(*node_id)
-                                    .unwrap_or_else(|| node.name.clone());
-                                cs.rename(idx, new_path);
-                            }
-                        }
+                    if let Some(node) = self.working_tree.node(*node_id)
+                        && let Some(base_node) = self.base_tree.node(*node_id)
+                        && let Some(idx) = base_node.original_index
+                    {
+                        let new_path = self
+                            .working_tree
+                            .path_of(*node_id)
+                            .unwrap_or_else(|| node.name.clone());
+                        cs.rename(idx, new_path);
                     }
                 }
             }
@@ -404,10 +403,10 @@ path_map.insert(String::new(), root_id);
 
     pub fn node_id_by_original_index(&self, index: u32) -> Option<VfsNodeId> {
         for id in self.base_tree.all_ids() {
-            if let Some(node) = self.base_tree.node(id) {
-                if node.original_index == Some(index) {
-                    return Some(id);
-                }
+            if let Some(node) = self.base_tree.node(id)
+                && node.original_index == Some(index)
+            {
+                return Some(id);
             }
         }
         None
@@ -432,7 +431,7 @@ fn parent_dir(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bit7z_domain::archive::ArchiveEntry;
+    use crate::archive::ArchiveEntry;
 
     fn sample_entries() -> Vec<ArchiveEntry> {
         vec![
@@ -464,27 +463,23 @@ mod tests {
 
     #[test]
     fn test_build_and_list_page() {
-        let vfs = ArchiveVfs::build(
+        let vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),
         );
         let page = vfs.list_page(0, 10);
-        // 3 entries + root = 4 nodes, but root is skipped? No, it's included
-        // Let me check: all_ids returns all node IDs including root
-        // node_to_entry for root returns an ArchiveEntry with name ""
-        assert_eq!(page.items.len(), 4); // root + 3 entries
+        assert_eq!(page.items.len(), 4);
     }
 
     #[test]
     fn test_list_directory_root() {
-        let vfs = ArchiveVfs::build(
+        let vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),
         );
         let root_entries = vfs.list_directory("");
-        // Should return file1.txt and dir (but not inner.txt which is inside dir/)
         assert_eq!(root_entries.len(), 2);
         assert!(root_entries.iter().any(|e| e.name == "file1.txt"));
         assert!(root_entries.iter().any(|e| e.name == "dir"));
@@ -492,7 +487,6 @@ mod tests {
 
     #[test]
     fn test_trailing_slash_directory_paths_are_normalized() {
-        // Some backends return directory paths with a trailing slash.
         let entries = vec![
             ArchiveEntry {
                 name: "a".into(),
@@ -518,7 +512,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let vfs = ArchiveVfs::build(PathBuf::from("test.7z"), None, &entries);
+        let vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &entries);
 
         let root_entries = vfs.list_directory("");
         assert_eq!(root_entries.len(), 2);
@@ -532,7 +526,6 @@ mod tests {
 
     #[test]
     fn test_build_hierarchy_when_children_come_before_parent() {
-        // Simulate entries returned out of order: deep file before its parent dir.
         let entries = vec![
             ArchiveEntry {
                 name: "deep.txt".into(),
@@ -565,7 +558,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let vfs = ArchiveVfs::build(PathBuf::from("test.7z"), None, &entries);
+        let vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &entries);
 
         let root_entries = vfs.list_directory("");
         assert_eq!(root_entries.len(), 2);
@@ -583,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_list_directory_subdir() {
-        let vfs = ArchiveVfs::build(
+        let vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),
@@ -595,7 +588,7 @@ mod tests {
 
     #[test]
     fn test_get_properties() {
-        let vfs = ArchiveVfs::build(
+        let vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),
@@ -609,7 +602,7 @@ mod tests {
 
     #[test]
     fn test_apply_edit_rename() {
-        let mut vfs = ArchiveVfs::build(
+        let mut vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),
@@ -633,7 +626,7 @@ mod tests {
 
     #[test]
     fn test_undo_redo() {
-        let mut vfs = ArchiveVfs::build(
+        let mut vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),
@@ -650,12 +643,10 @@ mod tests {
         ))
         .unwrap();
 
-        // Undo
         assert!(vfs.undo().unwrap());
         assert!(vfs.working_tree.resolve_path("file1.txt").is_some());
         assert!(vfs.working_tree.resolve_path("renamed.txt").is_none());
 
-        // Redo
         assert!(vfs.redo().unwrap());
         assert!(vfs.working_tree.resolve_path("renamed.txt").is_some());
         assert!(vfs.working_tree.resolve_path("file1.txt").is_none());
@@ -663,7 +654,7 @@ mod tests {
 
     #[test]
     fn test_discard_pending() {
-        let mut vfs = ArchiveVfs::build(
+        let mut vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),
@@ -687,7 +678,7 @@ mod tests {
 
     #[test]
     fn test_generate_changeset() {
-        let mut vfs = ArchiveVfs::build(
+        let mut vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),
@@ -714,7 +705,7 @@ mod tests {
 
     #[test]
     fn test_on_commit_success_clears_state() {
-        let mut vfs = ArchiveVfs::build(
+        let mut vfs = OverlayVfs::build(
             PathBuf::from("test.7z"),
             None,
             &sample_entries(),

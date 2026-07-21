@@ -2,6 +2,9 @@
 resolver = "2"
 members = [
     "crates/domain",
+    "crates/ports",
+    "crates/capability",
+    "crates/runtime",
     "crates/application/archive",
     "crates/application/checksum",
     "crates/application/test",
@@ -15,20 +18,15 @@ members = [
     "crates/infrastructure/tray",
     "crates/infrastructure/events",
     "crates/infrastructure/progress",
-    "crates/infrastructure/vfs",
     "crates/presentation/view-models",
-    "crates/presentation/components",
-    "crates/presentation/progress",
     "crates/presentation/views",
-    "crates/presentation/settings",
-    "crates/presentation/dialogs",
-    "crates/runtime/ipc",
-    "crates/runtime/instance",
-    "crates/runtime/worker",
-    "crates/runtime/cli",
-    "crates/runtime/gui",
     "crates/runtime/app-bin",
     "crates/runtime/app-state",
+    "crates/runtime/cli",
+    "crates/runtime/gui",
+    "crates/runtime/instance",
+    "crates/runtime/ipc",
+    "crates/runtime/worker",
 ]
 
 [workspace.package]
@@ -37,13 +35,35 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", features = ["runtime_shaders"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component"  }
-gpui-macros = { git = "https://github.com/longbridge/gpui-component" }
-gpui-component-assets = { path = "crates/assets" }
 anyhow = "1"
+ashpd = { version = "0.13", default-features = false, features = [
+    "async-io",
+    "notification",
+    "open_uri",
+    "file_chooser",
+    "settings",
+    "trash",
+] }
+async-channel = "2.5.0"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+crossbeam-channel = "0.5"
+dunce = "1.0"
+futures = "0.3.32"
+futures-concurrency = "7.7.1"
+futures-lite = "1.13"
+futures-util = "0.3.32"
+gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
+gpui-component = { git = "https://github.com/longbridge/gpui-component" }
+gpui-component-assets = { path = "crates/assets" }
+gpui-macros = { git = "https://github.com/longbridge/gpui-component" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", features = ["runtime_shaders"] }
+humansize = "2"
+ignore = "0.4.22"
+image = "0.25.1"
+libc = "0.2"
 log = "0.4"
+parking_lot = "0.12.1"
 reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662463bda39148ba154100dd44d3fba5873a4", default-features = false, features = [
     "charset",
     "http2",
@@ -53,19 +73,14 @@ reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662
     "socks",
     "stream",
 ], package = "zed-reqwest", version = "0.12.15-zed" }
-chrono = { version = "0.4", features = ["serde"] }
-dunce = "1.0"
-futures = "0.3.32"
-futures-concurrency = "7.7.1"
-futures-lite = "1.13"
-futures-util = "0.3.32"
-ignore = "0.4.22"
+rust-i18n = { version = "4.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = { version = "1", features = ["union", "const_new"] }
 smol = "2.0"
-thiserror = "2"
+strum = { version = "0.26", features = ["derive"] }
 tempfile = "3"
+thiserror = "2"
 time = { version = "0.3", features = [
     "macros",
     "parsing",
@@ -74,27 +89,7 @@ time = { version = "0.3", features = [
     "formatting",
     "local-offset",
 ] }
-crossbeam-channel = "0.5"
-humansize = "2"
-ashpd = { version = "0.13", default-features = false, features = [
-    "async-io",
-    "notification",
-    "open_uri",
-    "file_chooser",
-    "settings",
-    "trash"
-] }
-parking_lot = "0.12.1"
-libc = "0.2"
-strum = { version = "0.26", features = ["derive"] }
-rust-i18n = { version = "4.1.0" }
-async-channel = "2.5.0"
-async-trait = "0.1"
-image = "0.25.1"
 windows-core = "0.61"
-
-[patch."https://github.com/longbridge/gpui-component"]
-gpui-component-assets = { path = "crates/assets" }
 
 [workspace.dependencies.windows]
 version = "0.61"
@@ -173,6 +168,9 @@ type_complexity = "allow"
 # Temporarily allow this until we can migrate to the new APIs.
 # https://github.com/longbridge/gpui-component/pull/2149
 useless_conversion = "allow"
+
+[patch."https://github.com/longbridge/gpui-component"]
+gpui-component-assets = { path = "crates/assets" }
 
 [profile.dev]
 debug = 1

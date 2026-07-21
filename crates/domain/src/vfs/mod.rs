@@ -64,8 +64,24 @@ pub enum VfsError {
     Internal(String),
 }
 
-pub mod tree;
+pub mod overlay;
 pub mod queue;
+pub mod tree;
 
-pub use tree::{Tree, DirtyTree, DirtyEntry, DirtyType};
+pub use overlay::OverlayVfs;
 pub use queue::{EditOperation, EditTransaction, EditQueue};
+pub use tree::{DirtyTree, DirtyEntry, DirtyType, Tree};
+
+use std::collections::HashMap;
+
+use crate::archive::ArchiveSession;
+
+/// Complete in-memory state for an archive editing session.
+#[derive(Debug, Clone)]
+pub struct SessionState {
+    pub session: ArchiveSession,
+    pub vfs: OverlayVfs,
+    pub dirty_tree: DirtyTree,
+    pub edit_queue: EditQueue,
+    pub metadata_cache: HashMap<VfsNodeId, VfsMetadata>,
+}

@@ -2,8 +2,7 @@ pub mod preferences_json;
 use bit7z_infra_bit7z as bit7z;
 use bit7z_domain::plan::{ExecutionPlan, plan_changes};
 use bit7z_infra_progress::ProgressSender;
-use bit7z_infra_vfs::ArchiveVfs;
-use bit7z_domain::vfs::{EditOperation, EditTransaction, next_vfs_id};
+use bit7z_domain::vfs::{EditOperation, EditTransaction, OverlayVfs, next_vfs_id};
 use bit7z_domain::archive::*;
 use bit7z_domain::repository::*;
 use chrono::DateTime;
@@ -365,7 +364,7 @@ fn populate_item_details(entry: &mut ArchiveEntry, list: *mut std::ffi::c_void, 
 struct RepositoryInner {
     lib: bit7z::Library,
     handles: HashMap<u64, bit7z::FfiHandle>,
-    vfs_map: HashMap<u64, ArchiveVfs>,
+    vfs_map: HashMap<u64, OverlayVfs>,
     overwrite_mode: OverwriteMode,
     cancel: Option<Arc<AtomicBool>>,
     paused: Option<Arc<AtomicBool>>,
@@ -525,7 +524,7 @@ impl ArchiveRepository for Bit7zRepository {
                 bit7z::WriterFormat::Xz => Some(ArchiveFormat::TarXz),
                 _ => None,
             });
-        let vfs = ArchiveVfs::build(
+        let vfs = OverlayVfs::build(
             path.to_path_buf(),
             format,
             &entries,
@@ -569,7 +568,7 @@ impl ArchiveRepository for Bit7zRepository {
         guard.handles.insert(handle.id, bit7z::FfiHandle::writer(raw.as_ptr()));
 
         // Build an empty VFS for the new archive so that staged edits work.
-        let vfs = ArchiveVfs::build(
+        let vfs = OverlayVfs::build(
             path.to_path_buf(),
             Some(format),
             &[],

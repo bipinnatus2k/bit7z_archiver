@@ -1,0 +1,13 @@
+[package]
+name = "bit7z-ports"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+description = "Abstract ports for the bit7z archiver backend."
+
+[dependencies]
+bit7z-domain = { path = "../domain" }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
