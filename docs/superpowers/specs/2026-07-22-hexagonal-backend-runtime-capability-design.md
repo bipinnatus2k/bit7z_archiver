@@ -500,42 +500,43 @@ impl ExtractService {
 
 ## 11. Migration Path
 
-The refactor is too large for a single PR. The recommended incremental path:
+The refactor is too large for a single PR. The actual implementation path is:
 
-### Phase 1: Introduce Ports & Adapters
+### Phase 1: Establish Layer Boundaries ✅
 
-- Create `crates/ports`.
-- Define `ArchiveReader`, `ArchiveWriter`, `VfsProvider`, `ProgressReporter`, etc.
-- Implement `Bit7zReaderAdapter` and `Bit7zWriterAdapter` as wrappers around the existing FFI code.
-- Keep `Bit7zRepository` but delegate its implementation to the adapters.
+- Create `crates/ports`, `crates/capability`, and `crates/runtime` as skeleton crates.
+- Define all core traits (`ArchiveReader`, `ArchiveWriter`, `CapabilityRegistry`, `CapabilityResolver`, `JobManager`, `Scheduler`, `Executor`, `SessionManager`, `ResourceManager`).
+- Move `OverlayVfs` into `crates/domain` and add `ArchiveSession` / `SessionState`.
+- Remove obsolete `crates/infrastructure/vfs`.
+- Verify workspace compiles and tests pass.
 
-### Phase 2: Extract Domain
+### Phase 2: Implement Adapters
 
-- Move `ArchiveSession`, VFS, `ChangeSet`, `EditTransaction`, etc. into a pure domain module.
-- Ensure domain has no dependency on ports or runtime.
-- Move VFS-related logic from `Bit7zRepository` into domain services.
+- Implement `Bit7zReaderAdapter` and `Bit7zWriterAdapter` in `crates/infrastructure/persistence`.
+- Implement `InMemorySessionStore` through the `SessionStore` port.
+- Keep `Bit7zRepository` temporarily while adapters mature.
 
-### Phase 3: Create Capability Layer
+### Phase 3: Implement Runtime Internals
 
-- Create `crates/capability`.
-- Implement `CapabilityRegistry` and `CapabilityResolver`.
-- Register bit7z capabilities.
-- Update Application Services to resolve capabilities before submitting operations.
+- Flesh out `DefaultScheduler`, `SimpleResourceManager`, and `LocalExecutor`.
+- Implement `DefaultSessionManager` lifecycle and weak-reference handling.
+- Add event stream publishing and progress reporting.
 
-### Phase 4: Build Runtime Skeleton
+### Phase 4: Register Capabilities
 
-- Create `crates/runtime`.
-- Implement `JobManager`, `Scheduler`, `Executor`, `SessionManager`, and `ResourceManager`.
-- Start with a simple FIFO scheduler and single-token resource manager.
+- Register bit7z capabilities in `CapabilityRegistry`.
+- Implement `DefaultCapabilityResolver` matching logic.
+- Add constraints for encryption, solid archives, streaming, etc.
 
 ### Phase 5: Migrate Application Services
 
-- Convert each use case service to submit `OperationRequest` instead of calling `Bit7zRepository` directly.
+- Convert each use case service to resolve capabilities and submit `OperationRequest`.
 - Examples: `OpenArchiveService`, `ExtractService`, `CommitService`, `TestService`.
+- Keep navigation and session queries synchronous.
 
 ### Phase 6: Remove Bit7zRepository
 
-- Once all services use the new runtime, delete `Bit7zRepository`.
+- Once all services use the new runtime, delete `Bit7zRepository` and the `ArchiveRepository` trait.
 - Clean up unused infrastructure code.
 
 ---
@@ -545,15 +546,18 @@ The refactor is too large for a single PR. The recommended incremental path:
 ```text
 crates/
   capability/           # CapabilityRegistry + CapabilityResolver
-  domain/               # Pure domain models and services
+  domain/               # Pure domain models and services (ArchiveSession, OverlayVFS, ChangeSet)
   ports/                # Abstract ports
   runtime/              # Runtime framework
-  runtime/job/          # JobManager, Scheduler, Executor
-  runtime/session/      # SessionManager
-  runtime/resource/     # ResourceManager
+  runtime/src/job.rs        # JobManager, Job, JobGraph, OperationRequest
+  runtime/src/scheduler.rs  # Scheduler
+  runtime/src/executor.rs   # Executor, ExecutionContext
+  runtime/src/session.rs    # SessionManager
+  runtime/src/resource.rs   # ResourceManager
+  runtime/src/cancel.rs     # CancellationToken
   infrastructure/
     bit7z/              # FFI wrappers
-    persistence/        # Bit7zReaderAdapter, Bit7zWriterAdapter, SessionStore impl
+    persistence/        # Bit7zReaderAdapter, Bit7zWriterAdapter
     fs/                 # FileSystem, TempStorage implementations
   application/
     archive/            # Archive use-case services
