@@ -510,11 +510,17 @@ The refactor is too large for a single PR. The actual implementation path is:
 - Remove obsolete `crates/infrastructure/vfs`.
 - Verify workspace compiles and tests pass.
 
-### Phase 2: Implement Adapters
+### Phase 2: Implement Adapters ✅
 
-- Implement `Bit7zReaderAdapter` and `Bit7zWriterAdapter` in `crates/infrastructure/persistence`.
-- Implement `InMemorySessionStore` through the `SessionStore` port.
-- Keep `Bit7zRepository` temporarily while adapters mature.
+Completed:
+
+1. ✅ Implemented `Bit7zReaderAdapter` implementing `ArchiveReader` (open, read_entries, read_metadata, extract, extract_to_buffer, test).
+2. ✅ Implemented `Bit7zWriterAdapter` implementing `ArchiveWriter` (create, commit).
+3. ✅ Implemented `InMemorySessionStore` implementing `SessionStore`.
+4. ✅ Added shared `ffi_util` helpers for entry reading and format detection.
+5. ✅ Updated `ArchiveWriter::commit` port to accept a snapshot for conflict detection.
+6. ✅ Kept `Bit7zRepository` unchanged; adapters are independent and ready for migration.
+7. ✅ Added unit tests for `InMemorySessionStore`.
 
 ### Phase 3: Implement Runtime Internals
 
