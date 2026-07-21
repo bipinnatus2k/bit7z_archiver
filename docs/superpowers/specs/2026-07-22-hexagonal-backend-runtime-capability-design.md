@@ -111,12 +111,15 @@ pub struct SessionState {
 
 ### 4.2 VFS
 
-The VFS subsystem remains conceptually unchanged from the previous design but is now explicitly part of the domain:
+The entire VFS subsystem belongs to the Domain layer, not Infrastructure:
 
-- `Tree` — base archive entry tree.
+- `BaseVfs` / `Tree` — base archive entry tree.
+- `OverlayVfs` — working tree overlay on top of the base tree.
 - `DirtyTree` — tracks added/deleted/renamed nodes.
 - `EditQueue` — undo/redo history.
 - `ChangeSet` — diff between base and working tree.
+
+These are pure in-memory data structures and algorithms. They have no I/O, no FFI, and no async runtime dependency. They are part of the `ArchiveSession` aggregate.
 
 ### 4.3 Domain Services
 
@@ -551,7 +554,6 @@ crates/
   infrastructure/
     bit7z/              # FFI wrappers
     persistence/        # Bit7zReaderAdapter, Bit7zWriterAdapter, SessionStore impl
-    vfs/                # InMemoryVfs (could move to domain)
     fs/                 # FileSystem, TempStorage implementations
   application/
     archive/            # Archive use-case services
@@ -563,8 +565,16 @@ crates/
 
 ---
 
-## 13. Open Questions
+## 13. Decisions
 
-1. Should `OverlayVfs` live in the domain crate or remain in `infrastructure/vfs`? It is pure logic and belongs in domain, but the current implementation is in infrastructure.
-2. Should the runtime expose a synchronous API for navigation and session queries, or should all interactions be async?
-3. How should the runtime report progress to the UI? Direct callback, event stream, or both?
+| Question | Decision |
+|----------|----------|
+| VFS location | `BaseVfs`, `OverlayVfs`, `DirtyTree`, and `EditQueue` all belong to the Domain layer. |
+| Sync vs async | **Sync-first, async-capable.** Navigation and session queries remain synchronous. Only long-running operations (open, extract, commit, test) become Jobs. |
+| Progress reporting | Runtime internally uses **event stream (pub/sub)**. The external API provides **both callback and stream** consumers. |
+
+---
+
+## 14. Open Questions
+
+None remaining after the above decisions.
