@@ -1,3 +1,4 @@
+pub mod adapters;
 pub mod preferences_json;
 use bit7z_infra_bit7z as bit7z;
 use bit7z_domain::plan::{ExecutionPlan, plan_changes};

@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 bit7z-domain = { path = "../../domain" }
 bit7z-ffi = { path = "../../ffi" }
+bit7z-ports = { path = "../../ports" }
 bit7z-infra-bit7z = { path = "../bit7z" }
 bit7z-infra-platform = { path = "../platform" }
 bit7z-infra-progress = { path = "../progress" }

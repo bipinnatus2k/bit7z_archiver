@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use bit7z_domain::archive::{
-    ArchiveEntry, ArchiveFormat, ChangeSet, EncryptionConfig, Password, TestResult,
+    ArchiveEntry, ArchiveFormat, ArchiveSession, ChangeSet, EncryptionConfig, Password, TestResult,
 };
 use bit7z_domain::repository::{ArchiveError, ArchiveProperties, ExtractOptions};
 use bit7z_domain::vfs::VfsMetadata;
@@ -71,13 +71,15 @@ pub trait ArchiveWriter: Send + Sync {
         encryption: Option<&EncryptionConfig>,
     ) -> Result<bit7z_domain::archive::ArchiveSession, ArchiveError>;
 
-    /// Commit a changeset to the archive.
+    /// Commit a changeset against the current snapshot of the archive.
     fn commit(
         &self,
-        session: &bit7z_domain::archive::ArchiveSession,
+        session: &ArchiveSession,
+        snapshot: &[ArchiveEntry],
         changeset: &ChangeSet,
     ) -> Result<(), ArchiveError>;
 }
+
 
 /// Cryptographic operations used by checksum/test workflows.
 pub trait CryptoProvider: Send + Sync {

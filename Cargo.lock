@@ -978,6 +978,7 @@ dependencies = [
  "bit7z-infra-bit7z",
  "bit7z-infra-platform",
  "bit7z-infra-progress",
+ "bit7z-ports",
  "chrono",
  "crossbeam-channel",
  "directories",
