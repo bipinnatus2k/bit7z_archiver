@@ -38,7 +38,7 @@ impl Default for TableOptions {
         Self {
             scrollbar_visible: Edges::all(true),
             stripe: false,
-            bordered: true,
+            bordered: false,
             size: Size::default(),
         }
     }
