@@ -1108,6 +1108,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "bit7z-pres-theme"
+version = "0.1.0"
+dependencies = [
+ "bit7z-domain",
+ "bit7z-pres-settings",
+ "gpui",
+ "gpui-component",
+ "gpui_platform",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "bit7z-pres-view-models"
 version = "0.1.0"
 dependencies = [
@@ -1192,6 +1206,7 @@ dependencies = [
  "bit7z-pres-components",
  "bit7z-pres-progress",
  "bit7z-pres-settings",
+ "bit7z-pres-theme",
  "bit7z-pres-views",
  "bit7z-rt-app-state",
  "bit7z-rt-ipc",

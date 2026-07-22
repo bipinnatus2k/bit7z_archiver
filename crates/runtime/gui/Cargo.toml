@@ -11,6 +11,7 @@ bit7z-pres-progress = { path = "../../presentation/progress" }
 bit7z-pres-settings = { path = "../../presentation/settings" }
 bit7z-pres-views = { path = "../../presentation/views" }
 bit7z-pres-components = { path = "../../presentation/components" }
+bit7z-pres-theme = { path = "../../presentation/theme" }
 bit7z-infra-bit7z = { path = "../../infrastructure/bit7z" }
 bit7z-infra-persistence = { path = "../../infrastructure/persistence" }
 bit7z-app-archive = { path = "../../application/archive" }

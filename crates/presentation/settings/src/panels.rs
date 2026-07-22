@@ -1,11 +1,9 @@
-use gpui::prelude::FluentBuilder as _;
 use gpui::*;
-use gpui_component::{ActiveTheme, h_flex, v_flex};
+use gpui_component::{h_flex, v_flex, ActiveTheme};
 
-use crate::backend::store::SettingsStore;
-use crate::field::{AnySettingField, SettingField, bool_field, dropdown_field, f64_field};
+use crate::field::{bool_field, dropdown_field, f64_field, AnySettingField};
 use bit7z_domain::archive::ArchiveFormat;
-use bit7z_domain::preferences::{Preferences, ThemeMode};
+use bit7z_domain::preferences::DarkMode;
 
 // ── Section descriptor ───────────────────────────────────────────────────
 
@@ -43,16 +41,16 @@ impl SettingsPanel {
                             "Theme Mode",
                             "",
                             vec![("Light", "light"), ("Dark", "dark"), ("System", "system")],
-                            |p| match p.ui.theme {
-                                ThemeMode::Light => "light",
-                                ThemeMode::Dark => "dark",
-                                ThemeMode::System => "system",
+                            |p| match p.ui.night_mode {
+                                DarkMode::Light => "light",
+                                DarkMode::Dark => "dark",
+                                DarkMode::System => "system",
                             },
                             |p, v| {
-                                p.ui.theme = match v {
-                                    "light" => ThemeMode::Light,
-                                    "dark" => ThemeMode::Dark,
-                                    _ => ThemeMode::System,
+                                p.ui.night_mode = match v {
+                                    "light" => DarkMode::Light,
+                                    "dark" => DarkMode::Dark,
+                                    _ => DarkMode::System,
                                 };
                             },
                         )),

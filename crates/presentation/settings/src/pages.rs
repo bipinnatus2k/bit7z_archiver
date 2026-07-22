@@ -1,5 +1,5 @@
 use bit7z_domain::archive::ArchiveFormat;
-use bit7z_domain::preferences::ThemeMode;
+use bit7z_domain::preferences::DarkMode;
 use gpui::{App, SharedString};
 use gpui_component::setting::*;
 
@@ -27,20 +27,20 @@ pub fn general_page(cx: &mut App) -> SettingPage {
                     ],
                     |cx| {
                         let s = SettingsStore::get(cx);
-                        match s.prefs.ui.theme {
-                            ThemeMode::Light => "light",
-                            ThemeMode::Dark => "dark",
-                            ThemeMode::System => "system",
+                        match s.prefs.ui.night_mode {
+                            DarkMode::Light => "light",
+                            DarkMode::Dark => "dark",
+                            DarkMode::System => "system",
                         }
                         .into()
                     },
                     |val, cx| {
                         let mode = match val.as_str() {
-                            "light" => ThemeMode::Light,
-                            "dark" => ThemeMode::Dark,
-                            _ => ThemeMode::System,
+                            "light" => DarkMode::Light,
+                            "dark" => DarkMode::Dark,
+                            _ => DarkMode::System,
                         };
-                        SettingsStore::get_mut(cx).update_and_save(|p| p.ui.theme = mode);
+                        SettingsStore::get_mut(cx).update_and_save(|p| p.ui.night_mode = mode);
                     },
                 ),
                 renderer::bool_switch(

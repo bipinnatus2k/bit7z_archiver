@@ -20,6 +20,7 @@ members = [
     "crates/infrastructure/progress",
     "crates/presentation/view-models",
     "crates/presentation/views",
+    "crates/presentation/theme",
     "crates/runtime/app-bin",
     "crates/runtime/app-state",
     "crates/runtime/cli",
@@ -89,6 +90,7 @@ time = { version = "0.3", features = [
     "formatting",
     "local-offset",
 ] }
+tracing = { version = "0.1" }
 windows-core = "0.61"
 
 [workspace.dependencies.windows]

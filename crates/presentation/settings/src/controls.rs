@@ -49,14 +49,14 @@ pub fn theme_picker_field(cx: &App) -> SettingField<SharedString> {
                 Theme::change(mode, None, cx);
                 let prefs_mode = match mode {
                     gpui_component::theme::ThemeMode::Light => {
-                        bit7z_domain::preferences::ThemeMode::Light
+                        bit7z_domain::preferences::DarkMode::Light
                     }
                     gpui_component::theme::ThemeMode::Dark => {
-                        bit7z_domain::preferences::ThemeMode::Dark
+                        bit7z_domain::preferences::DarkMode::Dark
                     }
                 };
                 SettingsStore::get_mut(cx).update_and_save(|p| {
-                    p.ui.theme = prefs_mode;
+                    p.ui.night_mode = prefs_mode;
                 });
             }
         },

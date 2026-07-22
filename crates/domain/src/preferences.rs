@@ -93,7 +93,7 @@ pub struct UiPrefs {
     pub minimize_to_tray: bool,
     pub confirm_delete: bool,
     pub language: String,
-    pub theme: ThemeMode,
+    pub night_mode: DarkMode,
 }
 
 impl Default for UiPrefs {
@@ -102,20 +102,20 @@ impl Default for UiPrefs {
             minimize_to_tray: true,
             confirm_delete: true,
             language: "en".to_string(),
-            theme: ThemeMode::System,
+            night_mode: DarkMode::System,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum ThemeMode {
+pub enum DarkMode {
     Light,
     Dark,
     System,
 }
 
-impl Default for ThemeMode {
+impl Default for DarkMode {
     fn default() -> Self {
         Self::System
     }

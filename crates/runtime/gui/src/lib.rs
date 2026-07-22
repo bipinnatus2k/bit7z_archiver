@@ -1,20 +1,20 @@
-use bit7z_app_archive::runtime_service::{ArchiveService, build_bit7z_runtime};
+use bit7z_app_archive::runtime_service::{build_bit7z_runtime, ArchiveService};
 use bit7z_infra_bit7z::Library;
 use bit7z_infra_platform;
 use bit7z_infra_tray::TrayManager;
 use bit7z_pres_components::{ext_table, window_dialog};
-use bit7z_pres_progress::{ProgressState, init as init_progress};
-use bit7z_pres_settings::{self, SettingsStore};
+use bit7z_pres_progress::init as init_progress;
+use bit7z_pres_settings::{self};
 use bit7z_pres_views::root::RootView;
 use bit7z_pres_views::utils::window::create_new_window_with_size;
 use bit7z_rt_app_state::AppState;
 use bit7z_rt_ipc::GuiCommand;
 use crossbeam_channel::unbounded;
 use gpui::*;
-use gpui_component::Theme;
 use gpui_component_assets::Assets;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use gpui_component::theme;
 
 pub fn run_gui() {
     run_gui_with_path(None, None);
@@ -27,7 +27,6 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
             gpui_component::init(cx);
             ext_table::init(cx);
             window_dialog::init(cx);
-
             // Initialize settings subsystem
             bit7z_pres_settings::init(cx);
 
@@ -77,24 +76,8 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
                         }
                     });
 
-                    // Apply persisted theme
-                    let prefs = &SettingsStore::get(cx).prefs;
-                    let theme_mode = match prefs.ui.theme {
-                        bit7z_domain::preferences::ThemeMode::Light => {
-                            gpui_component::theme::ThemeMode::Light
-                        }
-                        bit7z_domain::preferences::ThemeMode::Dark => {
-                            gpui_component::theme::ThemeMode::Dark
-                        }
-                        bit7z_domain::preferences::ThemeMode::System => {
-                            if w.appearance() == gpui::WindowAppearance::Dark {
-                                gpui_component::theme::ThemeMode::Dark
-                            } else {
-                                gpui_component::theme::ThemeMode::Light
-                            }
-                        }
-                    };
-                    Theme::change(theme_mode, Some(w), cx);
+                    bit7z_pres_theme::theme::init(w,cx);
+
                     cx.bind_keys([]);
                     RootView::view(w, cx, open_path2.clone(), open_password)
                 },

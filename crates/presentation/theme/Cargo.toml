@@ -6,5 +6,13 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-gpui = { workspace = true }
-gpui_platform = { workspace = true }
+gpui.workspace = true
+gpui_platform.workspace = true
+gpui-component.workspace = true
+serde.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+bit7z-pres-settings = { path = "../../presentation/settings" }
+[features]
+default = ["embedded-theme"]
+embedded-theme = []
