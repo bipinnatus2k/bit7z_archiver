@@ -1,8 +1,8 @@
 use gpui::*;
 use gpui_component::Theme;
 use gpui_component_assets::Assets;
+use bit7z_app_archive::runtime_service::{build_bit7z_runtime, RuntimeArchiveRepository};
 use bit7z_infra_bit7z::Library;
-use bit7z_infra_persistence::Bit7zRepository;
 use bit7z_infra_platform;
 use bit7z_infra_tray::TrayManager;
 use bit7z_pres_settings::{self, SettingsStore};
@@ -35,8 +35,9 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
         let lib = Library::open(&lib_path_str)
             .expect("Failed to load 7-Zip library");
 
+        let (runtime, resolver) = build_bit7z_runtime(lib);
         let repo: Arc<dyn bit7z_domain::repository::ArchiveRepository> =
-            Arc::new(Bit7zRepository::new(lib));
+            Arc::new(RuntimeArchiveRepository::new(runtime, resolver));
 
         let tray = Arc::new(TrayManager::new());
 

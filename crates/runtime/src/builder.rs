@@ -249,6 +249,10 @@ mod tests {
         fn contains(&self, id: SessionId) -> bool {
             self.states.lock().unwrap().contains_key(&id)
         }
+
+        fn all(&self) -> Vec<SessionId> {
+            self.states.lock().unwrap().keys().copied().collect()
+        }
     }
 
     struct MockFs;

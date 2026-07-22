@@ -16,12 +16,19 @@ use crate::adapters::ffi_util::detect_writer_format;
 
 /// FFI-backed writer adapter.
 pub struct Bit7zWriterAdapter {
-    lib: bit7z::Library,
+    lib: Arc<bit7z::Library>,
     handles: Mutex<HashMap<SessionId, bit7z::FfiHandle>>,
 }
 
 impl Bit7zWriterAdapter {
     pub fn new(lib: bit7z::Library) -> Self {
+        Self {
+            lib: Arc::new(lib),
+            handles: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn new_shared(lib: Arc<bit7z::Library>) -> Self {
         Self {
             lib,
             handles: Mutex::new(HashMap::new()),
@@ -77,7 +84,7 @@ impl ArchiveWriter for Bit7zWriterAdapter {
         })?;
 
         let writer_format = Self::archive_format_to_writer_format(format)?;
-        let writer = bit7z::Writer::create(&self.lib, writer_format)
+        let writer = bit7z::Writer::create(self.lib.as_ref(), writer_format)
             .map_err(|e| ArchiveError::Internal(format!(
                 "[create] failed to create writer for format {:?}: {}",
                 writer_format, e
@@ -131,9 +138,9 @@ impl ArchiveWriter for Bit7zWriterAdapter {
         // Decide whether to use the editor path or the writer-only path.
         let use_editor = !plan.deletes.is_empty() || !plan.renames.is_empty();
         if use_editor {
-            execute_with_editor(&self.lib, path, format, &plan)
+            execute_with_editor(self.lib.as_ref(), path, format, &plan)
         } else {
-            execute_with_writer(&self.lib, path, format, &plan)
+            execute_with_writer(self.lib.as_ref(), path, format, &plan)
         }
     }
 }

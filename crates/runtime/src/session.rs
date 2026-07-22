@@ -23,6 +23,9 @@ pub trait SessionManager: Send + Sync {
 
     /// Mark a session as saved after a successful commit.
     fn on_saved(&self, id: SessionId) -> Result<(), SessionManagerError>;
+
+    /// Return the ids of all active sessions.
+    fn all(&self) -> Vec<SessionId>;
 }
 
 /// Errors from session management.
@@ -82,5 +85,9 @@ impl SessionManager for DefaultSessionManager {
         // In a full implementation this would clear dirty state and rotate the base tree.
         let _ = state;
         Ok(())
+    }
+
+    fn all(&self) -> Vec<SessionId> {
+        self.store.all()
     }
 }

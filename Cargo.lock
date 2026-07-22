@@ -888,8 +888,16 @@ dependencies = [
 name = "bit7z-app-archive"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "bit7z-capability",
  "bit7z-domain",
  "bit7z-ffi",
+ "bit7z-infra-bit7z",
+ "bit7z-infra-persistence",
+ "bit7z-ports",
+ "bit7z-runtime",
+ "futures",
+ "smol",
 ]
 
 [[package]]
@@ -1167,6 +1175,7 @@ dependencies = [
 name = "bit7z-rt-gui"
 version = "0.1.0"
 dependencies = [
+ "bit7z-app-archive",
  "bit7z-domain",
  "bit7z-infra-bit7z",
  "bit7z-infra-events",

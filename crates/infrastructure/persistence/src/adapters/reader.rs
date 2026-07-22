@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use bit7z_domain::archive::{
     ArchiveEntry, ArchiveFormat, ArchiveSession, Password, SessionId, TestFailure,
@@ -17,12 +17,19 @@ use crate::adapters::ffi_util::{detect_writer_format, read_all_entries, writer_f
 
 /// FFI-backed reader adapter.
 pub struct Bit7zReaderAdapter {
-    lib: bit7z::Library,
+    lib: Arc<bit7z::Library>,
     handles: Mutex<HashMap<SessionId, bit7z::FfiHandle>>,
 }
 
 impl Bit7zReaderAdapter {
     pub fn new(lib: bit7z::Library) -> Self {
+        Self {
+            lib: Arc::new(lib),
+            handles: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn new_shared(lib: Arc<bit7z::Library>) -> Self {
         Self {
             lib,
             handles: Mutex::new(HashMap::new()),
@@ -162,7 +169,7 @@ impl ArchiveReader for Bit7zReaderAdapter {
         let is_rar = path_str.to_lowercase().ends_with(".rar");
 
         let (is_header_encrypted, reader) = if is_rar {
-            let r = match bit7z::ArchiveReader::open(&self.lib, path_str, password) {
+            let r = match bit7z::ArchiveReader::open(self.lib.as_ref(), path_str, password) {
                 Ok(r) => r,
                 Err(_) if password.is_none() => {
                     return Err(ArchiveError::EncryptedArchiveRequiresPassword);
@@ -176,11 +183,11 @@ impl ArchiveReader for Bit7zReaderAdapter {
             };
             (false, r)
         } else {
-            let enc = self.lib.is_header_encrypted(path_str);
+            let enc = self.lib.as_ref().is_header_encrypted(path_str);
             if enc && password.is_none() {
                 return Err(ArchiveError::EncryptedArchiveRequiresPassword);
             }
-            let r = bit7z::ArchiveReader::open(&self.lib, path_str, password).map_err(|e| {
+            let r = bit7z::ArchiveReader::open(self.lib.as_ref(), path_str, password).map_err(|e| {
                 ArchiveError::Internal(format!(
                     "[open] failed to open archive '{}': {}",
                     path_str, e

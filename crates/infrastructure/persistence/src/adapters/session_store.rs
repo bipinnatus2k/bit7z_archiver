@@ -41,6 +41,10 @@ impl SessionStore for InMemorySessionStore {
     fn contains(&self, id: SessionId) -> bool {
         self.states.read().unwrap().contains_key(&id)
     }
+
+    fn all(&self) -> Vec<SessionId> {
+        self.states.read().unwrap().keys().copied().collect()
+    }
 }
 
 #[cfg(test)]

@@ -8,3 +8,4 @@ pub mod modify;
 pub mod open_entry;
 pub mod new_folder;
 pub mod new_file;
+pub mod runtime_service;

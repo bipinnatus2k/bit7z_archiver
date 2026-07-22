@@ -20,4 +20,7 @@ pub trait SessionStore: Send + Sync {
 
     /// Returns true if the store contains the session.
     fn contains(&self, id: bit7z_domain::archive::SessionId) -> bool;
+
+    /// Return the ids of all stored sessions.
+    fn all(&self) -> Vec<bit7z_domain::archive::SessionId>;
 }
