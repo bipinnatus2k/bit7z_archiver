@@ -1,7 +1,7 @@
 //! Job types and operation request model.
 
 use bit7z_capability::ExecutionDescriptor;
-use bit7z_domain::archive::{ArchiveFormat, SessionId};
+use bit7z_domain::archive::{ArchiveFormat, SessionId, TestResult};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -125,12 +125,16 @@ pub struct OperationState {
     pub handle: OperationHandle,
     pub state: JobState,
     pub progress: Option<u32>,
+    /// Final result for completed, failed, or cancelled operations.
+    pub result: Option<JobResult>,
 }
 
 /// Result of executing a job.
 #[derive(Debug, Clone)]
 pub enum JobResult {
     Ok,
+    /// Test operation completed with the given result.
+    Tested(TestResult),
     Cancelled,
     Failed(String),
 }

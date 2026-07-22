@@ -132,13 +132,12 @@ impl RootController {
         indices: &[u32],
     ) -> Result<Vec<u32>, ArchiveError> {
         let mut expanded = Vec::new();
+        let all = self.service.list_page(archive, 0, usize::MAX)?.items;
         for &idx in indices {
-            if let Ok(page) = self.service.list_page(archive, idx as usize, 1) {
-                if let Some(entry) = page.items.first() {
-                    if entry.is_directory {
-                        self.collect_directory(archive, &entry.path, &mut expanded)?;
-                        continue;
-                    }
+            if let Some(entry) = all.iter().find(|e| e.original_index == idx) {
+                if entry.is_directory {
+                    self.collect_directory(archive, &entry.path, &mut expanded)?;
+                    continue;
                 }
             }
             expanded.push(idx);

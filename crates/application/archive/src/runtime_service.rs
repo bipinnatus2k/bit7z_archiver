@@ -221,6 +221,7 @@ impl ArchiveService {
                     .insert(archive_handle.id, session);
                 Ok(archive_handle)
             }
+            JobResult::Tested(_) => Err(ArchiveError::Internal("unexpected test result".into())),
             JobResult::Failed(msg) => Err(ArchiveError::Internal(msg)),
             JobResult::Cancelled => Err(ArchiveError::Canceled),
         }
@@ -264,6 +265,7 @@ impl ArchiveService {
                     .insert(archive_handle.id, session);
                 Ok(archive_handle)
             }
+            JobResult::Tested(_) => Err(ArchiveError::Internal("unexpected test result".into())),
             JobResult::Failed(msg) => Err(ArchiveError::Internal(msg)),
             JobResult::Cancelled => Err(ArchiveError::Canceled),
         }
@@ -328,6 +330,7 @@ impl ArchiveService {
 
         match self.wait(handle)? {
             JobResult::Ok => Ok(()),
+            JobResult::Tested(_) => Err(ArchiveError::Internal("unexpected test result".into())),
             JobResult::Failed(msg) => Err(ArchiveError::Internal(msg)),
             JobResult::Cancelled => Err(ArchiveError::Canceled),
         }
@@ -367,6 +370,7 @@ impl ArchiveService {
         });
 
         match self.wait(handle)? {
+            JobResult::Tested(result) => Ok(result),
             JobResult::Ok => Ok(TestResult {
                 total: 0,
                 passed: 0,
@@ -426,6 +430,7 @@ impl ArchiveService {
 
         match self.wait(handle)? {
             JobResult::Ok => Ok(()),
+            JobResult::Tested(_) => Err(ArchiveError::Internal("unexpected test result".into())),
             JobResult::Failed(msg) => Err(ArchiveError::Internal(msg)),
             JobResult::Cancelled => Err(ArchiveError::Canceled),
         }
@@ -455,4 +460,112 @@ fn find_session_by_path(runtime: &Runtime, path: &Path) -> Option<ArchiveSession
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn library() -> Option<bit7z_infra_bit7z::Library> {
+        let path = bit7z_infra_platform::find_7z_library()?;
+        bit7z_infra_bit7z::Library::open(&path.to_string_lossy()).ok()
+    }
+
+    fn create_test_archive(path: &std::path::Path, files: &[(&str, &str)]) {
+        let lib = library().expect("7-Zip library is required for tests");
+        let writer = bit7z_infra_bit7z::Writer::create(&lib, bit7z_infra_bit7z::WriterFormat::Zip)
+            .expect("create writer");
+
+        let temp = tempfile::tempdir().unwrap();
+        let mut file_paths = Vec::new();
+        for (name, content) in files {
+            let file_path = temp.path().join(name);
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            let mut file = std::fs::File::create(&file_path).unwrap();
+            file.write_all(content.as_bytes()).unwrap();
+            file_paths.push(file_path.to_string_lossy().to_string());
+        }
+
+        let refs: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
+        writer.add_files(&refs).expect("add files");
+        writer
+            .compress_to(&path.to_string_lossy())
+            .expect("compress archive");
+    }
+
+    #[test]
+    fn test_archive_test_reports_counts() {
+        let lib = match library() {
+            Some(l) => l,
+            None => return,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let archive_path = temp.path().join("test.zip");
+        create_test_archive(
+            &archive_path,
+            &[("a.txt", "hello"), ("b.txt", "world"), ("c.txt", "foo")],
+        );
+
+        let (runtime, resolver) = build_bit7z_runtime(lib);
+        let service = ArchiveService::new(runtime, resolver);
+        let handle = service.open(&archive_path, None).expect("open archive");
+
+        let result = service.test(&handle).expect("test archive");
+        assert_eq!(result.total, 3, "test should report 3 entries");
+        assert_eq!(result.passed, 3, "all entries should pass");
+        assert!(result.failed.is_empty(), "no failures expected");
+    }
+
+    #[test]
+    fn test_batch_extract_multiple_files() {
+        let lib = match library() {
+            Some(l) => l,
+            None => return,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let archive_path = temp.path().join("test.zip");
+        create_test_archive(
+            &archive_path,
+            &[("a.txt", "hello"), ("b.txt", "world"), ("c.txt", "foo")],
+        );
+
+        let (runtime, resolver) = build_bit7z_runtime(lib);
+        let service = ArchiveService::new(runtime, resolver);
+        let handle = service.open(&archive_path, None).expect("open archive");
+
+        let dest = temp.path().join("extracted");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        let all = service.list_page(&handle, 0, usize::MAX).unwrap().items;
+        let indices: Vec<u32> = all
+            .iter()
+            .filter(|e| !e.is_directory)
+            .map(|e| e.original_index)
+            .collect();
+        assert_eq!(indices.len(), 3);
+
+        let options = ExtractOptions {
+            overwrite_mode: bit7z_domain::archive::OverwriteMode::Overwrite,
+            cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            paused: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            notifier: Arc::new(bit7z_domain::repository::NoopNotifier),
+        };
+
+        service
+            .extract(&handle, &indices, &dest, &options)
+            .expect("batch extract");
+
+        let extracted_a = dest.join("a.txt");
+        let extracted_b = dest.join("b.txt");
+        let extracted_c = dest.join("c.txt");
+        assert!(extracted_a.exists(), "a.txt should be extracted");
+        assert!(extracted_b.exists(), "b.txt should be extracted");
+        assert!(extracted_c.exists(), "c.txt should be extracted");
+        assert_eq!(std::fs::read_to_string(extracted_a).unwrap(), "hello");
+        assert_eq!(std::fs::read_to_string(extracted_b).unwrap(), "world");
+        assert_eq!(std::fs::read_to_string(extracted_c).unwrap(), "foo");
+    }
 }

@@ -894,10 +894,12 @@ dependencies = [
  "bit7z-ffi",
  "bit7z-infra-bit7z",
  "bit7z-infra-persistence",
+ "bit7z-infra-platform",
  "bit7z-ports",
  "bit7z-runtime",
  "futures",
  "smol",
+ "tempfile",
 ]
 
 [[package]]

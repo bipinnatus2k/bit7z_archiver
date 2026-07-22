@@ -194,7 +194,7 @@ impl DefaultJobManager {
         let state = OperationState {
             handle,
             state: match &result {
-                crate::job::JobResult::Ok => JobState::Completed,
+                crate::job::JobResult::Ok | crate::job::JobResult::Tested(_) => JobState::Completed,
                 crate::job::JobResult::Cancelled => {
                     if cancellation.is_cancelled() {
                         JobState::Cancelled
@@ -205,6 +205,7 @@ impl DefaultJobManager {
                 crate::job::JobResult::Failed(_) => JobState::Failed,
             },
             progress: None,
+            result: Some(result.clone()),
         };
         inner.completed.insert(handle.0, state);
 
@@ -267,6 +268,7 @@ impl JobManager for DefaultJobManager {
             handle,
             state: JobState::Running,
             progress: None,
+            result: None,
         })
     }
 

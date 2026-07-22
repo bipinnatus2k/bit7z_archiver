@@ -16,3 +16,7 @@ async-trait = { workspace = true }
 smol = { workspace = true }
 futures = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+bit7z-infra-platform = { path = "../../infrastructure/platform" }
+

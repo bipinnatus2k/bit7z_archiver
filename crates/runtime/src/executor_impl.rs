@@ -167,7 +167,7 @@ async fn test(ctx: ExecutionContext, session_id: bit7z_domain::archive::SessionI
     };
 
     match ctx.ports.reader.test(&state.session) {
-        Ok(_result) => JobResult::Ok,
+        Ok(result) => JobResult::Tested(result),
         Err(e) => JobResult::Failed(e.to_string()),
     }
 }

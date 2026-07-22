@@ -97,12 +97,12 @@ impl Runtime {
                     state.state,
                     JobState::Completed | JobState::Failed | JobState::Cancelled
                 ) {
-                    return Some(match state.state {
+                    return Some(state.result.clone().unwrap_or_else(|| match state.state {
                         JobState::Completed => JobResult::Ok,
                         JobState::Failed => JobResult::Failed("failed".into()),
                         JobState::Cancelled => JobResult::Cancelled,
                         _ => unreachable!(),
-                    });
+                    }));
                 }
             }
 
