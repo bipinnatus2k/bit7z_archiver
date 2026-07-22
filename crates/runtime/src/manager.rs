@@ -23,7 +23,7 @@ use crate::RuntimeContext;
 /// run, and dispatches execution to the executor. Publishes operation events
 /// to subscribers.
 pub struct DefaultJobManager {
-    inner: Mutex<ManagerInner>,
+    inner: Arc<Mutex<ManagerInner>>,
     scheduler: Arc<dyn Scheduler>,
     executor: Arc<dyn Executor>,
     session_manager: Arc<dyn SessionManager>,
@@ -56,13 +56,13 @@ impl DefaultJobManager {
         context: RuntimeContext,
     ) -> Self {
         Self {
-            inner: Mutex::new(ManagerInner {
+            inner: Arc::new(Mutex::new(ManagerInner {
                 next_id: 1,
                 pending: Vec::new(),
                 running: HashMap::new(),
                 completed: HashMap::new(),
                 subscribers: Vec::new(),
-            }),
+            })),
             scheduler,
             executor,
             session_manager,
@@ -209,13 +209,7 @@ impl DefaultJobManager {
 impl Clone for DefaultJobManager {
     fn clone(&self) -> Self {
         Self {
-            inner: Mutex::new(ManagerInner {
-                next_id: 1,
-                pending: Vec::new(),
-                running: HashMap::new(),
-                completed: HashMap::new(),
-                subscribers: Vec::new(),
-            }),
+            inner: self.inner.clone(),
             scheduler: self.scheduler.clone(),
             executor: self.executor.clone(),
             session_manager: self.session_manager.clone(),
