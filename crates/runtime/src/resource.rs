@@ -1,7 +1,7 @@
 //! Resource manager for runtime job arbitration.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use bit7z_capability::{ResourceClaim, SessionLock};
 use bit7z_domain::archive::SessionId;
@@ -106,5 +106,37 @@ impl ResourceManager for SimpleResourceManager {
             concurrency: state.concurrency,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bit7z_capability::{ResourceClaim, SessionLock};
+
+    #[test]
+    fn test_concurrency_limit() {
+        let rm = SimpleResourceManager::new(1);
+        let claim = ResourceClaim {
+            session_locks: vec![SessionLock::Exclusive(1)],
+            ..Default::default()
+        };
+        assert!(rm.acquire(claim.clone()).is_ok());
+        assert!(matches!(rm.acquire(claim), Err(ResourceError::ConcurrencyLimit)));
+    }
+
+    #[test]
+    fn test_exclusive_lock_blocks_shared() {
+        let rm = SimpleResourceManager::new(10);
+        let exclusive = ResourceClaim {
+            session_locks: vec![SessionLock::Exclusive(1)],
+            ..Default::default()
+        };
+        let shared = ResourceClaim {
+            session_locks: vec![SessionLock::Shared(1)],
+            ..Default::default()
+        };
+        assert!(rm.acquire(exclusive).is_ok());
+        assert!(matches!(rm.acquire(shared), Err(ResourceError::SessionLocked(1))));
     }
 }

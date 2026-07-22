@@ -8,19 +8,21 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use bit7z_capability::{ExecutionDescriptor, ResourceClaim};
-use bit7z_domain::archive::SessionId;
-use bit7z_ports::session::SessionRef;
+
 
 pub mod cancel;
 pub mod executor;
+pub mod executor_impl;
 pub mod job;
+pub mod manager;
 pub mod resource;
 pub mod scheduler;
 pub mod session;
 
 pub use cancel::CancellationToken;
-pub use executor::{ExecutionContext, Executor};
+pub use executor::{ExecutionContext, Executor, PortSet};
+pub use executor_impl::LocalExecutor;
+pub use manager::DefaultJobManager;
 pub use job::{Job, JobGraph, JobHandle, JobId, JobKind, JobResult, JobState, OperationHandle, OperationKind, OperationRequest, OperationState};
 pub use resource::{ResourceCapacity, ResourceError, ResourceManager, ResourceToken};
 pub use scheduler::Scheduler;
@@ -33,6 +35,7 @@ pub struct Runtime {
     pub executor: Arc<dyn Executor>,
     pub session_manager: Arc<dyn SessionManager>,
     pub resource_manager: Arc<dyn ResourceManager>,
+    pub ports: PortSet,
     pub context: RuntimeContext,
 }
 

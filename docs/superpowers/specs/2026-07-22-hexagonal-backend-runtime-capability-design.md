@@ -522,17 +522,23 @@ Completed:
 6. ✅ Kept `Bit7zRepository` unchanged; adapters are independent and ready for migration.
 7. ✅ Added unit tests for `InMemorySessionStore`.
 
-### Phase 3: Implement Runtime Internals
+### Phase 3: Implement Runtime Internals ✅
 
-- Flesh out `DefaultScheduler`, `SimpleResourceManager`, and `LocalExecutor`.
-- Implement `DefaultSessionManager` lifecycle and weak-reference handling.
-- Add event stream publishing and progress reporting.
+Completed:
 
-### Phase 4: Register Capabilities
+1. ✅ Fleshed out `DefaultScheduler`, `SimpleResourceManager`, and `LocalExecutor`.
+2. ✅ Implemented `DefaultSessionManager` lifecycle (currently backed by `SessionStore`, using weak-reference handling as a follow-up).
+3. ✅ Added event stream publishing through `RuntimeEvent` / `DefaultJobManager`.
+4. ✅ Added unit tests for scheduler and resource manager.
 
-- Register bit7z capabilities in `CapabilityRegistry`.
-- Implement `DefaultCapabilityResolver` matching logic.
-- Add constraints for encryption, solid archives, streaming, etc.
+### Phase 4: Register Capabilities ✅
+
+Completed:
+
+1. ✅ Implemented `CapabilityRegistry` with register/unregister/all/by_backend queries.
+2. ✅ Implemented `DefaultCapabilityResolver` with filtering, constraint matching, scoring, resource-claim generation, and execution-policy selection.
+3. ✅ Added `Capability` support flags (`supports_encryption`, `supports_solid`, `supports_streaming`, `supports_incremental`).
+4. ✅ Added unit tests for capability resolution.
 
 ### Phase 5: Migrate Application Services
 

@@ -1,7 +1,7 @@
 //! Job types and operation request model.
 
 use bit7z_capability::ExecutionDescriptor;
-use bit7z_domain::archive::{ArchiveFormat, ChangeSet, SessionId};
+use bit7z_domain::archive::{ArchiveFormat, SessionId};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -64,7 +64,7 @@ pub struct Job {
 pub enum JobKind {
     OpenArchive { path: PathBuf },
     CreateArchive { path: PathBuf, format: ArchiveFormat },
-    SaveArchive { session_id: SessionId, changeset: ChangeSet },
+    SaveArchive { session_id: SessionId },
     Extract { session_id: SessionId, indices: Vec<u32>, destination: PathBuf },
     Test { session_id: SessionId },
     Preview { session_id: SessionId, index: u32 },
