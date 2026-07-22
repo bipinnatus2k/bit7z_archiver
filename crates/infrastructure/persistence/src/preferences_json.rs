@@ -103,12 +103,16 @@ mod tests {
 
     #[test]
     fn test_save_creates_directory() {
-        let deep_path = std::env::temp_dir().join("bit7z_test_deep").join("nested").join("prefs.json");
-        let repo = JsonPreferencesRepository { path: deep_path.clone() };
+        let deep_path = std::env::temp_dir()
+            .join("bit7z_test_deep")
+            .join("nested")
+            .join("prefs.json");
+        let repo = JsonPreferencesRepository {
+            path: deep_path.clone(),
+        };
         let prefs = Preferences::default();
         repo.save(&prefs).unwrap();
         assert!(deep_path.exists());
         let _ = std::fs::remove_dir_all(std::env::temp_dir().join("bit7z_test_deep"));
     }
 }
-

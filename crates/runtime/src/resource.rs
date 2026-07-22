@@ -122,7 +122,10 @@ mod tests {
             ..Default::default()
         };
         assert!(rm.acquire(claim.clone()).is_ok());
-        assert!(matches!(rm.acquire(claim), Err(ResourceError::ConcurrencyLimit)));
+        assert!(matches!(
+            rm.acquire(claim),
+            Err(ResourceError::ConcurrencyLimit)
+        ));
     }
 
     #[test]
@@ -137,6 +140,9 @@ mod tests {
             ..Default::default()
         };
         assert!(rm.acquire(exclusive).is_ok());
-        assert!(matches!(rm.acquire(shared), Err(ResourceError::SessionLocked(1))));
+        assert!(matches!(
+            rm.acquire(shared),
+            Err(ResourceError::SessionLocked(1))
+        ));
     }
 }

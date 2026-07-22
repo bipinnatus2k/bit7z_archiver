@@ -5,12 +5,9 @@ use gpui::{
     SharedString, Stateful, Styled as _, Window, div,
 };
 
-use gpui_component::{
-    ActiveTheme as _, Icon, IconName, Size, h_flex,
-    menu::PopupMenu,
-};
-use super::{Column, ColumnGroup, ColumnSort, TableState};
 use super::loading::Loading;
+use super::{Column, ColumnGroup, ColumnSort, TableState};
+use gpui_component::{ActiveTheme as _, Icon, IconName, Size, h_flex, menu::PopupMenu};
 
 #[allow(unused)]
 pub trait TableDelegate: Sized + 'static {

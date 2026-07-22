@@ -9,3 +9,6 @@ bit7z-infra-tray = { path = "../../infrastructure/tray" }
 bit7z-infra-progress = { path = "../../infrastructure/progress" }
 gpui = { workspace = true }
 crossbeam-channel = "0.5"
+
+[dev-dependencies]
+bit7z-domain = { path = "../../domain" }

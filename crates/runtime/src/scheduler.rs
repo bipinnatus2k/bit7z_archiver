@@ -7,12 +7,8 @@ use crate::resource::ResourceCapacity;
 
 /// Decides which ready jobs should run next.
 pub trait Scheduler: Send + Sync {
-    fn select_next(
-        &self,
-        ready: &[Job],
-        running: &[Job],
-        capacity: ResourceCapacity,
-    ) -> Vec<JobId>;
+    fn select_next(&self, ready: &[Job], running: &[Job], capacity: ResourceCapacity)
+    -> Vec<JobId>;
 }
 
 /// A simple scheduler that respects priority, concurrency, and session affinity.
@@ -65,7 +61,9 @@ mod tests {
     fn make_job(id: u64, priority: Priority, session_id: Option<u64>) -> Job {
         Job {
             id: JobId(id),
-            kind: JobKind::OpenArchive { path: PathBuf::from("test.7z") },
+            kind: JobKind::OpenArchive {
+                path: PathBuf::from("test.7z"),
+            },
             priority,
             session_id,
             descriptor: bit7z_capability::ExecutionDescriptor {

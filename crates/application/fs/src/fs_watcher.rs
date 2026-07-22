@@ -10,7 +10,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-
 use crate::{PathEvent, PathEventKind, SanitizedPath, Watcher};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -987,7 +986,9 @@ impl GlobalWatcher {
             return;
         };
         drop(state);
-        let _ = self.unwatch(path.as_path(), mode).inspect_err(|e| log::error!("{e}"));
+        let _ = self
+            .unwatch(path.as_path(), mode)
+            .inspect_err(|e| log::error!("{e}"));
     }
 
     fn watch(&self, path: &Path, mode: WatcherMode) -> anyhow::Result<()> {

@@ -4,7 +4,9 @@ use gpui::{
     StyleRefinement, Styled, TextAlign, Window, div, prelude::FluentBuilder as _, px, relative,
 };
 
-use gpui_component::{ActiveTheme as _, AnyChildElement, ChildElement, Sizable, Size, StyledExt as _};
+use gpui_component::{
+    ActiveTheme as _, AnyChildElement, ChildElement, Sizable, Size, StyledExt as _,
+};
 
 const MIN_CELL_WIDTH: Pixels = px(100.);
 

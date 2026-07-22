@@ -8,8 +8,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-
-
 pub mod builder;
 pub mod cancel;
 pub mod executor;
@@ -21,15 +19,20 @@ pub mod resource;
 pub mod scheduler;
 pub mod session;
 
+pub use builder::RuntimeBuilder;
 pub use cancel::CancellationToken;
 pub use executor::{ExecutionContext, Executor, PortSet};
 pub use executor_impl::LocalExecutor;
+pub use job::{
+    Job, JobGraph, JobHandle, JobId, JobKind, JobResult, JobState, OperationHandle, OperationKind,
+    OperationRequest, OperationState,
+};
 pub use manager::DefaultJobManager;
-pub use job::{Job, JobGraph, JobHandle, JobId, JobKind, JobResult, JobState, OperationHandle, OperationKind, OperationRequest, OperationState};
-pub use resource::{ResourceCapacity, ResourceError, ResourceManager, ResourceToken, SimpleResourceManager};
-pub use scheduler::{Scheduler, DefaultScheduler};
-pub use session::{SessionManager, SessionManagerError, DefaultSessionManager};
-pub use builder::RuntimeBuilder;
+pub use resource::{
+    ResourceCapacity, ResourceError, ResourceManager, ResourceToken, SimpleResourceManager,
+};
+pub use scheduler::{DefaultScheduler, Scheduler};
+pub use session::{DefaultSessionManager, SessionManager, SessionManagerError};
 
 /// Top-level runtime facade.
 pub struct Runtime {
@@ -129,11 +132,23 @@ pub struct RuntimeContext {
 /// Event emitted by the runtime about operation lifecycle.
 #[derive(Debug, Clone)]
 pub enum OperationEvent {
-    Submitted { handle: OperationHandle },
-    Started { handle: OperationHandle },
-    Progress { handle: OperationHandle, percent: u32 },
-    Completed { handle: OperationHandle, result: JobResult },
-    Cancelled { handle: OperationHandle },
+    Submitted {
+        handle: OperationHandle,
+    },
+    Started {
+        handle: OperationHandle,
+    },
+    Progress {
+        handle: OperationHandle,
+        percent: u32,
+    },
+    Completed {
+        handle: OperationHandle,
+        result: JobResult,
+    },
+    Cancelled {
+        handle: OperationHandle,
+    },
 }
 
 pub type OperationEventSender = futures::channel::mpsc::UnboundedSender<OperationEvent>;

@@ -81,7 +81,10 @@ impl SessionManager for DefaultSessionManager {
     }
 
     fn on_saved(&self, id: SessionId) -> Result<(), SessionManagerError> {
-        let state = self.store.get(id).ok_or(SessionManagerError::NotFound(id))?;
+        let state = self
+            .store
+            .get(id)
+            .ok_or(SessionManagerError::NotFound(id))?;
         // In a full implementation this would clear dirty state and rotate the base tree.
         let _ = state;
         Ok(())

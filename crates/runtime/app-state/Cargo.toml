@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+bit7z-app-archive = { path = "../../application/archive" }
 bit7z-domain = { path = "../../domain" }
 bit7z-infra-tray = { path = "../../infrastructure/tray" }
 bit7z-infra-persistence = { path = "../../infrastructure/persistence" }

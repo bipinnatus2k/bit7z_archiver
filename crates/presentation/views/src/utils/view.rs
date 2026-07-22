@@ -1,10 +1,6 @@
-use std::any::TypeId;
 use gpui::{Action, App, Context, DispatchPhase, Interactivity, Window};
+use std::any::TypeId;
 
-pub(crate) trait ExInteractivity {
+pub(crate) trait ExInteractivity {}
 
-}
-
-impl ExInteractivity for Interactivity {
-
-}
+impl ExInteractivity for Interactivity {}

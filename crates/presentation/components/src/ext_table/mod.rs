@@ -1,13 +1,13 @@
-use gpui::{px, App, Pixels};
+use gpui::{App, Pixels, px};
 use gpui_component::*;
 
+mod actions;
 mod column;
 mod data_table;
 mod delegate;
 mod loading;
 mod state;
 mod table;
-mod actions;
 
 pub use column::*;
 pub use data_table::*;

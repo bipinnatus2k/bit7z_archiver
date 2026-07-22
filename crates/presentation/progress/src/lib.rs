@@ -1,5 +1,5 @@
-use bit7z_infra_tray::TrayCommand;
 use bit7z_infra_progress::ProgressReceiver;
+use bit7z_infra_tray::TrayCommand;
 use crossbeam_channel::{Sender, TryRecvError};
 use gpui::*;
 use std::sync::{Arc, Mutex};
@@ -181,7 +181,10 @@ impl ProgressState {
                 } else {
                     self.message.clone()
                 };
-                let _ = tx.send(TrayCommand::UpdateProgress { message: msg, percent: pct });
+                let _ = tx.send(TrayCommand::UpdateProgress {
+                    message: msg,
+                    percent: pct,
+                });
             }
         }
 
@@ -192,9 +195,13 @@ impl ProgressState {
 #[cfg(test)]
 mod tests {
     use super::ProgressState;
+    use bit7z_domain::repository::ProgressUpdate;
     use crossbeam_channel;
 
-    fn channel_pair() -> (crossbeam_channel::Sender<ProgressUpdate>, crossbeam_channel::Receiver<ProgressUpdate>) {
+    fn channel_pair() -> (
+        crossbeam_channel::Sender<ProgressUpdate>,
+        crossbeam_channel::Receiver<ProgressUpdate>,
+    ) {
         crossbeam_channel::unbounded()
     }
 
@@ -214,12 +221,16 @@ mod tests {
         state.is_active = true;
         state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
         tx.send(ProgressUpdate {
-            file_current: 3, file_total: 10,
+            file_current: 3,
+            file_total: 10,
             current_file: Some("test.txt".into()),
-            items_done: 5, items_total: 20,
-            bytes_done: 1024, bytes_total: 4096,
+            items_done: 5,
+            items_total: 20,
+            bytes_done: 1024,
+            bytes_total: 4096,
             error: None,
-        }).unwrap();
+        })
+        .unwrap();
         drop(tx);
         assert!(state.poll());
         assert_eq!(state.file_current, 3);
@@ -247,12 +258,16 @@ mod tests {
         state.is_paused = true;
         state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
         tx.send(ProgressUpdate {
-            file_current: 1, file_total: 5,
+            file_current: 1,
+            file_total: 5,
             current_file: None,
-            items_done: 1, items_total: 5,
-            bytes_done: 100, bytes_total: 500,
+            items_done: 1,
+            items_total: 5,
+            bytes_done: 100,
+            bytes_total: 500,
             error: None,
-        }).unwrap();
+        })
+        .unwrap();
         assert!(!state.poll());
         assert_eq!(state.file_current, 0);
     }
@@ -264,12 +279,16 @@ mod tests {
         state.is_active = true;
         state.receiver = Some(std::sync::Arc::new(std::sync::Mutex::new(rx)));
         tx.send(ProgressUpdate {
-            file_current: 0, file_total: 1,
+            file_current: 0,
+            file_total: 1,
             current_file: None,
-            items_done: 0, items_total: 1,
-            bytes_done: 0, bytes_total: 0,
+            items_done: 0,
+            items_total: 1,
+            bytes_done: 0,
+            bytes_total: 0,
             error: Some("CRC mismatch".into()),
-        }).unwrap();
+        })
+        .unwrap();
         drop(tx);
         state.poll();
         assert_eq!(state.error, Some("CRC mismatch".into()));
@@ -277,7 +296,11 @@ mod tests {
 
     #[test]
     fn test_percent_half() {
-        let state = ProgressState { current: 50, total: 100, ..Default::default() };
+        let state = ProgressState {
+            current: 50,
+            total: 100,
+            ..Default::default()
+        };
         assert!((state.percent() - 0.5).abs() < 0.001);
     }
 

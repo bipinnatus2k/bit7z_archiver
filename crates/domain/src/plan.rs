@@ -51,10 +51,7 @@ impl ExecutionPlan {
     }
 }
 
-pub fn plan_changes(
-    snapshot: &[ArchiveEntry],
-    change_set: &ChangeSet,
-) -> ExecutionPlan {
+pub fn plan_changes(snapshot: &[ArchiveEntry], change_set: &ChangeSet) -> ExecutionPlan {
     let mut plan = ExecutionPlan {
         deletes: Vec::new(),
         renames: Vec::new(),
@@ -63,17 +60,17 @@ pub fn plan_changes(
         conflicts: Vec::new(),
     };
 
-    let existing_paths: HashMap<&str, &ArchiveEntry> = snapshot.iter()
-        .map(|e| (e.path.as_str(), e))
-        .collect();
+    let existing_paths: HashMap<&str, &ArchiveEntry> =
+        snapshot.iter().map(|e| (e.path.as_str(), e)).collect();
 
     for (i, change) in change_set.iter().enumerate() {
         match change {
-            ArchiveChange::Add { fs_path, archive_path } => {
+            ArchiveChange::Add {
+                fs_path,
+                archive_path,
+            } => {
                 if let Some(existing) = existing_paths.get(archive_path.as_str()) {
-                    let incoming_size = std::fs::metadata(fs_path)
-                        .map(|m| m.len())
-                        .unwrap_or(0);
+                    let incoming_size = std::fs::metadata(fs_path).map(|m| m.len()).unwrap_or(0);
                     let incoming_mtime = std::fs::metadata(fs_path)
                         .ok()
                         .and_then(|m| m.modified().ok())
@@ -91,7 +88,10 @@ pub fn plan_changes(
                     plan.adds.push((fs_path.clone(), archive_path.clone()));
                 }
             }
-            ArchiveChange::Update { fs_path, archive_path } => {
+            ArchiveChange::Update {
+                fs_path,
+                archive_path,
+            } => {
                 plan.updates.push((fs_path.clone(), archive_path.clone()));
             }
             ArchiveChange::Delete { index } => {
@@ -112,9 +112,10 @@ mod tests {
 
     #[test]
     fn test_plan_changes_add_no_conflict() {
-        let snapshot = vec![
-            ArchiveEntry { path: "existing.txt".into(), ..Default::default() },
-        ];
+        let snapshot = vec![ArchiveEntry {
+            path: "existing.txt".into(),
+            ..Default::default()
+        }];
         let mut change_set = ChangeSet::new();
         change_set.add(PathBuf::from("/tmp/new.txt"), "new.txt".into());
 
@@ -126,9 +127,11 @@ mod tests {
 
     #[test]
     fn test_plan_changes_add_with_conflict() {
-        let snapshot = vec![
-            ArchiveEntry { path: "existing.txt".into(), size: 100, ..Default::default() },
-        ];
+        let snapshot = vec![ArchiveEntry {
+            path: "existing.txt".into(),
+            size: 100,
+            ..Default::default()
+        }];
         let mut change_set = ChangeSet::new();
         change_set.add(PathBuf::from("/tmp/existing.txt"), "existing.txt".into());
 
@@ -141,9 +144,11 @@ mod tests {
 
     #[test]
     fn test_plan_changes_delete() {
-        let snapshot = vec![
-            ArchiveEntry { path: "file.txt".into(), original_index: 0, ..Default::default() },
-        ];
+        let snapshot = vec![ArchiveEntry {
+            path: "file.txt".into(),
+            original_index: 0,
+            ..Default::default()
+        }];
         let mut change_set = ChangeSet::new();
         change_set.delete(0);
 
@@ -155,9 +160,11 @@ mod tests {
 
     #[test]
     fn test_plan_changes_rename() {
-        let snapshot = vec![
-            ArchiveEntry { path: "old.txt".into(), original_index: 0, ..Default::default() },
-        ];
+        let snapshot = vec![ArchiveEntry {
+            path: "old.txt".into(),
+            original_index: 0,
+            ..Default::default()
+        }];
         let mut change_set = ChangeSet::new();
         change_set.rename(0, "new.txt".into());
 

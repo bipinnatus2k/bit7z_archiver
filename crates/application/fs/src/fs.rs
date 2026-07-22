@@ -45,7 +45,9 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => { result.pop(); }
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
             other => result.push(other),
         }
     }
@@ -574,7 +576,6 @@ impl Fs for RealFs {
         Ok(())
     }
 
-
     async fn copy_file(&self, source: &Path, target: &Path, options: CopyOptions) -> Result<()> {
         if !options.overwrite && smol::fs::metadata(target).await.is_ok() {
             if options.ignore_if_exists {
@@ -694,7 +695,6 @@ impl Fs for RealFs {
             Err(err) => Err(err)?,
         }
     }
-
 
     async fn open_sync(&self, path: &Path) -> Result<Box<dyn io::Read + Send + Sync>> {
         Ok(Box::new(std::fs::File::open(path)?))
@@ -944,7 +944,6 @@ impl Fs for RealFs {
         Pin<Box<dyn Send + Stream<Item = Vec<PathEvent>>>>,
         Arc<dyn Watcher>,
     ) {
-        
         let executor = self.executor.clone();
 
         let (tx, rx) = async_channel::unbounded();
@@ -1002,11 +1001,9 @@ impl Fs for RealFs {
         )
     }
 
-
     /// Runs `git config` with the given arguments.
     /// Will return `Ok` if the commands exit status is `0`, with the stdout
     /// contents. Otherwise returns `Err` with the stderr contents.
-
 
     /// Checks whether the file system is case sensitive by attempting to create two files
     /// that have the same name except for the casing.
@@ -1023,8 +1020,11 @@ impl Fs for RealFs {
             return load == CASE_SENSITIVE;
         }
         let Ok(temp_dir) = self.executor.spawn(async { TempDir::new() }).await else {
-            log::error!("Failed to determine whether filesystem is case sensitive (falling back to true)");
-            self.is_case_sensitive.store(NOT_CASE_SENSITIVE, Ordering::Release);
+            log::error!(
+                "Failed to determine whether filesystem is case sensitive (falling back to true)"
+            );
+            self.is_case_sensitive
+                .store(NOT_CASE_SENSITIVE, Ordering::Release);
             return true;
         };
         let test_file_1 = temp_dir.path().join("case_sensitivity_test.tmp");
@@ -1038,7 +1038,12 @@ impl Fs for RealFs {
         let case_sensitive = match self.create_file(&test_file_1, create_opts).await {
             Ok(_) => match self.create_file(&test_file_2, create_opts).await {
                 Ok(_) => true,
-                Err(ref e) if e.downcast_ref::<io::Error>().map_or(false, |ioe| ioe.kind() == io::ErrorKind::AlreadyExists) => false,
+                Err(ref e)
+                    if e.downcast_ref::<io::Error>()
+                        .map_or(false, |ioe| ioe.kind() == io::ErrorKind::AlreadyExists) =>
+                {
+                    false
+                }
                 Err(e) => {
                     log::error!("Failed to check case sensitivity: {e:#}");
                     let _ = temp_dir.close();
@@ -1062,7 +1067,6 @@ impl Fs for RealFs {
         );
         case_sensitive
     }
-
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]

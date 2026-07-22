@@ -1,14 +1,12 @@
-use std::path::Path;
-use gpui::{px, size, AnyView, App, AppContext, Bounds, Focusable, Pixels, SharedString, Size, Window, WindowBounds, WindowKind, WindowOptions};
-use gpui_component::{
-    Root, TitleBar
-
-
-    ,
-};
 use crate::root::RootView;
+use gpui::{
+    AnyView, App, AppContext, Bounds, Focusable, Pixels, SharedString, Size, Window, WindowBounds,
+    WindowKind, WindowOptions, px, size,
+};
+use gpui_component::{Root, TitleBar};
+use std::path::Path;
 
-pub fn create_new_window<F, E>(title: &str,crate_view_fn: F, cx: &mut App)
+pub fn create_new_window<F, E>(title: &str, crate_view_fn: F, cx: &mut App)
 where
     E: Into<AnyView>,
     F: FnOnce(&mut Window, &mut App) -> E + Send + 'static,
@@ -64,5 +62,5 @@ pub fn create_new_window_with_size<F, E>(
 
         Ok::<_, anyhow::Error>(())
     })
-        .detach();
+    .detach();
 }

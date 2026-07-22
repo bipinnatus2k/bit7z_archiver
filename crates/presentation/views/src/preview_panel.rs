@@ -10,7 +10,10 @@ pub struct PreviewPanel {
 }
 impl PreviewPanel {
     pub fn new() -> Self {
-        Self { data: None, is_loading: false }
+        Self {
+            data: None,
+            is_loading: false,
+        }
     }
 
     pub fn set_data(&mut self, data: Option<PreviewData>) {
@@ -24,14 +27,31 @@ impl PreviewPanel {
 }
 impl Render for PreviewPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().flex_1().overflow_hidden().border_t_1().border_color(cx.theme().border).p_2()
+        div()
+            .flex_1()
+            .overflow_hidden()
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .p_2()
             .child(match &self.data {
                 None if self.is_loading => loading_view(cx).into_any_element(),
                 None => empty_view(cx, "Select a file to preview").into_any_element(),
-                Some(PreviewData::Text(text)) => div().font_family("monospace").text_sm().overflow_y_scrollbar().child(text.clone()).into_any_element(),
-                Some(PreviewData::Hex(_)) => div().font_family("monospace").text_sm().child("Binary data (hex view)").into_any_element(),
+                Some(PreviewData::Text(text)) => div()
+                    .font_family("monospace")
+                    .text_sm()
+                    .overflow_y_scrollbar()
+                    .child(text.clone())
+                    .into_any_element(),
+                Some(PreviewData::Hex(_)) => div()
+                    .font_family("monospace")
+                    .text_sm()
+                    .child("Binary data (hex view)")
+                    .into_any_element(),
                 Some(PreviewData::Image(_)) => div().child("Image preview").into_any_element(),
-                Some(PreviewData::Unsupported(msg)) => div().text_color(cx.theme().muted).child(msg.clone()).into_any_element(),
+                Some(PreviewData::Unsupported(msg)) => div()
+                    .text_color(cx.theme().muted)
+                    .child(msg.clone())
+                    .into_any_element(),
             })
     }
 }

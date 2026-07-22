@@ -1,3 +1,4 @@
+use crate::menu::ToggleSidebar;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
 use gpui_component::button::Button;
@@ -8,7 +9,6 @@ use gpui_component::sidebar::{
 };
 use gpui_component::{Icon, IconName, h_flex};
 use std::path::Path;
-use crate::menu::ToggleSidebar;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BrowserIntent {
@@ -67,59 +67,66 @@ impl Render for ArchiveBrowser {
         let sidebar = Sidebar::new("archive-browser")
             .collapsible(true)
             .collapsed(collapsed)
-            .header(
-                SidebarHeader::new().w_full().when_else(
-                    !collapsed,
-                    |el| {
-                        el.child(
-                            h_flex()
-                                .gap_2()
-                                .child(Button::new("icon").icon(IconName::Folder))
-                                .child("Explorer"),
-                        )
-                    },
-                    |el| el.child(Icon::new(IconName::Menu)),
+            .header(SidebarHeader::new().w_full().when_else(
+                !collapsed,
+                |el| {
+                    el.child(
+                        h_flex()
+                            .gap_2()
+                            .child(Button::new("icon").icon(IconName::Folder))
+                            .child("Explorer"),
+                    )
+                },
+                |el| el.child(Icon::new(IconName::Menu)),
+            ))
+            .child(
+                SidebarGroup::new("Explorer").child(
+                    SidebarMenu::new().child(
+                        SidebarMenuItem::new("Folder")
+                            .icon(IconName::Folder)
+                            .children(self.subdirs.iter().cloned().map(|name| {
+                                let h = self_handle.clone();
+                                SidebarMenuItem::new(name.clone())
+                                    .icon(IconName::Folder)
+                                    .on_click(
+                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                            h.update(cx, |_, cx| {
+                                                cx.emit(BrowserIntent::NavigateInto(name.clone()))
+                                            });
+                                        },
+                                    )
+                            })),
+                    ),
                 ),
             )
             .child(
-                SidebarGroup::new("Explorer").child(SidebarMenu::new().child(
-                    SidebarMenuItem::new("Folder")
-                        .icon(IconName::Folder)
-                        .children(self.subdirs.iter().cloned().map(
-                        |name| {
-                            let h = self_handle.clone();
-                            SidebarMenuItem::new(name.clone())
-                                .icon(IconName::Folder)
-                                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                    h.update(cx, |_, cx| {
-                                        cx.emit(BrowserIntent::NavigateInto(name.clone()))
-                                    });
-                                })
-                        },
-                    )),
-                )),
+                SidebarGroup::new("Fast Access").child(
+                    SidebarMenu::new()
+                        .child(
+                            SidebarMenuItem::new("Recent Files")
+                                .icon(IconName::History)
+                                .children(self.recent_files.iter().cloned().map(|path| {
+                                    let h = self_handle.clone();
+                                    let file_name = Path::new(&path)
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().to_string())
+                                        .unwrap_or_else(|| path.clone());
+                                    SidebarMenuItem::new(file_name)
+                                        .icon(IconName::File)
+                                        .on_click(
+                                            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                                h.update(cx, |_, cx| {
+                                                    cx.emit(BrowserIntent::OpenRecentFile(
+                                                        path.clone(),
+                                                    ))
+                                                });
+                                            },
+                                        )
+                                })),
+                        )
+                        .child(SidebarMenuItem::new("Collection").icon(IconName::Star)),
+                ),
             )
-                    .child(
-                    SidebarGroup::new("Fast Access").child(SidebarMenu::new()
-                        .child(SidebarMenuItem::new("Recent Files").icon(IconName::History)
-                        .children(
-                        self.recent_files.iter().cloned().map(|path| {
-                            let h = self_handle.clone();
-                            let file_name = Path::new(&path)
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_else(|| path.clone());
-                            SidebarMenuItem::new(file_name)
-                                .icon(IconName::File)
-                                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                    h.update(cx, |_, cx| {
-                                        cx.emit(BrowserIntent::OpenRecentFile(path.clone()))
-                                    });
-                                })
-                        }),
-                    ))
-                        .child(SidebarMenuItem::new("Collection").icon(IconName::Star))),
-                )
             .footer(
                 SidebarFooter::new().child(
                     SidebarToggleButton::new()

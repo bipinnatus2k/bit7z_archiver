@@ -9,9 +9,9 @@ use bit7z_ports::progress::ProgressReporter;
 use bit7z_ports::session::SessionStore;
 use bit7z_ports::{ArchiveReader, ArchiveWriter};
 
+use crate::RuntimeContext;
 use crate::cancel::CancellationToken;
 use crate::job::{Job, JobResult};
-use crate::RuntimeContext;
 
 /// Collection of concrete port implementations available to the runtime.
 #[derive(Clone)]

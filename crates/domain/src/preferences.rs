@@ -25,8 +25,6 @@ impl Default for Preferences {
     }
 }
 
-
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowPrefs {
     pub width: u32,

@@ -27,10 +27,7 @@ pub enum WorkerMessage {
         duration_ms: u64,
     },
     #[serde(rename = "error")]
-    Error {
-        code: i32,
-        message: String,
-    },
+    Error { code: i32, message: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +50,10 @@ pub enum ParentMessage {
 #[serde(tag = "type")]
 pub enum GuiCommand {
     #[serde(rename = "open")]
-    Open { path: String, password: Option<String> },
+    Open {
+        path: String,
+        password: Option<String>,
+    },
     #[serde(rename = "activate")]
     Activate,
 }
@@ -110,29 +110,31 @@ where
 
     std::thread::Builder::new()
         .name("ipc-listener".into())
-        .spawn(move || loop {
-            match TcpListener::bind(&addr) {
-                Ok(listener) => {
-                    for stream in listener.incoming() {
-                        match stream {
-                            Ok(stream) => {
-                                let reader = BufReader::new(stream);
-                                for line in reader.lines() {
-                                    if let Ok(json) = line {
-                                        if let Ok(cmd) =
-                                            serde_json::from_str::<GuiCommand>(&json)
-                                        {
-                                            on_command(cmd);
+        .spawn(move || {
+            loop {
+                match TcpListener::bind(&addr) {
+                    Ok(listener) => {
+                        for stream in listener.incoming() {
+                            match stream {
+                                Ok(stream) => {
+                                    let reader = BufReader::new(stream);
+                                    for line in reader.lines() {
+                                        if let Ok(json) = line {
+                                            if let Ok(cmd) =
+                                                serde_json::from_str::<GuiCommand>(&json)
+                                            {
+                                                on_command(cmd);
+                                            }
                                         }
                                     }
                                 }
+                                Err(_) => break,
                             }
-                            Err(_) => break,
                         }
                     }
-                }
-                Err(_) => {
-                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    Err(_) => {
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
                 }
             }
         })
@@ -146,49 +148,77 @@ mod tests {
     #[test]
     fn test_worker_message_progress_roundtrip() {
         let msg = WorkerMessage::Progress {
-            current: 50, total: 100,
-            file: "data.bin".into(), bytes: 2048,
+            current: 50,
+            total: 100,
+            file: "data.bin".into(),
+            bytes: 2048,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: WorkerMessage = serde_json::from_str(&json).unwrap();
-        assert!(matches!(deserialized, WorkerMessage::Progress { current: 50, total: 100, file, bytes: 2048 } if file == "data.bin"));
+        assert!(
+            matches!(deserialized, WorkerMessage::Progress { current: 50, total: 100, file, bytes: 2048 } if file == "data.bin")
+        );
     }
 
     #[test]
     fn test_worker_message_conflict_roundtrip() {
         let msg = WorkerMessage::Conflict {
-            path: "output.txt".into(), existing_size: 100, incoming_size: 200,
+            path: "output.txt".into(),
+            existing_size: 100,
+            incoming_size: 200,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: WorkerMessage = serde_json::from_str(&json).unwrap();
-        assert!(matches!(deserialized, WorkerMessage::Conflict { path, existing_size: 100, incoming_size: 200 } if path == "output.txt"));
+        assert!(
+            matches!(deserialized, WorkerMessage::Conflict { path, existing_size: 100, incoming_size: 200 } if path == "output.txt")
+        );
     }
 
     #[test]
     fn test_worker_message_complete_roundtrip() {
-        let msg = WorkerMessage::Complete { total_files: 5, total_bytes: 10000, duration_ms: 1500 };
+        let msg = WorkerMessage::Complete {
+            total_files: 5,
+            total_bytes: 10000,
+            duration_ms: 1500,
+        };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: WorkerMessage = serde_json::from_str(&json).unwrap();
-        assert!(matches!(deserialized, WorkerMessage::Complete { total_files: 5, total_bytes: 10000, duration_ms: 1500 }));
+        assert!(matches!(
+            deserialized,
+            WorkerMessage::Complete {
+                total_files: 5,
+                total_bytes: 10000,
+                duration_ms: 1500
+            }
+        ));
     }
 
     #[test]
     fn test_worker_message_error_roundtrip() {
-        let msg = WorkerMessage::Error { code: -1, message: "corrupt data".into() };
+        let msg = WorkerMessage::Error {
+            code: -1,
+            message: "corrupt data".into(),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: WorkerMessage = serde_json::from_str(&json).unwrap();
-        assert!(matches!(deserialized, WorkerMessage::Error { code: -1, message } if message == "corrupt data"));
+        assert!(
+            matches!(deserialized, WorkerMessage::Error { code: -1, message } if message == "corrupt data")
+        );
     }
 
     #[test]
     fn test_parent_message_conflict_resolution_roundtrip() {
         let msg = ParentMessage::ConflictResolution {
-            action: "rename".into(), new_name: Some("new.txt".into()), apply_to_all: true,
+            action: "rename".into(),
+            new_name: Some("new.txt".into()),
+            apply_to_all: true,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: ParentMessage = serde_json::from_str(&json).unwrap();
-        assert!(matches!(deserialized, ParentMessage::ConflictResolution { action, new_name: Some(n), apply_to_all: true }
-            if action == "rename" && n == "new.txt"));
+        assert!(
+            matches!(deserialized, ParentMessage::ConflictResolution { action, new_name: Some(n), apply_to_all: true }
+            if action == "rename" && n == "new.txt")
+        );
     }
 
     #[test]
@@ -201,11 +231,16 @@ mod tests {
 
     #[test]
     fn test_gui_command_open_roundtrip() {
-        let msg = GuiCommand::Open { path: "/a/b.7z".into(), password: Some("secret".into()) };
+        let msg = GuiCommand::Open {
+            path: "/a/b.7z".into(),
+            password: Some("secret".into()),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: GuiCommand = serde_json::from_str(&json).unwrap();
-        assert!(matches!(deserialized, GuiCommand::Open { path, password: Some(pw) }
-            if path == "/a/b.7z" && pw == "secret"));
+        assert!(
+            matches!(deserialized, GuiCommand::Open { path, password: Some(pw) }
+            if path == "/a/b.7z" && pw == "secret")
+        );
     }
 
     #[test]
@@ -219,7 +254,10 @@ mod tests {
     #[test]
     fn test_worker_message_serialization_format() {
         let msg = WorkerMessage::Progress {
-            current: 1, total: 10, file: "".into(), bytes: 0,
+            current: 1,
+            total: 10,
+            file: "".into(),
+            bytes: 0,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"progress""#));
@@ -231,6 +269,8 @@ mod tests {
     fn test_deserialize_known_worker_json() {
         let json = r#"{"type":"error","code":-1,"message":"test error"}"#;
         let msg: WorkerMessage = serde_json::from_str(json).unwrap();
-        assert!(matches!(msg, WorkerMessage::Error { code: -1, message } if message == "test error"));
+        assert!(
+            matches!(msg, WorkerMessage::Error { code: -1, message } if message == "test error")
+        );
     }
 }

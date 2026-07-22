@@ -1,16 +1,17 @@
 use bit7z_app_archive::delete::DeleteEntriesUseCase;
+use bit7z_app_archive::runtime_service::ArchiveService;
+use bit7z_domain::archive::ArchiveHandle;
+use bit7z_domain::repository::ProgressNotifier;
 use bit7z_infra_progress::progress_channel;
-use bit7z_domain::archive::*;
-use bit7z_domain::repository::*;
+use bit7z_pres_components::window_dialog::{
+    CloseAction, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    WindowDialogOptions, open_window_dialog_async,
+};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::v_flex;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use bit7z_pres_components::window_dialog::{
-    open_window_dialog_async, CloseAction, DialogContent, DialogDescription, DialogFooter,
-    DialogHeader, DialogTitle, WindowDialogOptions,
-};
+use std::sync::atomic::AtomicBool;
 
 pub struct DeleteDialog;
 
@@ -19,7 +20,7 @@ impl DeleteDialog {
         cx: &mut AsyncApp,
         indices: Vec<u32>,
         handle: ArchiveHandle,
-        repo: Arc<dyn ArchiveRepository>,
+        service: Arc<ArchiveService>,
     ) {
         let count = indices.len();
         open_window_dialog_async(
@@ -36,7 +37,7 @@ impl DeleteDialog {
                 window_background: WindowBackgroundAppearance::Opaque,
             },
             move |_window, cx| {
-                cx.new(move |cx| DeleteContent::new(count, indices, handle, repo, cx))
+                cx.new(move |cx| DeleteContent::new(count, indices, handle, service, cx))
             },
         );
     }
@@ -46,7 +47,7 @@ struct DeleteContent {
     count: usize,
     indices: Vec<u32>,
     handle: ArchiveHandle,
-    repo: Arc<dyn ArchiveRepository>,
+    service: Arc<ArchiveService>,
 }
 
 impl DeleteContent {
@@ -54,10 +55,15 @@ impl DeleteContent {
         count: usize,
         indices: Vec<u32>,
         handle: ArchiveHandle,
-        repo: Arc<dyn ArchiveRepository>,
+        service: Arc<ArchiveService>,
         _cx: &mut Context<Self>,
     ) -> Self {
-        Self { count, indices, handle, repo }
+        Self {
+            count,
+            indices,
+            handle,
+            service,
+        }
     }
 
     fn on_delete(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -65,7 +71,7 @@ impl DeleteContent {
 
         let indices = self.indices.clone();
         let mut handle = self.handle.clone();
-        let repo = self.repo.clone();
+        let service = self.service.clone();
         let (tx, rx) = progress_channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_clone = cancel.clone();
@@ -81,7 +87,7 @@ impl DeleteContent {
             cx.background_spawn(async move {
                 let notifier: Option<Arc<dyn ProgressNotifier>> =
                     Some(Arc::new(bit7z_infra_progress::CrossbeamNotifier(tx)));
-                let uc = DeleteEntriesUseCase::new(repo);
+                let uc = DeleteEntriesUseCase::new(service);
                 let _ = uc.execute(&mut handle, &indices, notifier);
                 let _ = result_tx.send(());
             })
@@ -109,10 +115,7 @@ impl Render for DeleteContent {
         v_flex()
             .size_full()
             .gap(px(12.))
-            .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child("Delete Entries")),
-            )
+            .child(DialogHeader::new().child(DialogTitle::new().child("Delete Entries")))
             .child(
                 DialogContent::new().child(
                     v_flex()
@@ -123,14 +126,13 @@ impl Render for DeleteContent {
                             count,
                             if count == 1 { "y" } else { "ies" },
                         )))
-                        .child(
-                            DialogDescription::new()
-                                .child("This action cannot be undone."),
-                        ),
+                        .child(DialogDescription::new().child("This action cannot be undone.")),
                 ),
             )
             .child(
-                DialogFooter::new().justify_end().gap_2()
+                DialogFooter::new()
+                    .justify_end()
+                    .gap_2()
                     .child(
                         Button::new("cancel")
                             .label("Cancel")
@@ -138,17 +140,12 @@ impl Render for DeleteContent {
                                 window.remove_window();
                             }),
                     )
-                    .child(
-                        Button::new("delete")
-                            .label("Delete")
-                            .danger()
-                            .on_click({
-                                let h = h.clone();
-                                move |_, window, cx| {
-                                    h.update(cx, |this, cx| this.on_delete(window, cx));
-                                }
-                            }),
-                    ),
+                    .child(Button::new("delete").label("Delete").danger().on_click({
+                        let h = h.clone();
+                        move |_, window, cx| {
+                            h.update(cx, |this, cx| this.on_delete(window, cx));
+                        }
+                    })),
             )
     }
 }

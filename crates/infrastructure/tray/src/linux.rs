@@ -52,14 +52,7 @@ impl TrayIcon {
     }
 
     #[dbus_interface(property)]
-    fn tool_tip(
-        &self,
-    ) -> (
-        String,
-        Vec<(i32, i32, Vec<u8>)>,
-        String,
-        String,
-    ) {
+    fn tool_tip(&self) -> (String, Vec<(i32, i32, Vec<u8>)>, String, String) {
         let s = self.state.lock().unwrap();
         (
             s.tooltip_title.clone(),
@@ -109,7 +102,10 @@ pub fn run_tray_loop_linux(cmd_rx: Receiver<TrayCommand>, event_tx: Sender<TrayE
     };
 
     if let Err(e) = conn.object_server().at("/org/bit7z/TrayIcon", icon) {
-        tracing::warn!("Failed to register tray D-Bus object ({}) — tray disabled", e);
+        tracing::warn!(
+            "Failed to register tray D-Bus object ({}) — tray disabled",
+            e
+        );
         fallback_loop(cmd_rx);
         return;
     }

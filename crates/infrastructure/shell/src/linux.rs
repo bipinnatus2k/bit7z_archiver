@@ -24,33 +24,32 @@ Exec=bit7z_archiver --test %f
 
 impl ShellIntegration for LinuxShellIntegration {
     fn register() -> Result<(), ShellError> {
-        let dir = std::path::PathBuf::from(
-            std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
-                format!("{}/.local/share", std::env::var("HOME").unwrap_or_default())
-            })
-        ).join("applications");
+        let dir = std::path::PathBuf::from(std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
+            format!("{}/.local/share", std::env::var("HOME").unwrap_or_default())
+        }))
+        .join("applications");
         std::fs::create_dir_all(&dir).map_err(ShellError::Io)?;
         std::fs::write(dir.join("bit7z-archiver.desktop"), DESKTOP_FILE).map_err(ShellError::Io)?;
         Ok(())
     }
 
     fn unregister() -> Result<(), ShellError> {
-        let dir = std::path::PathBuf::from(
-            std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
-                format!("{}/.local/share", std::env::var("HOME").unwrap_or_default())
-            })
-        ).join("applications");
+        let dir = std::path::PathBuf::from(std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
+            format!("{}/.local/share", std::env::var("HOME").unwrap_or_default())
+        }))
+        .join("applications");
         let path = dir.join("bit7z-archiver.desktop");
-        if path.exists() { std::fs::remove_file(path).map_err(ShellError::Io)?; }
+        if path.exists() {
+            std::fs::remove_file(path).map_err(ShellError::Io)?;
+        }
         Ok(())
     }
 
     fn is_registered() -> bool {
-        let dir = std::path::PathBuf::from(
-            std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
-                format!("{}/.local/share", std::env::var("HOME").unwrap_or_default())
-            })
-        ).join("applications");
+        let dir = std::path::PathBuf::from(std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
+            format!("{}/.local/share", std::env::var("HOME").unwrap_or_default())
+        }))
+        .join("applications");
         dir.join("bit7z-archiver.desktop").exists()
     }
 }

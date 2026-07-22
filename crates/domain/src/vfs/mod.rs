@@ -69,8 +69,8 @@ pub mod queue;
 pub mod tree;
 
 pub use overlay::OverlayVfs;
-pub use queue::{EditOperation, EditTransaction, EditQueue};
-pub use tree::{DirtyTree, DirtyEntry, DirtyType, Tree};
+pub use queue::{EditOperation, EditQueue, EditTransaction};
+pub use tree::{DirtyEntry, DirtyTree, DirtyType, Tree};
 
 use std::collections::HashMap;
 

@@ -15,9 +15,7 @@ use bit7z_domain::archive::{
     ArchiveEntry, ArchiveFormat, ArchiveHandle, ArchiveSession, ChangeSet, EncryptionConfig, Page,
     Password, TestResult,
 };
-use bit7z_domain::repository::{
-    ArchiveError, ArchiveProperties, ArchiveRepository, ExtractOptions, WriteOptions,
-};
+use bit7z_domain::repository::{ArchiveError, ArchiveProperties, ExtractOptions, WriteOptions};
 use bit7z_infra_persistence::adapters::{
     Bit7zReaderAdapter, Bit7zWriterAdapter, InMemorySessionStore,
 };
@@ -35,14 +33,17 @@ const BIT7Z_BACKEND_ID: u64 = 1;
 ///
 /// This is the production wiring function. Callers that need a different set of
 /// ports (e.g. for tests) should use [`RuntimeBuilder`] directly.
-pub fn build_bit7z_runtime(lib: bit7z_infra_bit7z::Library) -> (Arc<Runtime>, Arc<dyn CapabilityResolver>) {
+pub fn build_bit7z_runtime(
+    lib: bit7z_infra_bit7z::Library,
+) -> (Arc<Runtime>, Arc<dyn CapabilityResolver>) {
     let registry = Arc::new(CapabilityRegistry::new());
     register_bit7z_capabilities(&registry);
     let resolver: Arc<dyn CapabilityResolver> =
         Arc::new(DefaultCapabilityResolver::new(registry.clone()));
 
     let lib = Arc::new(lib);
-    let reader: Arc<dyn bit7z_ports::ArchiveReader> = Arc::new(Bit7zReaderAdapter::new_shared(lib.clone()));
+    let reader: Arc<dyn bit7z_ports::ArchiveReader> =
+        Arc::new(Bit7zReaderAdapter::new_shared(lib.clone()));
     let writer: Arc<dyn bit7z_ports::ArchiveWriter> = Arc::new(Bit7zWriterAdapter::new_shared(lib));
     let session_store: Arc<dyn bit7z_ports::session::SessionStore> =
         Arc::new(InMemorySessionStore::new());
@@ -56,7 +57,9 @@ pub fn build_bit7z_runtime(lib: bit7z_infra_bit7z::Library) -> (Arc<Runtime>, Ar
     };
 
     let ex = Arc::new(smol::Executor::new());
-    let context = RuntimeContext { executor: ex.clone() };
+    let context = RuntimeContext {
+        executor: ex.clone(),
+    };
 
     let runtime = Arc::new(RuntimeBuilder::new().build(ports, context));
 
@@ -132,18 +135,18 @@ impl TempStorage for StubTempStorage {
     }
 }
 
-/// Adapts the new runtime-centric API to the legacy [`ArchiveRepository`] trait.
+/// Runtime-backed archive service.
 ///
-/// This allows the presentation layer to migrate incrementally: views can keep
-/// using `ArchiveRepository` while the implementation underneath uses the
-/// runtime, capability resolver, and ports.
-pub struct RuntimeArchiveRepository {
+/// This is the primary facade the presentation layer uses to open, create,
+/// extract, test, modify, and inspect archives. It submits operations to the
+/// runtime and queries the session manager for synchronous navigation.
+pub struct ArchiveService {
     runtime: Arc<Runtime>,
     resolver: Arc<dyn CapabilityResolver>,
     sessions: std::sync::Mutex<std::collections::HashMap<u64, ArchiveSession>>,
 }
 
-impl RuntimeArchiveRepository {
+impl ArchiveService {
     pub fn new(runtime: Arc<Runtime>, resolver: Arc<dyn CapabilityResolver>) -> Self {
         Self {
             runtime,
@@ -182,8 +185,12 @@ impl RuntimeArchiveRepository {
     }
 }
 
-impl ArchiveRepository for RuntimeArchiveRepository {
-    fn open(&self, path: &Path, _password: Option<&Password>) -> Result<ArchiveHandle, ArchiveError> {
+impl ArchiveService {
+    pub fn open(
+        &self,
+        path: &Path,
+        _password: Option<&Password>,
+    ) -> Result<ArchiveHandle, ArchiveError> {
         let format = self.resolve_format(path);
         let descriptor = self
             .resolver
@@ -208,7 +215,10 @@ impl ArchiveRepository for RuntimeArchiveRepository {
                 let session = find_session_by_path(&self.runtime, path)
                     .ok_or_else(|| ArchiveError::Internal("session not stored".into()))?;
                 let archive_handle = ArchiveHandle::new_reader().with_path(path.to_path_buf());
-                self.sessions.lock().unwrap().insert(archive_handle.id, session);
+                self.sessions
+                    .lock()
+                    .unwrap()
+                    .insert(archive_handle.id, session);
                 Ok(archive_handle)
             }
             JobResult::Failed(msg) => Err(ArchiveError::Internal(msg)),
@@ -216,7 +226,7 @@ impl ArchiveRepository for RuntimeArchiveRepository {
         }
     }
 
-    fn create(
+    pub fn create(
         &self,
         path: &Path,
         format: ArchiveFormat,
@@ -248,7 +258,10 @@ impl ArchiveRepository for RuntimeArchiveRepository {
                 let archive_handle = ArchiveHandle::new_writer()
                     .with_path(path.to_path_buf())
                     .with_format(format);
-                self.sessions.lock().unwrap().insert(archive_handle.id, session);
+                self.sessions
+                    .lock()
+                    .unwrap()
+                    .insert(archive_handle.id, session);
                 Ok(archive_handle)
             }
             JobResult::Failed(msg) => Err(ArchiveError::Internal(msg)),
@@ -256,7 +269,7 @@ impl ArchiveRepository for RuntimeArchiveRepository {
         }
     }
 
-    fn list_page(
+    pub fn list_page(
         &self,
         archive: &ArchiveHandle,
         offset: usize,
@@ -271,7 +284,10 @@ impl ArchiveRepository for RuntimeArchiveRepository {
         Ok(state.vfs.list_page(offset, limit))
     }
 
-    fn get_properties(&self, archive: &ArchiveHandle) -> Result<ArchiveProperties, ArchiveError> {
+    pub fn get_properties(
+        &self,
+        archive: &ArchiveHandle,
+    ) -> Result<ArchiveProperties, ArchiveError> {
         let session = self.lookup_session(archive)?;
         let _state = self
             .runtime
@@ -282,7 +298,7 @@ impl ArchiveRepository for RuntimeArchiveRepository {
         Ok(ArchiveProperties::default())
     }
 
-    fn extract(
+    pub fn extract(
         &self,
         archive: &ArchiveHandle,
         indices: &[u32],
@@ -317,7 +333,7 @@ impl ArchiveRepository for RuntimeArchiveRepository {
         }
     }
 
-    fn extract_to_buffer(
+    pub fn extract_to_buffer(
         &self,
         archive: &ArchiveHandle,
         index: u32,
@@ -330,7 +346,7 @@ impl ArchiveRepository for RuntimeArchiveRepository {
             .map_err(|e| ArchiveError::Internal(e.to_string()))
     }
 
-    fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
+    pub fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
         let session = self.lookup_session(archive)?;
         let descriptor = self
             .resolver
@@ -361,14 +377,14 @@ impl ArchiveRepository for RuntimeArchiveRepository {
         }
     }
 
-    fn close(&self, archive: &ArchiveHandle) {
+    pub fn close(&self, archive: &ArchiveHandle) {
         if let Ok(session) = self.lookup_session(archive) {
             let _ = self.runtime.session_manager.close(session.id);
         }
         self.sessions.lock().unwrap().remove(&archive.id);
     }
 
-    fn plan_changes(
+    pub fn plan_changes(
         &self,
         archive: &ArchiveHandle,
         change_set: &ChangeSet,
@@ -383,7 +399,7 @@ impl ArchiveRepository for RuntimeArchiveRepository {
         Ok(bit7z_domain::plan::plan_changes(&snapshot, change_set))
     }
 
-    fn apply_changes(
+    pub fn apply_changes(
         &self,
         archive: &ArchiveHandle,
         _plan: &bit7z_domain::plan::ExecutionPlan,
@@ -415,7 +431,7 @@ impl ArchiveRepository for RuntimeArchiveRepository {
         }
     }
 
-    fn list_directory(
+    pub fn list_directory(
         &self,
         archive: &ArchiveHandle,
         path: &str,

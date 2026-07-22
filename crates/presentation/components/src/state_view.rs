@@ -1,9 +1,9 @@
 use gpui::*;
 use gpui_component::ActiveTheme;
-use gpui_component::skeleton::Skeleton;
-use gpui_component::{h_flex, v_flex, Icon, IconName, Sizable};
 use gpui_component::button::ButtonVariants;
+use gpui_component::skeleton::Skeleton;
 use gpui_component::spinner::Spinner;
+use gpui_component::{Icon, IconName, Sizable, h_flex, v_flex};
 
 pub fn loading_view(cx: &App) -> impl IntoElement {
     let theme = cx.theme();
@@ -13,11 +13,7 @@ pub fn loading_view(cx: &App) -> impl IntoElement {
         .justify_center()
         .gap_2()
         .child(Spinner::new().large().color(theme.primary))
-        .child(
-            div()
-                .text_color(theme.muted_foreground)
-                .child("Loading..."),
-        )
+        .child(div().text_color(theme.muted_foreground).child("Loading..."))
 }
 
 pub fn skeleton_view() -> impl IntoElement {
@@ -30,17 +26,15 @@ pub fn skeleton_view() -> impl IntoElement {
 }
 
 pub fn skeleton_table_rows(count: usize) -> impl IntoElement {
-    v_flex()
-        .gap_2()
-        .children((0..count).map(|_| {
-            h_flex()
-                .gap_4()
-                .p_3()
-                .child(Skeleton::new().size_8().rounded_full())
-                .child(Skeleton::new().w(px(150.)).h_4().rounded_md())
-                .child(Skeleton::new().w(px(100.)).h_4().rounded_md())
-                .child(Skeleton::new().w(px(80.)).h_4().rounded_md())
-        }))
+    v_flex().gap_2().children((0..count).map(|_| {
+        h_flex()
+            .gap_4()
+            .p_3()
+            .child(Skeleton::new().size_8().rounded_full())
+            .child(Skeleton::new().w(px(150.)).h_4().rounded_md())
+            .child(Skeleton::new().w(px(100.)).h_4().rounded_md())
+            .child(Skeleton::new().w(px(80.)).h_4().rounded_md())
+    }))
 }
 
 pub fn empty_view(cx: &App, message: &str) -> impl IntoElement {

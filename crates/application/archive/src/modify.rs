@@ -1,33 +1,39 @@
-use bit7z_domain::archive::*;
-use bit7z_domain::plan::{ExecutionPlan, ConflictResolution};
-use bit7z_domain::repository::*;
-use bit7z_domain::repository::NoopNotifier;
+use bit7z_domain::archive::{ArchiveHandle, ChangeSet};
+use bit7z_domain::plan::{ConflictResolution, ExecutionPlan};
+use bit7z_domain::repository::{ArchiveError, NoopNotifier, ProgressNotifier, WriteOptions};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use crate::runtime_service::ArchiveService;
+
 pub struct ModifyArchiveUseCase {
-    repo: Arc<dyn ArchiveRepository>,
+    service: Arc<ArchiveService>,
 }
 
 impl ModifyArchiveUseCase {
-    pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self {
-        Self { repo }
+    pub fn new(service: Arc<ArchiveService>) -> Self {
+        Self { service }
     }
 
-    pub fn plan(&self, archive: &ArchiveHandle, change_set: ChangeSet)
-        -> Result<ExecutionPlan, ArchiveError>
-    {
-        self.repo.plan_changes(archive, &change_set)
+    pub fn plan(
+        &self,
+        archive: &ArchiveHandle,
+        change_set: ChangeSet,
+    ) -> Result<ExecutionPlan, ArchiveError> {
+        self.service.plan_changes(archive, &change_set)
     }
 
-    pub fn execute(&self, archive: &ArchiveHandle, plan: &ExecutionPlan, options: &WriteOptions)
-        -> Result<(), ArchiveError>
-    {
+    pub fn execute(
+        &self,
+        archive: &ArchiveHandle,
+        plan: &ExecutionPlan,
+        options: &WriteOptions,
+    ) -> Result<(), ArchiveError> {
         if plan.has_conflicts() {
             return Err(ArchiveError::Conflict);
         }
-        self.repo.apply_changes(archive, plan, options)
+        self.service.apply_changes(archive, plan, options)
     }
 
     pub fn execute_with_resolutions(
@@ -36,10 +42,9 @@ impl ModifyArchiveUseCase {
         mut plan: ExecutionPlan,
         resolutions: &[ConflictResolution],
         options: &WriteOptions,
-    ) -> Result<(), ArchiveError>
-    {
+    ) -> Result<(), ArchiveError> {
         plan.apply_resolutions(resolutions);
-        self.repo.apply_changes(archive, &plan, options)
+        self.service.apply_changes(archive, &plan, options)
     }
 
     pub fn add_files(
@@ -56,13 +61,14 @@ impl ModifyArchiveUseCase {
 
         let mut change_set = ChangeSet::new();
         for f in files {
-            let archive_path = f.file_name()
+            let archive_path = f
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             change_set.add(f.clone(), archive_path);
         }
 
-        let plan = self.repo.plan_changes(archive, &change_set)?;
+        let plan = self.service.plan_changes(archive, &change_set)?;
 
         if plan.has_conflicts() {
             return Err(ArchiveError::Conflict);
@@ -74,7 +80,7 @@ impl ModifyArchiveUseCase {
             notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
         };
 
-        self.repo.apply_changes(archive, &plan, &options)
+        self.service.apply_changes(archive, &plan, &options)
     }
 
     pub fn delete_entries(
@@ -88,7 +94,7 @@ impl ModifyArchiveUseCase {
             change_set.delete(idx);
         }
 
-        let plan = self.repo.plan_changes(archive, &change_set)?;
+        let plan = self.service.plan_changes(archive, &change_set)?;
 
         if plan.has_conflicts() {
             return Err(ArchiveError::Conflict);
@@ -100,7 +106,7 @@ impl ModifyArchiveUseCase {
             notifier: progress.unwrap_or_else(|| Arc::new(NoopNotifier)),
         };
 
-        self.repo.apply_changes(archive, &plan, &options)
+        self.service.apply_changes(archive, &plan, &options)
     }
 
     pub fn rename_entry(
@@ -112,7 +118,7 @@ impl ModifyArchiveUseCase {
         let mut change_set = ChangeSet::new();
         change_set.rename(index, new_name.to_string());
 
-        let plan = self.repo.plan_changes(archive, &change_set)?;
+        let plan = self.service.plan_changes(archive, &change_set)?;
 
         if plan.has_conflicts() {
             return Err(ArchiveError::Conflict);
@@ -124,6 +130,6 @@ impl ModifyArchiveUseCase {
             notifier: Arc::new(NoopNotifier),
         };
 
-        self.repo.apply_changes(archive, &plan, &options)
+        self.service.apply_changes(archive, &plan, &options)
     }
 }

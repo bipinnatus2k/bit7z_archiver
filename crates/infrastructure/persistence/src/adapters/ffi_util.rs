@@ -2,9 +2,7 @@
 
 use std::path::Path;
 
-use bit7z_domain::archive::{
-    ArchiveEntry, ArchiveFormat,
-};
+use bit7z_domain::archive::{ArchiveEntry, ArchiveFormat};
 use chrono::DateTime;
 
 use bit7z_infra_bit7z as bit7z;

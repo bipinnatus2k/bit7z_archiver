@@ -17,7 +17,8 @@ impl SettingsDialog {
                         title: Some(SharedString::from("Settings")),
                         appears_transparent: false,
                         traffic_light_position: None,
-                    }.into(),
+                    }
+                    .into(),
                     window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                         point(px(150.), px(150.)),
                         size(px(480.), px(500.)),
@@ -32,14 +33,13 @@ impl SettingsDialog {
                     cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
                 },
             );
-        }).detach();
+        })
+        .detach();
     }
 }
 
 impl Render for SettingsDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .child(self.panel.clone())
+        v_flex().size_full().child(self.panel.clone())
     }
 }

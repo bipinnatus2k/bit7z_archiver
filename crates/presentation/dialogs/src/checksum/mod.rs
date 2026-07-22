@@ -1,15 +1,16 @@
-use bit7z_app_checksum::{CalculateChecksumUseCase, ChecksumAlgorithm, ChecksumResult};
+use bit7z_app_archive::runtime_service::ArchiveService;
+use bit7z_app_checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
+use bit7z_domain::archive::ArchiveHandle;
+use bit7z_domain::repository::ArchiveError;
 use bit7z_infra_progress::progress_channel;
-use bit7z_domain::archive::*;
-use bit7z_domain::repository::*;
+use bit7z_pres_components::window_dialog::{
+    CloseAction, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    WindowDialogOptions, open_window_dialog_async,
+};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::v_flex;
 use std::sync::Arc;
-use bit7z_pres_components::window_dialog::{
-    open_window_dialog_async, CloseAction, DialogContent, DialogDescription, DialogFooter,
-    DialogHeader, DialogTitle, WindowDialogOptions,
-};
 
 pub struct ChecksumDialog;
 
@@ -18,7 +19,7 @@ impl ChecksumDialog {
         cx: &mut AsyncApp,
         handle: ArchiveHandle,
         indices: Vec<u32>,
-        repo: Arc<dyn ArchiveRepository>,
+        service: Arc<ArchiveService>,
     ) {
         open_window_dialog_async(
             cx,
@@ -33,9 +34,7 @@ impl ChecksumDialog {
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Opaque,
             },
-            move |_window, cx| {
-                cx.new(move |_| ChecksumContent::new(handle, indices, repo))
-            },
+            move |_window, cx| cx.new(move |_| ChecksumContent::new(handle, indices, service)),
         );
     }
 }
@@ -43,18 +42,22 @@ impl ChecksumDialog {
 struct ChecksumContent {
     handle: ArchiveHandle,
     indices: Vec<u32>,
-    repo: Arc<dyn ArchiveRepository>,
+    service: Arc<ArchiveService>,
 }
 
 impl ChecksumContent {
-    fn new(handle: ArchiveHandle, indices: Vec<u32>, repo: Arc<dyn ArchiveRepository>) -> Self {
-        Self { handle, indices, repo }
+    fn new(handle: ArchiveHandle, indices: Vec<u32>, service: Arc<ArchiveService>) -> Self {
+        Self {
+            handle,
+            indices,
+            service,
+        }
     }
 
     fn on_calculate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.remove_window();
 
-        let repo = self.repo.clone();
+        let service = self.service.clone();
         let handle = self.handle.clone();
         let indices = self.indices.clone();
         let (_progress_tx, progress_rx) = progress_channel();
@@ -76,7 +79,7 @@ impl ChecksumContent {
                     ChecksumAlgorithm::Sha1,
                     ChecksumAlgorithm::Sha256,
                 ];
-                let uc = CalculateChecksumUseCase::new(repo);
+                let uc = CalculateChecksumUseCase::new(service);
                 let _ = uc.execute(&handle, &indices, &algos);
                 // TODO: collect per-file results from the use case
                 let _ = result_tx.send(Ok::<_, ArchiveError>(()));
@@ -89,7 +92,9 @@ impl ChecksumContent {
                     Err(crossbeam_channel::TryRecvError::Empty) => {
                         cx.background_spawn(std::future::ready(())).await;
                     }
-                    Err(crossbeam_channel::TryRecvError::Disconnected) => break Err(ArchiveError::Internal("disconnected".into())),
+                    Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                        break Err(ArchiveError::Internal("disconnected".into()));
+                    }
                 }
             };
 
@@ -124,26 +129,19 @@ impl Render for ChecksumCompleteContent {
         v_flex()
             .size_full()
             .gap(px(12.))
+            .child(DialogHeader::new().child(DialogTitle::new().child("Checksum Complete")))
+            .child(DialogContent::new().child(
+                DialogDescription::new().child("Checksums have been calculated successfully."),
+            ))
             .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child("Checksum Complete")),
-            )
-            .child(
-                DialogContent::new().child(
-                    DialogDescription::new()
-                        .child("Checksums have been calculated successfully."),
+                DialogFooter::new().justify_end().child(
+                    Button::new("close")
+                        .label("Close")
+                        .primary()
+                        .on_click(|_, window, _| {
+                            window.remove_window();
+                        }),
                 ),
-            )
-            .child(
-                DialogFooter::new().justify_end()
-                    .child(
-                        Button::new("close")
-                            .label("Close")
-                            .primary()
-                            .on_click(|_, window, _| {
-                                window.remove_window();
-                            }),
-                    ),
             )
     }
 }
@@ -156,10 +154,7 @@ impl Render for ChecksumContent {
         v_flex()
             .size_full()
             .gap(px(12.))
-            .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child("Calculate Checksum")),
-            )
+            .child(DialogHeader::new().child(DialogTitle::new().child("Calculate Checksum")))
             .child(
                 DialogContent::new().child(
                     v_flex()
@@ -170,13 +165,16 @@ impl Render for ChecksumContent {
                             count,
                             if count == 1 { "y" } else { "ies" }
                         )))
-                        .child(DialogDescription::new().child(
-                            "Algorithms: CRC32, MD5, SHA-1, SHA-256",
-                        )),
+                        .child(
+                            DialogDescription::new()
+                                .child("Algorithms: CRC32, MD5, SHA-1, SHA-256"),
+                        ),
                 ),
             )
             .child(
-                DialogFooter::new().justify_end().gap_2()
+                DialogFooter::new()
+                    .justify_end()
+                    .gap_2()
                     .child(
                         Button::new("cancel")
                             .label("Cancel")
@@ -184,17 +182,12 @@ impl Render for ChecksumContent {
                                 window.remove_window();
                             }),
                     )
-                    .child(
-                        Button::new("calc")
-                            .label("Calculate")
-                            .primary()
-                            .on_click({
-                                let h = h.clone();
-                                move |_, window, cx| {
-                                    h.update(cx, |this, cx| this.on_calculate(window, cx));
-                                }
-                            }),
-                    ),
+                    .child(Button::new("calc").label("Calculate").primary().on_click({
+                        let h = h.clone();
+                        move |_, window, cx| {
+                            h.update(cx, |this, cx| this.on_calculate(window, cx));
+                        }
+                    })),
             )
     }
 }

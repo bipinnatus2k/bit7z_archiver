@@ -1,17 +1,28 @@
 use crate::UpdateMode;
 use crate::{ArchiveReader, Library, Writer, WriterCompressionLevel, WriterFormat};
 use crossbeam_channel::{Receiver, Sender};
-use std::ffi::{c_char, c_void, CStr};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::ffi::{CStr, c_char, c_void};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 
 /// Events emitted by the worker to the UI thread.
 #[derive(Debug)]
 pub enum WorkerEvent {
-    Progress { current: u64, total: u64, file: String },
-    Conflict { src: String, dest: String, existing_size: u64 },
-    Complete { total_files: u64, total_bytes: u64 },
+    Progress {
+        current: u64,
+        total: u64,
+        file: String,
+    },
+    Conflict {
+        src: String,
+        dest: String,
+        existing_size: u64,
+    },
+    Complete {
+        total_files: u64,
+        total_bytes: u64,
+    },
     Error(String),
 }
 
@@ -46,14 +57,22 @@ extern "C" fn overwrite_trampoline(
     ctx: *mut c_void,
 ) -> i32 {
     let ctx = unsafe { &*(ctx as *const WorkerCtx) };
-    let src_str = unsafe { CStr::from_ptr(src) }.to_string_lossy().into_owned();
-    let dest_str = unsafe { CStr::from_ptr(dest) }.to_string_lossy().into_owned();
+    let src_str = unsafe { CStr::from_ptr(src) }
+        .to_string_lossy()
+        .into_owned();
+    let dest_str = unsafe { CStr::from_ptr(dest) }
+        .to_string_lossy()
+        .into_owned();
 
-    if ctx.event_tx.send(WorkerEvent::Conflict {
-        src: src_str,
-        dest: dest_str,
-        existing_size,
-    }).is_err() {
+    if ctx
+        .event_tx
+        .send(WorkerEvent::Conflict {
+            src: src_str,
+            dest: dest_str,
+            existing_size,
+        })
+        .is_err()
+    {
         return 1;
     }
 
@@ -87,7 +106,9 @@ extern "C" fn progress_trampoline(processed: u64, total: u64, ctx: *mut c_void) 
 
 extern "C" fn file_trampoline(path: *const c_char, ctx: *mut c_void) {
     let ctx = unsafe { &*(ctx as *const WorkerCtx) };
-    let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();
+    let path_str = unsafe { CStr::from_ptr(path) }
+        .to_string_lossy()
+        .into_owned();
     let _ = ctx.event_tx.send(WorkerEvent::Progress {
         current: 0,
         total: 0,
@@ -193,7 +214,9 @@ pub fn spawn_compress(
     }
     writer.set_update_mode(update_mode);
     for f in &files {
-        writer.add_file(f).map_err(|e| format!("add_file {}: {}", f, e))?;
+        writer
+            .add_file(f)
+            .map_err(|e| format!("add_file {}: {}", f, e))?;
     }
 
     Ok(std::thread::spawn(move || {
@@ -229,16 +252,16 @@ pub fn spawn_compress(
 
 #[cfg(test)]
 mod tests {
-    use crate::worker::{file_trampoline, overwrite_trampoline, progress_trampoline, ConflictAction, WorkerCtx, WorkerEvent};
+    use crate::worker::{
+        ConflictAction, WorkerCtx, WorkerEvent, file_trampoline, overwrite_trampoline,
+        progress_trampoline,
+    };
     use crossbeam_channel::{Receiver, Sender};
     use std::ffi::CString;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    fn make_ctx(
-        event_tx: Sender<WorkerEvent>,
-        conflict_rx: Receiver<ConflictAction>,
-    ) -> WorkerCtx {
+    fn make_ctx(event_tx: Sender<WorkerEvent>, conflict_rx: Receiver<ConflictAction>) -> WorkerCtx {
         WorkerCtx {
             cancel: Arc::new(AtomicBool::new(false)),
             pause: Arc::new(AtomicBool::new(false)),
@@ -248,7 +271,7 @@ mod tests {
     }
 
     fn as_ctx_ptr(ctx: &WorkerCtx) -> *mut core::ffi::c_void {
-        ctx as *const WorkerCtx as *mut  core::ffi::c_void
+        ctx as *const WorkerCtx as *mut core::ffi::c_void
     }
 
     // -- Progress trampoline tests --
@@ -264,7 +287,11 @@ mod tests {
         assert_eq!(result, 1, "expected continue");
         let event = rx.try_recv().expect("expected progress event");
         match event {
-            WorkerEvent::Progress { current, total, file } => {
+            WorkerEvent::Progress {
+                current,
+                total,
+                file,
+            } => {
                 assert_eq!(current, 42);
                 assert_eq!(total, 100);
                 assert!(file.is_empty());
@@ -306,7 +333,9 @@ mod tests {
         let result = progress_trampoline(50, 200, as_ctx_ptr(&ctx));
         assert_eq!(result, 1, "expected continue after unpause");
 
-        let event = rx.try_recv().expect("expected progress event after unpause");
+        let event = rx
+            .try_recv()
+            .expect("expected progress event after unpause");
         match event {
             WorkerEvent::Progress { current, total, .. } => {
                 assert_eq!(current, 50);
@@ -352,22 +381,19 @@ mod tests {
             conflict_tx_clone.send(ConflictAction::Overwrite).ok();
         });
 
-        let result = overwrite_trampoline(
-            src.as_ptr(),
-            dest.as_ptr(),
-            1024,
-            0,
-            0,
-            0,
-            as_ctx_ptr(&ctx),
-        );
+        let result =
+            overwrite_trampoline(src.as_ptr(), dest.as_ptr(), 1024, 0, 0, 0, as_ctx_ptr(&ctx));
 
         handle.join().ok();
         assert_eq!(result, 0, "expected Overwrite => 0");
 
         let event = rx.try_recv().expect("expected conflict event");
         match event {
-            WorkerEvent::Conflict { src, dest, existing_size } => {
+            WorkerEvent::Conflict {
+                src,
+                dest,
+                existing_size,
+            } => {
                 assert_eq!(src, "old.txt");
                 assert_eq!(dest, "/out/old.txt");
                 assert_eq!(existing_size, 1024);
@@ -388,16 +414,8 @@ mod tests {
             conflict_tx.send(ConflictAction::Skip).ok();
         });
 
-        let result = overwrite_trampoline(
-            src.as_ptr(),
-            dest.as_ptr(),
-            0,
-            0,
-            0,
-            0,
-            as_ctx_ptr(&ctx),
-        );
-
+        let result =
+            overwrite_trampoline(src.as_ptr(), dest.as_ptr(), 0, 0, 0, 0, as_ctx_ptr(&ctx));
 
         handle.join().ok();
         assert_eq!(result, 1, "expected Skip => 1");
@@ -432,15 +450,8 @@ mod tests {
             conflict_tx.send(ConflictAction::Overwrite).ok();
         });
 
-        let result = overwrite_trampoline(
-            src.as_ptr(),
-            dest.as_ptr(),
-            0,
-            0,
-            0,
-            0,
-            as_ctx_ptr(&ctx),
-        );
+        let result =
+            overwrite_trampoline(src.as_ptr(), dest.as_ptr(), 0, 0, 0, 0, as_ctx_ptr(&ctx));
 
         handle.join().ok();
         assert_eq!(result, 0);
@@ -458,15 +469,8 @@ mod tests {
         // Send response before the trampoline blocks
         conflict_tx.send(ConflictAction::Skip).ok();
 
-        let result = overwrite_trampoline(
-            src.as_ptr(),
-            dest.as_ptr(),
-            0,
-            0,
-            0,
-            0,
-            as_ctx_ptr(&ctx),
-        );
+        let result =
+            overwrite_trampoline(src.as_ptr(), dest.as_ptr(), 0, 0, 0, 0, as_ctx_ptr(&ctx));
         assert_eq!(result, 1);
     }
 
@@ -482,15 +486,8 @@ mod tests {
         let src = CString::new("src").unwrap();
         let dest = CString::new("dst").unwrap();
 
-        let result = overwrite_trampoline(
-            src.as_ptr(),
-            dest.as_ptr(),
-            0,
-            0,
-            0,
-            0,
-            as_ctx_ptr(&ctx),
-        );
+        let result =
+            overwrite_trampoline(src.as_ptr(), dest.as_ptr(), 0, 0, 0, 0, as_ctx_ptr(&ctx));
         // When recv() fails, default is Skip => 1
         assert_eq!(result, 1);
     }

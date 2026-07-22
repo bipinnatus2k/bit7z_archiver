@@ -904,6 +904,7 @@ dependencies = [
 name = "bit7z-app-checksum"
 version = "0.1.0"
 dependencies = [
+ "bit7z-app-archive",
  "bit7z-domain",
  "crc32fast",
  "md-5",
@@ -916,6 +917,7 @@ dependencies = [
 name = "bit7z-app-preview"
 version = "0.1.0"
 dependencies = [
+ "bit7z-app-archive",
  "bit7z-domain",
 ]
 
@@ -923,6 +925,7 @@ dependencies = [
 name = "bit7z-app-test"
 version = "0.1.0"
 dependencies = [
+ "bit7z-app-archive",
  "bit7z-domain",
  "bit7z-infra-progress",
  "crc32fast",
@@ -1079,6 +1082,7 @@ dependencies = [
 name = "bit7z-pres-progress"
 version = "0.1.0"
 dependencies = [
+ "bit7z-domain",
  "bit7z-infra-progress",
  "bit7z-infra-tray",
  "crossbeam-channel",
@@ -1146,6 +1150,7 @@ name = "bit7z-rt-app-state"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bit7z-app-archive",
  "bit7z-domain",
  "bit7z-infra-persistence",
  "bit7z-infra-tray",
@@ -1214,6 +1219,7 @@ dependencies = [
 name = "bit7z-rt-worker"
 version = "0.1.0"
 dependencies = [
+ "bit7z-app-archive",
  "bit7z-domain",
  "bit7z-rt-ipc",
  "log",

@@ -2,8 +2,8 @@ use bit7z_domain::repository::ProgressUpdate;
 use bit7z_infra_progress::ProgressReceiver;
 use bit7z_infra_tray::{TrayCommand, TrayGlobal, TrayManager};
 use bit7z_pres_components::window_dialog::{
-    open_window_dialog_async, CloseAction, DialogContent, DialogHeader, DialogTitle,
-    WindowDialogOptions,
+    CloseAction, DialogContent, DialogHeader, DialogTitle, WindowDialogOptions,
+    open_window_dialog_async,
 };
 use crossbeam_channel::{Receiver, TryRecvError};
 use gpui::prelude::FluentBuilder;
@@ -11,10 +11,10 @@ use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::progress::Progress;
-use gpui_component::{h_flex, v_flex, Disableable, Sizable};
-use humansize::{format_size, BINARY};
-use std::sync::atomic::{AtomicBool, Ordering};
+use gpui_component::{Disableable, Sizable, h_flex, v_flex};
+use humansize::{BINARY, format_size};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct ProgressDialog {
     pub title: String,
@@ -252,25 +252,22 @@ impl Render for ProgressDialog {
                                 window.remove_window();
                             })),
                     )
-                    .child(
-                        DialogClose::new()
-                            .when_else(!self.is_all_complete && !self.is_cancel, |el| {
-                                el.child(
-                                    Button::new("cancel")
-                                        .label("Cancel")
-                                        .disabled(self.is_cancel)
-                                        .on_click(cx.listener(|this, _, _, _| this.do_cancel())),
-                                )
-                            }, |el| {
-                                el.child(
-                                    Button::new("finish")
-                                        .label("Finish")
-                                        .on_click(cx.listener(|_, _click_event, window, _| {
-                                            window.remove_window()
-                                        })),
-                                )
-                            }),
-                    ),
+                    .child(DialogClose::new().when_else(
+                        !self.is_all_complete && !self.is_cancel,
+                        |el| {
+                            el.child(
+                                Button::new("cancel")
+                                    .label("Cancel")
+                                    .disabled(self.is_cancel)
+                                    .on_click(cx.listener(|this, _, _, _| this.do_cancel())),
+                            )
+                        },
+                        |el| {
+                            el.child(Button::new("finish").label("Finish").on_click(
+                                cx.listener(|_, _click_event, window, _| window.remove_window()),
+                            ))
+                        },
+                    )),
             )
     }
 }

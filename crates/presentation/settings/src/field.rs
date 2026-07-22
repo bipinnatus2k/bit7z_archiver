@@ -2,7 +2,7 @@ use std::any::{Any, TypeId};
 
 use gpui::*;
 use gpui_component::button::Button;
-use gpui_component::{h_flex, ActiveTheme, Sizable};
+use gpui_component::{ActiveTheme, Sizable, h_flex};
 
 use crate::backend::store::SettingsStore;
 use crate::notify_panel;

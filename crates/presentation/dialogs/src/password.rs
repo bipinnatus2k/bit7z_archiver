@@ -1,11 +1,11 @@
-use gpui_component::ActiveTheme;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use bit7z_domain::archive::Password;
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::ActiveTheme;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{h_flex, v_flex};
-use bit7z_domain::archive::Password;
 
 #[derive(Debug, Clone)]
 pub enum PasswordDialogEvent {
@@ -86,7 +86,9 @@ impl PasswordDialog {
 
     fn submit(&mut self) {
         if let Some(tx) = self.result_tx.take() {
-            let _ = tx.send(PasswordResult::Submitted(self.password.as_str().parse().unwrap()));
+            let _ = tx.send(PasswordResult::Submitted(
+                self.password.as_str().parse().unwrap(),
+            ));
         }
     }
 
@@ -142,8 +144,7 @@ impl Render for PasswordDialog {
             .child(
                 h_flex()
                     .gap_2()
-                    .child(Input::new(&self.input_state).mask_toggle().flex_1())
-                ,
+                    .child(Input::new(&self.input_state).mask_toggle().flex_1()),
             )
             .when(has_error, |el| {
                 el.child(
@@ -177,5 +178,3 @@ impl Render for PasswordDialog {
             )
     }
 }
-
-

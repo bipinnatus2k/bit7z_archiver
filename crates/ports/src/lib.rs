@@ -80,7 +80,6 @@ pub trait ArchiveWriter: Send + Sync {
     ) -> Result<(), ArchiveError>;
 }
 
-
 /// Cryptographic operations used by checksum/test workflows.
 pub trait CryptoProvider: Send + Sync {
     /// Compute a hash for the provided data.

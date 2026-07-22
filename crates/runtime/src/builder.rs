@@ -6,11 +6,11 @@
 
 use std::sync::Arc;
 
+use crate::PortSet;
 use crate::{
     DefaultJobManager, DefaultScheduler, DefaultSessionManager, Executor, LocalExecutor,
     ResourceManager, Runtime, RuntimeContext, Scheduler, SessionManager, SimpleResourceManager,
 };
-use crate::PortSet;
 
 /// Builder for constructing a [`Runtime`] instance.
 ///
@@ -127,10 +127,8 @@ mod tests {
     use bit7z_ports::session::{SessionRef, SessionStore};
     use bit7z_ports::{ArchiveReader, ArchiveWriter};
 
-    use crate::{
-        JobResult, OperationKind, OperationRequest, PortSet, RuntimeContext,
-    };
     use crate::job::Priority;
+    use crate::{JobResult, OperationKind, OperationRequest, PortSet, RuntimeContext};
 
     struct MockReader {
         sessions: Mutex<HashMap<PathBuf, ArchiveSession>>,
@@ -289,11 +287,12 @@ mod tests {
     fn test_open_archive_job_stores_session() {
         let ex = Arc::new(smol::Executor::new());
         let ex_bg = ex.clone();
-        let _bg = std::thread::spawn(move || {
-            smol::block_on(ex_bg.run(futures::future::pending::<()>()))
-        });
+        let _bg =
+            std::thread::spawn(move || smol::block_on(ex_bg.run(futures::future::pending::<()>())));
 
-        let context = RuntimeContext { executor: ex.clone() };
+        let context = RuntimeContext {
+            executor: ex.clone(),
+        };
         let mock_store = Arc::new(MockSessionStore::default());
         let ports = PortSet {
             reader: Arc::new(MockReader::new()),
@@ -326,11 +325,12 @@ mod tests {
     fn test_create_archive_job_stores_session() {
         let ex = Arc::new(smol::Executor::new());
         let ex_bg = ex.clone();
-        let _bg = std::thread::spawn(move || {
-            smol::block_on(ex_bg.run(futures::future::pending::<()>()))
-        });
+        let _bg =
+            std::thread::spawn(move || smol::block_on(ex_bg.run(futures::future::pending::<()>())));
 
-        let context = RuntimeContext { executor: ex.clone() };
+        let context = RuntimeContext {
+            executor: ex.clone(),
+        };
         let mock_store = Arc::new(MockSessionStore::default());
         let ports = PortSet {
             reader: Arc::new(MockReader::new()),

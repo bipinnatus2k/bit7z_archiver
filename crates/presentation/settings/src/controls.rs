@@ -14,7 +14,10 @@ pub fn compression_level_field() -> SettingField<f64> {
     SettingField::number_input(
         options,
         |cx: &App| {
-            SettingsStore::get(cx).prefs.archive.default_compression_level as f64
+            SettingsStore::get(cx)
+                .prefs
+                .archive
+                .default_compression_level as f64
         },
         |val: f64, cx: &mut App| {
             SettingsStore::get_mut(cx).update_and_save(|p| {

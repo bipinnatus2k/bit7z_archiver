@@ -1,19 +1,19 @@
 use bit7z_domain::archive::ArchiveEntry;
 use bit7z_domain::repository::ArchiveProperties;
-use gpui::*;
+use bit7z_pres_components::window_dialog::{
+    CloseAction, DialogContent, DialogFooter, DialogHeader, DialogTitle, WindowDialogOptions,
+    open_window_dialog_async,
+};
 use gpui::prelude::FluentBuilder;
+use gpui::*;
+use gpui_component::IndexPath;
+use gpui_component::Sizable;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::description_list::{DescriptionItem, DescriptionList};
 use gpui_component::list::{List, ListDelegate, ListItem, ListState};
-use gpui_component::IndexPath;
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::v_flex;
-use gpui_component::Sizable;
-use humansize::{format_size, BINARY};
-use bit7z_pres_components::window_dialog::{
-    open_window_dialog_async, CloseAction, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-    WindowDialogOptions,
-};
+use humansize::{BINARY, format_size};
 
 pub struct PropertiesDialog;
 
@@ -53,14 +53,16 @@ fn bool_yn(v: bool) -> &'static str {
 }
 
 fn kv_display(items: Vec<(&str, String)>, columns: usize) -> impl IntoElement {
-    div()
-        .flex_1()
-        .overflow_y_scrollbar()
-        .child(
-            DescriptionList::vertical().columns(columns).small().children(
-                items.into_iter().map(|(k, v)| DescriptionItem::new(k).value(v)),
+    div().flex_1().overflow_y_scrollbar().child(
+        DescriptionList::vertical()
+            .columns(columns)
+            .small()
+            .children(
+                items
+                    .into_iter()
+                    .map(|(k, v)| DescriptionItem::new(k).value(v)),
             ),
-        )
+    )
 }
 
 fn dialog_body(title: SharedString, content: impl IntoElement) -> impl IntoElement {
@@ -69,9 +71,14 @@ fn dialog_body(title: SharedString, content: impl IntoElement) -> impl IntoEleme
         .gap(px(12.))
         .child(DialogHeader::new().child(DialogTitle::new().child(title)))
         .child(DialogContent::new().child(content))
-        .child(DialogFooter::new().justify_end().child(
-            Button::new("close").label("Close").primary().on_click(|_, window, _| window.remove_window()),
-        ))
+        .child(
+            DialogFooter::new().justify_end().child(
+                Button::new("close")
+                    .label("Close")
+                    .primary()
+                    .on_click(|_, window, _| window.remove_window()),
+            ),
+        )
 }
 
 // ---------------------------------------------------------------------------
@@ -86,20 +93,32 @@ struct PropertiesContent {
 
 impl Render for PropertiesContent {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        dialog_body(self.title.clone(), kv_display(self.fields.clone(), self.columns))
+        dialog_body(
+            self.title.clone(),
+            kv_display(self.fields.clone(), self.columns),
+        )
     }
 }
 
 fn archive_fields(props: &ArchiveProperties, path: &str) -> Vec<(&'static str, String)> {
     let ratio = if props.total_size > 0 {
-        format!("{:.0}%", (1.0 - props.packed_size as f64 / props.total_size as f64) * 100.0)
+        format!(
+            "{:.0}%",
+            (1.0 - props.packed_size as f64 / props.total_size as f64) * 100.0
+        )
     } else {
         "0%".into()
     };
     let mut kind = String::new();
-    if props.is_solid { kind.push_str("Solid "); }
-    if props.is_multi_volume { kind.push_str("Multi-volume "); }
-    if kind.is_empty() { kind.push_str("Archive"); }
+    if props.is_solid {
+        kind.push_str("Solid ");
+    }
+    if props.is_multi_volume {
+        kind.push_str("Multi-volume ");
+    }
+    if kind.is_empty() {
+        kind.push_str("Archive");
+    }
 
     vec![
         ("Type", kind),
@@ -118,7 +137,13 @@ fn archive_fields(props: &ArchiveProperties, path: &str) -> Vec<(&'static str, S
         ("Has comment", bool_yn(props.has_comment).into()),
         ("Recovery record", bool_yn(props.has_recovery_record).into()),
         ("Locked", bool_yn(props.locked).into()),
-        ("Dictionary size", props.dictionary_size.map(|s| format_size(s, BINARY)).unwrap_or_else(|| "-".into())),
+        (
+            "Dictionary size",
+            props
+                .dictionary_size
+                .map(|s| format_size(s, BINARY))
+                .unwrap_or_else(|| "-".into()),
+        ),
     ]
 }
 
@@ -126,38 +151,106 @@ fn entry_fields(entry: &ArchiveEntry) -> Vec<(&'static str, String)> {
     vec![
         ("Name", entry.name.clone()),
         ("Path", entry.path.clone()),
-        ("Extension", entry.extension.clone().unwrap_or_else(|| "-".into())),
+        (
+            "Extension",
+            entry.extension.clone().unwrap_or_else(|| "-".into()),
+        ),
         ("Size", format_size(entry.size, BINARY)),
         ("Packed", format_size(entry.compressed_size, BINARY)),
-        ("Ratio", format!("{:.0}%", entry.compression_ratio() * 100.0)),
-        ("CRC", entry.crc.map(|c| format!("{:08X}", c)).unwrap_or_else(|| "-".into())),
-        ("Modified", entry.modified.map(|t| t.naive_local().to_string()).unwrap_or_else(|| "-".into())),
-        ("Created", entry.created.map(|t| t.to_string()).unwrap_or_else(|| "-".into())),
-        ("Accessed", entry.accessed.map(|t| t.to_string()).unwrap_or_else(|| "-".into())),
-        ("Host OS", entry.host_os.map(|o| format!("{}", o)).unwrap_or_else(|| "-".into())),
-        ("Attributes", entry.attributes.map(|a| format!("{:08X}", a)).unwrap_or_else(|| "-".into())),
-        ("POSIX", entry.posix_attrib.map(|p| format!("{:o}", p)).unwrap_or_else(|| "-".into())),
+        (
+            "Ratio",
+            format!("{:.0}%", entry.compression_ratio() * 100.0),
+        ),
+        (
+            "CRC",
+            entry
+                .crc
+                .map(|c| format!("{:08X}", c))
+                .unwrap_or_else(|| "-".into()),
+        ),
+        (
+            "Modified",
+            entry
+                .modified
+                .map(|t| t.naive_local().to_string())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        (
+            "Created",
+            entry
+                .created
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        (
+            "Accessed",
+            entry
+                .accessed
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        (
+            "Host OS",
+            entry
+                .host_os
+                .map(|o| format!("{}", o))
+                .unwrap_or_else(|| "-".into()),
+        ),
+        (
+            "Attributes",
+            entry
+                .attributes
+                .map(|a| format!("{:08X}", a))
+                .unwrap_or_else(|| "-".into()),
+        ),
+        (
+            "POSIX",
+            entry
+                .posix_attrib
+                .map(|p| format!("{:o}", p))
+                .unwrap_or_else(|| "-".into()),
+        ),
         ("Owner", entry.user.clone().unwrap_or_else(|| "-".into())),
         ("Group", entry.group.clone().unwrap_or_else(|| "-".into())),
         ("Encrypted", bool_yn(entry.is_encrypted).into()),
         ("Symlink", bool_yn(entry.is_symlink).into()),
-        ("Method", entry.compression_method.clone().unwrap_or_else(|| "-".into())),
-        ("Comment", entry.comment.clone().unwrap_or_else(|| "-".into())),
-        ("Hardlink target", entry.hardlink.clone().unwrap_or_else(|| "-".into())),
+        (
+            "Method",
+            entry
+                .compression_method
+                .clone()
+                .unwrap_or_else(|| "-".into()),
+        ),
+        (
+            "Comment",
+            entry.comment.clone().unwrap_or_else(|| "-".into()),
+        ),
+        (
+            "Hardlink target",
+            entry.hardlink.clone().unwrap_or_else(|| "-".into()),
+        ),
     ]
 }
 
 fn open_archive_window(path: String, props: ArchiveProperties, cx: &mut AsyncApp) {
     let fields = archive_fields(&props, &path);
     open_window_dialog_async(cx, opts("Archive Properties"), move |_, cx| {
-        cx.new(move |_| PropertiesContent { title: "Archive Properties".into(), fields, columns: 1 })
+        cx.new(move |_| PropertiesContent {
+            title: "Archive Properties".into(),
+            fields,
+            columns: 1,
+        })
     });
 }
 
 fn open_single_entry_window(entry: ArchiveEntry, cx: &mut AsyncApp) {
     let fields = entry_fields(&entry);
     open_window_dialog_async(cx, opts("Entry Properties"), move |_, cx| {
-        cx.new(move |_| PropertiesContent { title: "Entry Properties".into(), fields, columns: 2 })
+        cx.new(move |_| PropertiesContent {
+            title: "Entry Properties".into(),
+            fields,
+            columns: 2,
+        })
     });
 }
 
@@ -187,9 +280,25 @@ impl ListDelegate for EntriesDelegate {
                 gpui_component::h_flex()
                     .gap_2()
                     .w_full()
-                    .child(div().w(px(200.)).text_xs().overflow_hidden().child(e.path.clone()))
-                    .child(div().w(px(80.)).text_xs().child(format_size(e.size, BINARY)))
-                    .child(div().w(px(80.)).text_xs().child(format_size(e.compressed_size, BINARY))),
+                    .child(
+                        div()
+                            .w(px(200.))
+                            .text_xs()
+                            .overflow_hidden()
+                            .child(e.path.clone()),
+                    )
+                    .child(
+                        div()
+                            .w(px(80.))
+                            .text_xs()
+                            .child(format_size(e.size, BINARY)),
+                    )
+                    .child(
+                        div()
+                            .w(px(80.))
+                            .text_xs()
+                            .child(format_size(e.compressed_size, BINARY)),
+                    ),
             )
         })
     }
@@ -212,7 +321,13 @@ fn open_multi_entry_window(entries: Vec<ArchiveEntry>, cx: &mut AsyncApp) {
     open_window_dialog_async(cx, opts(title), move |window, cx| {
         let delegate = EntriesDelegate { entries };
         let list_state = cx.new(|cx| ListState::new(delegate, window, cx));
-        cx.new(move |_| MultiEntryContent { list_state, total_size, total_packed, entry_count, show_entry_list: false })
+        cx.new(move |_| MultiEntryContent {
+            list_state,
+            total_size,
+            total_packed,
+            entry_count,
+            show_entry_list: false,
+        })
     });
 }
 
@@ -251,11 +366,33 @@ impl Render for MultiEntryContent {
                 .child(totals)
                 .child(toggle)
                 .when(self.show_entry_list, |body| {
-                    body.child(gpui_component::h_flex().gap_2().pb_1()
-                        .child(div().w(px(200.)).text_xs().font_weight(FontWeight::BOLD).child("Name"))
-                        .child(div().w(px(80.)).text_xs().font_weight(FontWeight::BOLD).child("Size"))
-                        .child(div().w(px(80.)).text_xs().font_weight(FontWeight::BOLD).child("Packed")))
-                        .child(List::new(&self.list_state))
+                    body.child(
+                        gpui_component::h_flex()
+                            .gap_2()
+                            .pb_1()
+                            .child(
+                                div()
+                                    .w(px(200.))
+                                    .text_xs()
+                                    .font_weight(FontWeight::BOLD)
+                                    .child("Name"),
+                            )
+                            .child(
+                                div()
+                                    .w(px(80.))
+                                    .text_xs()
+                                    .font_weight(FontWeight::BOLD)
+                                    .child("Size"),
+                            )
+                            .child(
+                                div()
+                                    .w(px(80.))
+                                    .text_xs()
+                                    .font_weight(FontWeight::BOLD)
+                                    .child("Packed"),
+                            ),
+                    )
+                    .child(List::new(&self.list_state))
                 }),
         )
     }

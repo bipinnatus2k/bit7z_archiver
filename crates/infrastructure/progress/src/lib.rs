@@ -1,5 +1,5 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
 use bit7z_domain::repository::{ProgressNotifier, ProgressUpdate};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 
 pub type ProgressSender = Sender<ProgressUpdate>;
 pub type ProgressReceiver = Receiver<ProgressUpdate>;

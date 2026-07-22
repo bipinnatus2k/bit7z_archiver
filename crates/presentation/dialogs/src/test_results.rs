@@ -1,12 +1,12 @@
 use bit7z_domain::archive::{TestFailure, TestResult};
-use gpui::*;
+use bit7z_pres_components::window_dialog::{
+    CloseAction, DialogContent, DialogFooter, DialogHeader, DialogTitle, WindowDialogOptions,
+    open_window_dialog_async,
+};
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::{h_flex, v_flex};
-use bit7z_pres_components::window_dialog::{
-    open_window_dialog_async, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-    WindowDialogOptions, CloseAction,
-};
 
 pub struct TestResultsDialog {
     result: TestResult,
@@ -28,7 +28,12 @@ impl TestResultsDialog {
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Opaque,
             },
-            |_window, cx| cx.new(move |_| Self { result, show_failed: false }),
+            |_window, cx| {
+                cx.new(move |_| Self {
+                    result,
+                    show_failed: false,
+                })
+            },
         );
     }
 }
@@ -41,25 +46,17 @@ impl Render for TestResultsDialog {
         v_flex()
             .size_full()
             .gap(px(12.))
-            .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child("Test Results")),
-            )
+            .child(DialogHeader::new().child(DialogTitle::new().child("Test Results")))
             .child(
                 DialogContent::new().child(
                     v_flex()
                         .h_full()
                         .gap_3()
-                        .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::BOLD)
-                                .child(format!(
-                                    "{} passed, {} failed",
-                                    self.result.passed,
-                                    self.result.failed.len()
-                                )),
-                        )
+                        .child(div().text_lg().font_weight(FontWeight::BOLD).child(format!(
+                            "{} passed, {} failed",
+                            self.result.passed,
+                            self.result.failed.len()
+                        )))
                         .when(!all_pass, |el| {
                             el.child(
                                 v_flex()
@@ -79,16 +76,13 @@ impl Render for TestResultsDialog {
                                     )
                                     .when(self.show_failed, |el| {
                                         el.child(
-                                            v_flex()
-                                                .gap_1()
-                                                .pl_4()
-                                                .children(
-                                                    self.result
-                                                        .failed
-                                                        .iter()
-                                                        .map(|f| failed_entry(f).into_any_element())
-                                                        .collect::<Vec<_>>(),
-                                                ),
+                                            v_flex().gap_1().pl_4().children(
+                                                self.result
+                                                    .failed
+                                                    .iter()
+                                                    .map(|f| failed_entry(f).into_any_element())
+                                                    .collect::<Vec<_>>(),
+                                            ),
                                         )
                                     }),
                             )
@@ -111,7 +105,10 @@ impl Render for TestResultsDialog {
 fn failed_entry(f: &TestFailure) -> impl IntoElement {
     let reason = match &f.reason {
         bit7z_domain::archive::TestFailureReason::CrcMismatch { expected, actual } => {
-            format!("CRC mismatch: expected {:08X}, got {:08X}", expected, actual)
+            format!(
+                "CRC mismatch: expected {:08X}, got {:08X}",
+                expected, actual
+            )
         }
         bit7z_domain::archive::TestFailureReason::ReadError(msg) => {
             format!("Read error: {}", msg)

@@ -1,12 +1,15 @@
-use bit7z_domain::archive::*;
-use gpui_component::ActiveTheme;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use bit7z_app_archive::runtime_service::ArchiveService;
+use bit7z_domain::archive::{
+    ArchiveFormat, ArchiveHandle, EncryptionConfig, EncryptionMethod, Password,
+};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::ActiveTheme;
+use gpui_component::Disableable;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::form::{field, v_form};
 use gpui_component::input::{Input, InputState};
-use gpui_component::Disableable;
 use gpui_component::{h_flex, v_flex};
 use std::sync::{Arc, Mutex};
 
@@ -31,7 +34,7 @@ pub struct AddFilesDialog {
     password_input: Option<Entity<InputState>>,
     password_confirm_input: Option<Entity<InputState>>,
     archive: Option<ArchiveHandle>,
-    repo: Option<Arc<dyn bit7z_domain::repository::ArchiveRepository>>,
+    service: Option<Arc<ArchiveService>>,
     is_solid: bool,
 }
 
@@ -66,7 +69,7 @@ impl AddFilesDialog {
         cx: &mut Context<Self>,
         format: ArchiveFormat,
         archive: Option<ArchiveHandle>,
-        repo: Option<Arc<dyn bit7z_domain::repository::ArchiveRepository>>,
+        service: Option<Arc<ArchiveService>>,
         is_solid: bool,
     ) -> Self {
         let prefs = &bit7z_pres_settings::SettingsStore::get(cx).prefs;
@@ -90,7 +93,7 @@ impl AddFilesDialog {
             password_input: None,
             password_confirm_input: None,
             archive,
-            repo,
+            service,
             is_solid,
         }
     }
@@ -101,28 +104,46 @@ impl AddFilesDialog {
 
     fn ensure_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.filter_input.is_none() {
-            self.filter_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("e.g. *.tmp")));
+            self.filter_input =
+                Some(cx.new(|cx| InputState::new(window, cx).placeholder("e.g. *.tmp")));
         }
         if self.prefix_input.is_none() {
-            self.prefix_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("e.g. subdir/")));
+            self.prefix_input =
+                Some(cx.new(|cx| InputState::new(window, cx).placeholder("e.g. subdir/")));
         }
         if self.password_input.is_none() {
-            self.password_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Optional").masked(true)));
+            self.password_input = Some(cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("Optional")
+                    .masked(true)
+            }));
         }
         if self.password_confirm_input.is_none() {
-            self.password_confirm_input = Some(cx.new(|cx| InputState::new(window, cx).placeholder("Confirm").masked(true)));
+            self.password_confirm_input = Some(cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("Confirm")
+                    .masked(true)
+            }));
         }
     }
 
     fn is_valid(&self) -> bool {
-        if self.file_list.is_empty() { return false; }
-        if !self.password.is_empty() && self.password != self.password_confirm { return false; }
-        if self.is_existing_archive() && self.is_solid { return false; }
+        if self.file_list.is_empty() {
+            return false;
+        }
+        if !self.password.is_empty() && self.password != self.password_confirm {
+            return false;
+        }
+        if self.is_existing_archive() && self.is_solid {
+            return false;
+        }
         true
     }
 
     fn build_encryption(&self) -> Option<EncryptionConfig> {
-        if self.password.is_empty() { return None; }
+        if self.password.is_empty() {
+            return None;
+        }
         Some(EncryptionConfig {
             password: Password::new(self.password.clone()),
             method: EncryptionMethod::Aes256,
@@ -134,7 +155,7 @@ impl AddFilesDialog {
         cx: &mut AsyncApp,
         format: ArchiveFormat,
         archive: Option<ArchiveHandle>,
-        repo: Option<Arc<dyn bit7z_domain::repository::ArchiveRepository>>,
+        service: Option<Arc<ArchiveService>>,
         is_solid: bool,
     ) -> Receiver<AddFilesDialogEvent> {
         let (tx, rx) = unbounded::<AddFilesDialogEvent>();
@@ -152,19 +173,25 @@ impl AddFilesDialog {
                     ..Default::default()
                 },
                 move |window, cx| {
-                    let dialog = cx.new(|cx| AddFilesDialog::new(cx, format, archive, repo, is_solid));
+                    let dialog =
+                        cx.new(|cx| AddFilesDialog::new(cx, format, archive, service, is_solid));
                     let et = et.clone();
-                    cx.subscribe::<AddFilesDialog, AddFilesDialogEvent>(&dialog, move |_, evt: &AddFilesDialogEvent, _| {
-                        if let Ok(guard) = et.lock() {
-                            if let Some(ref sender) = *guard {
-                                let _ = sender.send(evt.clone());
+                    cx.subscribe::<AddFilesDialog, AddFilesDialogEvent>(
+                        &dialog,
+                        move |_, evt: &AddFilesDialogEvent, _| {
+                            if let Ok(guard) = et.lock() {
+                                if let Some(ref sender) = *guard {
+                                    let _ = sender.send(evt.clone());
+                                }
                             }
-                        }
-                    }).detach();
+                        },
+                    )
+                    .detach();
                     cx.new(|cx| gpui_component::Root::new(dialog, window, cx))
                 },
             );
-        }).detach();
+        })
+        .detach();
         rx
     }
 }
@@ -183,7 +210,11 @@ impl Render for AddFilesDialog {
         let show_encrypted_names = self.format.supports_encrypted_filenames();
         let is_existing = self.is_existing_archive();
         let is_solid = self.is_solid;
-        let thread_count_display = if self.thread_count.is_empty() { "auto".to_string() } else { self.thread_count.clone() };
+        let thread_count_display = if self.thread_count.is_empty() {
+            "auto".to_string()
+        } else {
+            self.thread_count.clone()
+        };
 
         v_form()
             .p_4()
@@ -333,10 +364,10 @@ impl Render for AddFilesDialog {
                         .child(
                             Button::new("ok").primary().label("OK").disabled(!is_valid)
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    if let (Some(handle), Some(repo)) = (&this.archive, &this.repo) {
+                                    if let (Some(handle), Some(service)) = (&this.archive, &this.service) {
                                         let files = this.file_list.clone();
                                         let encryption = this.build_encryption();
-                                        let uc = bit7z_app_archive::add_to::AddToArchiveUseCase::new(repo.clone());
+                                        let uc = bit7z_app_archive::add_to::AddToArchiveUseCase::new(service.clone());
                                         let (_tx, rx) = bit7z_infra_progress::progress_channel();
                                         cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _cx| {
                                             state.is_active = true;
@@ -361,5 +392,3 @@ impl Render for AddFilesDialog {
             )
     }
 }
-
-

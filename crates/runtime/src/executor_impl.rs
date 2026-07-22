@@ -4,9 +4,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use bit7z_domain::vfs::OverlayVfs;
 use crate::executor::{ExecutionContext, Executor};
 use crate::job::{Job, JobKind, JobResult};
+use bit7z_domain::vfs::OverlayVfs;
 
 /// Local executor that runs jobs synchronously on the current async task.
 ///
@@ -20,10 +20,7 @@ impl LocalExecutor {
         Self
     }
 
-    fn run_job(
-        job: Job,
-        ctx: ExecutionContext,
-    ) -> Pin<Box<dyn Future<Output = JobResult> + Send>> {
+    fn run_job(job: Job, ctx: ExecutionContext) -> Pin<Box<dyn Future<Output = JobResult> + Send>> {
         Box::pin(async move {
             if ctx.cancellation.is_cancelled() {
                 return JobResult::Cancelled;
@@ -52,7 +49,11 @@ impl Default for LocalExecutor {
 }
 
 impl Executor for LocalExecutor {
-    fn execute(&self, job: Job, ctx: ExecutionContext) -> Pin<Box<dyn Future<Output = JobResult> + Send>> {
+    fn execute(
+        &self,
+        job: Job,
+        ctx: ExecutionContext,
+    ) -> Pin<Box<dyn Future<Output = JobResult> + Send>> {
         Self::run_job(job, ctx)
     }
 }
@@ -103,7 +104,10 @@ async fn create_archive(
     }
 }
 
-async fn save_archive(ctx: ExecutionContext, session_id: bit7z_domain::archive::SessionId) -> JobResult {
+async fn save_archive(
+    ctx: ExecutionContext,
+    session_id: bit7z_domain::archive::SessionId,
+) -> JobResult {
     let state = match ctx.ports.session_store.get(session_id) {
         Some(s) => s,
         None => {
@@ -114,7 +118,11 @@ async fn save_archive(ctx: ExecutionContext, session_id: bit7z_domain::archive::
     let snapshot: Vec<_> = state.vfs.list_page(0, usize::MAX).items;
     let changeset = state.vfs.generate_changeset();
 
-    match ctx.ports.writer.commit(&state.session, &snapshot, &changeset) {
+    match ctx
+        .ports
+        .writer
+        .commit(&state.session, &snapshot, &changeset)
+    {
         Ok(()) => JobResult::Ok,
         Err(e) => JobResult::Failed(e.to_string()),
     }

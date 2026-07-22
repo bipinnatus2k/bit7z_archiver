@@ -38,7 +38,8 @@ fn main() -> miette::Result<()> {
     // Remove include! from inside extern block (Rust 1.72+ compat)
     if let Ok(out_dir) = std::env::var("OUT_DIR") {
         let gen_path = Path::new(&out_dir)
-            .join("autocxx-build-dir").join("rs")
+            .join("autocxx-build-dir")
+            .join("rs")
             .join("autocxx-ffi-default-gen.rs");
         if gen_path.exists() {
             let content = std::fs::read_to_string(&gen_path).unwrap_or_default();
@@ -52,11 +53,15 @@ fn main() -> miette::Result<()> {
     }
 
     if let Some(ref dir) = installed {
-        println!("cargo:rustc-link-search=native={}", dir.join("lib").display());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            dir.join("lib").display()
+        );
         println!("cargo:rustc-link-lib=bit7z64");
         println!("cargo:rustc-link-lib=7zip");
     }
-    #[cfg(target_os = "windows")] {
+    #[cfg(target_os = "windows")]
+    {
         println!("cargo:rustc-link-lib=oleaut32");
         println!("cargo:rustc-link-lib=ole32");
         println!("cargo:rustc-link-lib=user32");

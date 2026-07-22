@@ -1,17 +1,16 @@
-use bit7z_infra_progress::progress_channel;
+use bit7z_app_archive::runtime_service::ArchiveService;
 use bit7z_app_test::TestEntriesUseCase;
-use bit7z_domain::archive::TestResult;
-use bit7z_domain::archive::*;
-use bit7z_domain::repository::*;
+use bit7z_domain::archive::{ArchiveHandle, Password, TestResult};
+use bit7z_domain::repository::ArchiveError;
+use bit7z_infra_progress::progress_channel;
+use bit7z_pres_components::window_dialog::{
+    CloseAction, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    WindowDialogOptions, open_window_dialog_async,
+};
 use gpui::*;
-use gpui::prelude::FluentBuilder;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::v_flex;
 use std::sync::Arc;
-use bit7z_pres_components::window_dialog::{
-    open_window_dialog_async, CloseAction, DialogContent, DialogDescription, DialogFooter,
-    DialogHeader, DialogTitle, WindowDialogOptions,
-};
 
 pub struct TestDialog;
 
@@ -20,11 +19,16 @@ impl TestDialog {
         cx: &mut AsyncApp,
         handle: ArchiveHandle,
         indices: Option<Vec<u32>>,
-        repo: Arc<dyn ArchiveRepository>,
+        service: Arc<ArchiveService>,
     ) {
         let total = indices.as_ref().map_or_else(
-            || repo.get_properties(&handle).map(|p| p.files_count as usize).unwrap_or(0),
-            |v| count_expanded(&repo, &handle, v),
+            || {
+                service
+                    .get_properties(&handle)
+                    .map(|p| p.files_count as usize)
+                    .unwrap_or(0)
+            },
+            |v| count_expanded(&service, &handle, v),
         );
 
         open_window_dialog_async(
@@ -40,9 +44,7 @@ impl TestDialog {
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Opaque,
             },
-            move |_window, cx| {
-                cx.new(move |_| TestContent::new(total, handle, indices, repo))
-            },
+            move |_window, cx| cx.new(move |_| TestContent::new(total, handle, indices, service)),
         );
     }
 }
@@ -52,7 +54,7 @@ struct TestContent {
     handle: Option<ArchiveHandle>,
     path: Option<std::path::PathBuf>,
     password: Option<Password>,
-    repo: Arc<dyn ArchiveRepository>,
+    service: Arc<ArchiveService>,
     indices: Option<Vec<u32>>,
 }
 
@@ -61,15 +63,22 @@ impl TestContent {
         total: usize,
         handle: ArchiveHandle,
         indices: Option<Vec<u32>>,
-        repo: Arc<dyn ArchiveRepository>,
+        service: Arc<ArchiveService>,
     ) -> Self {
-        Self { total, handle: Some(handle), path: None, password: None, repo, indices }
+        Self {
+            total,
+            handle: Some(handle),
+            path: None,
+            password: None,
+            service,
+            indices,
+        }
     }
 
     fn on_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.remove_window();
 
-        let repo = self.repo.clone();
+        let service = self.service.clone();
         let handle = self.handle.clone();
         let path = self.path.clone();
         let password = self.password.clone();
@@ -96,13 +105,13 @@ impl TestContent {
                 let h = match handle {
                     Some(h) => h,
                     None => path
-                        .and_then(|p| repo.open(&p, password.as_ref()).ok())
+                        .and_then(|p| service.open(&p, password.as_ref()).ok())
                         .unwrap_or(ArchiveHandle::new_reader()),
                 };
-                let uc = TestEntriesUseCase::new(repo.clone());
+                let uc = TestEntriesUseCase::new(service.clone());
                 let result = uc.execute(&h, indices.as_deref(), Some(progress_tx));
                 if dialog_owns_handle {
-                    repo.close(&h);
+                    service.close(&h);
                 }
                 let _ = result_tx.send(result);
             })
@@ -115,7 +124,9 @@ impl TestContent {
                     Err(crossbeam_channel::TryRecvError::Empty) => {
                         cx.background_spawn(std::future::ready(())).await;
                     }
-                    Err(crossbeam_channel::TryRecvError::Disconnected) => break Err(ArchiveError::Internal("disconnected".into())),
+                    Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                        break Err(ArchiveError::Internal("disconnected".into()));
+                    }
                 }
             };
 
@@ -160,24 +171,20 @@ impl Render for TestContent {
         v_flex()
             .size_full()
             .gap(px(12.))
+            .child(DialogHeader::new().child(DialogTitle::new().child("Test Archive")))
             .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child("Test Archive")),
+                DialogContent::new().child(v_flex().h_full().gap_3().child(
+                    DialogDescription::new().child(format!(
+                        "Test {} entr{} for integrity.",
+                        total,
+                        if total == 1 { "y" } else { "ies" }
+                    )),
+                )),
             )
             .child(
-                DialogContent::new().child(
-                    v_flex()
-                        .h_full()
-                        .gap_3()
-                        .child(DialogDescription::new().child(format!(
-                            "Test {} entr{} for integrity.",
-                            total,
-                            if total == 1 { "y" } else { "ies" }
-                        ))),
-                ),
-            )
-            .child(
-                DialogFooter::new().justify_end().gap_2()
+                DialogFooter::new()
+                    .justify_end()
+                    .gap_2()
                     .child(
                         Button::new("cancel")
                             .label("Cancel")
@@ -208,44 +215,19 @@ impl Render for TestErrorContent {
         v_flex()
             .size_full()
             .gap(px(12.))
+            .child(DialogHeader::new().child(DialogTitle::new().child("Test Error")))
+            .child(DialogContent::new().child(div().text_sm().child(msg)))
             .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child("Test Error")),
-            )
-            .child(
-                DialogContent::new().child(
-                    div().text_sm().child(msg),
+                DialogFooter::new().justify_end().child(
+                    Button::new("close")
+                        .label("Close")
+                        .primary()
+                        .on_click(move |_, window, _| {
+                            window.remove_window();
+                        }),
                 ),
             )
-            .child(
-                DialogFooter::new().justify_end()
-                    .child(
-                        Button::new("close")
-                            .label("Close")
-                            .primary()
-                            .on_click(move |_, window, _| {
-                                window.remove_window();
-                            }),
-                    ),
-            )
     }
-}
-
-fn failed_entry(f: &bit7z_domain::archive::TestFailure) -> impl IntoElement {
-    let reason = match &f.reason {
-        bit7z_domain::archive::TestFailureReason::CrcMismatch { expected, actual } => {
-            format!("CRC mismatch: expected {:08X}, got {:08X}", expected, actual)
-        }
-        bit7z_domain::archive::TestFailureReason::ReadError(msg) => {
-            format!("Read error: {}", msg)
-        }
-        bit7z_domain::archive::TestFailureReason::UnsupportedOperation => {
-            "Unsupported operation".to_string()
-        }
-    };
-    v_flex().gap_0().py_1()
-        .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(format!("#{} {}", f.index, f.path)))
-        .child(div().text_xs().child(reason))
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +235,7 @@ fn failed_entry(f: &bit7z_domain::archive::TestFailure) -> impl IntoElement {
 // ---------------------------------------------------------------------------
 
 fn count_files_recursive(
-    repo: &Arc<dyn ArchiveRepository>,
+    service: &Arc<ArchiveService>,
     archive: &ArchiveHandle,
     dir_path: &str,
 ) -> usize {
@@ -263,10 +245,10 @@ fn count_files_recursive(
         format!("{}/", dir_path)
     };
     let mut count = 0;
-    if let Ok(children) = repo.list_directory(archive, &path) {
+    if let Ok(children) = service.list_directory(archive, &path) {
         for child in &children {
             if child.is_directory {
-                count += count_files_recursive(repo, archive, &child.path);
+                count += count_files_recursive(service, archive, &child.path);
             } else {
                 count += 1;
             }
@@ -276,16 +258,16 @@ fn count_files_recursive(
 }
 
 fn count_expanded(
-    repo: &Arc<dyn ArchiveRepository>,
+    service: &Arc<ArchiveService>,
     archive: &ArchiveHandle,
     indices: &[u32],
 ) -> usize {
     let mut count = 0;
     for &idx in indices {
-        if let Ok(page) = repo.list_page(archive, idx as usize, 1) {
+        if let Ok(page) = service.list_page(archive, idx as usize, 1) {
             if let Some(entry) = page.items.first() {
                 if entry.is_directory {
-                    count += count_files_recursive(repo, archive, &entry.path);
+                    count += count_files_recursive(service, archive, &entry.path);
                     continue;
                 }
             }

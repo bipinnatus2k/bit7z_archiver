@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::archive::{
-    ArchiveEntry, ArchiveFormat, ChangeSet, Page,
-};
+use crate::archive::{ArchiveEntry, ArchiveFormat, ChangeSet, Page};
 use crate::repository::{ArchiveError, ArchiveProperties};
 use crate::vfs::{
     DirtyTree, DirtyType, EditOperation, EditQueue, EditTransaction, Tree, VfsMetadata, VfsNode,
@@ -187,7 +185,13 @@ impl OverlayVfs {
 
     fn apply_operation(&mut self, op: &EditOperation) -> Result<(), ArchiveError> {
         match op {
-            EditOperation::Add { node_id, parent_id, name, fs_path, is_directory } => {
+            EditOperation::Add {
+                node_id,
+                parent_id,
+                name,
+                fs_path,
+                is_directory,
+            } => {
                 let node = VfsNode {
                     id: *node_id,
                     parent: Some(*parent_id),
@@ -205,7 +209,9 @@ impl OverlayVfs {
                 let _ = self.working_tree.remove_node(*node_id);
                 self.dirty_tree.mark(*node_id, DirtyType::Deleted);
             }
-            EditOperation::Rename { node_id, new_name, .. } => {
+            EditOperation::Rename {
+                node_id, new_name, ..
+            } => {
                 self.working_tree
                     .rename_node(*node_id, new_name)
                     .map_err(|e| ArchiveError::Internal(e.to_string()))?;
@@ -220,9 +226,10 @@ impl OverlayVfs {
         if !self.edit_queue.can_undo() {
             return Ok(false);
         }
-        let tx = self.edit_queue.undo().ok_or_else(|| {
-            ArchiveError::Internal("undo failed: unexpected empty stack".into())
-        })?;
+        let tx = self
+            .edit_queue
+            .undo()
+            .ok_or_else(|| ArchiveError::Internal("undo failed: unexpected empty stack".into()))?;
         let reversed = tx.reverse().clone();
         for op in reversed {
             self.apply_operation(&op)?;
@@ -235,9 +242,10 @@ impl OverlayVfs {
         if !self.edit_queue.can_redo() {
             return Ok(false);
         }
-        let tx = self.edit_queue.redo().ok_or_else(|| {
-            ArchiveError::Internal("redo failed: unexpected empty stack".into())
-        })?;
+        let tx = self
+            .edit_queue
+            .redo()
+            .ok_or_else(|| ArchiveError::Internal("redo failed: unexpected empty stack".into()))?;
         let ops = tx.operations.clone();
         for op in &ops {
             self.apply_operation(op)?;
@@ -413,9 +421,7 @@ impl OverlayVfs {
     }
 
     pub fn original_index_of(&self, node_id: VfsNodeId) -> Option<u32> {
-        self.base_tree
-            .node(node_id)
-            .and_then(|n| n.original_index)
+        self.base_tree.node(node_id).and_then(|n| n.original_index)
     }
 }
 
@@ -463,22 +469,14 @@ mod tests {
 
     #[test]
     fn test_build_and_list_page() {
-        let vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let page = vfs.list_page(0, 10);
         assert_eq!(page.items.len(), 4);
     }
 
     #[test]
     fn test_list_directory_root() {
-        let vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let root_entries = vfs.list_directory("");
         assert_eq!(root_entries.len(), 2);
         assert!(root_entries.iter().any(|e| e.name == "file1.txt"));
@@ -576,11 +574,7 @@ mod tests {
 
     #[test]
     fn test_list_directory_subdir() {
-        let vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let entries = vfs.list_directory("dir");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "inner.txt");
@@ -588,11 +582,7 @@ mod tests {
 
     #[test]
     fn test_get_properties() {
-        let vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let props = vfs.get_properties();
         assert_eq!(props.files_count, 2);
         assert_eq!(props.folders_count, 1);
@@ -602,11 +592,7 @@ mod tests {
 
     #[test]
     fn test_apply_edit_rename() {
-        let mut vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let mut vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let file1_id = vfs.working_tree.resolve_path("file1.txt").unwrap();
 
         let tx = EditTransaction::with_ops(
@@ -626,11 +612,7 @@ mod tests {
 
     #[test]
     fn test_undo_redo() {
-        let mut vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let mut vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let file1_id = vfs.working_tree.resolve_path("file1.txt").unwrap();
 
         vfs.apply_edit(EditTransaction::with_ops(
@@ -654,11 +636,7 @@ mod tests {
 
     #[test]
     fn test_discard_pending() {
-        let mut vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let mut vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let file1_id = vfs.working_tree.resolve_path("file1.txt").unwrap();
 
         vfs.apply_edit(EditTransaction::with_ops(
@@ -678,11 +656,7 @@ mod tests {
 
     #[test]
     fn test_generate_changeset() {
-        let mut vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let mut vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let file1_id = vfs.working_tree.resolve_path("file1.txt").unwrap();
 
         vfs.apply_edit(EditTransaction::with_ops(
@@ -705,11 +679,7 @@ mod tests {
 
     #[test]
     fn test_on_commit_success_clears_state() {
-        let mut vfs = OverlayVfs::build(
-            PathBuf::from("test.7z"),
-            None,
-            &sample_entries(),
-        );
+        let mut vfs = OverlayVfs::build(PathBuf::from("test.7z"), None, &sample_entries());
         let file1_id = vfs.working_tree.resolve_path("file1.txt").unwrap();
 
         vfs.apply_edit(EditTransaction::with_ops(

@@ -81,8 +81,7 @@ pub fn number_input(
     set: impl Fn(f64, &mut App) + 'static,
 ) -> SettingItem {
     let opts = NumberFieldOptions { min, max, step };
-    SettingItem::new(title, SettingField::number_input(opts, get, set))
-        .description(description)
+    SettingItem::new(title, SettingField::number_input(opts, get, set)).description(description)
 }
 
 /// Create a text input field for SharedString settings.
@@ -103,6 +102,5 @@ pub fn string_dropdown(
     get: impl Fn(&App) -> SharedString + 'static,
     set: impl Fn(SharedString, &mut App) + 'static,
 ) -> SettingItem {
-    SettingItem::new(title, SettingField::dropdown(options, get, set))
-        .description(description)
+    SettingItem::new(title, SettingField::dropdown(options, get, set)).description(description)
 }

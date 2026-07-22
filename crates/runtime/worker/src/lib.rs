@@ -1,12 +1,14 @@
 //! Worker process entry point (no GPUI, headless archive operations).
 //! Communicates with parent via JSON-line protocol on stdin/stdout.
 
-use bit7z_domain::repository::*;
+use bit7z_app_archive::runtime_service::ArchiveService;
+use bit7z_domain::archive::OverwriteMode;
+use bit7z_domain::repository::{ExtractOptions, NoopNotifier};
 use bit7z_rt_ipc::WorkerMessage;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::Arc;
 
-pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
+pub fn run_worker(service: Arc<ArchiveService>) {
     println!("call run worker");
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
@@ -15,48 +17,77 @@ pub fn run_worker(repo: Arc<dyn ArchiveRepository>) {
     // Read one WorkerArgs JSON line from stdin
     let mut line = String::new();
     if stdin.read_line(&mut line).is_err() || line.trim().is_empty() {
-        let _ = writeln!(stdout, r#"{{"type":"error","code":-1,"message":"no input"}}"#);
+        let _ = writeln!(
+            stdout,
+            r#"{{"type":"error","code":-1,"message":"no input"}}"#
+        );
         return;
     }
     let args: WorkerArgs = match serde_json::from_str(line.trim()) {
         Ok(a) => a,
         Err(e) => {
-            let _ = writeln!(stdout, r#"{{"type":"error","code":-1,"message":"invalid args: {}"}}"#, e);
+            let _ = writeln!(
+                stdout,
+                r#"{{"type":"error","code":-1,"message":"invalid args: {}"}}"#,
+                e
+            );
             return;
         }
     };
 
     match args.operation {
-        WorkerOperation::Extract { archive_path, dest, password, indices } => {
+        WorkerOperation::Extract {
+            archive_path,
+            dest,
+            password,
+            indices,
+        } => {
             // Open archive → extract → report progress → report complete/error
             let pw = password.map(bit7z_domain::archive::Password::new);
-            match repo.open(&archive_path, pw.as_ref()) {
+            match service.open(&archive_path, pw.as_ref()) {
                 Ok(archive) => {
-                    send_msg(&mut stdout, &WorkerMessage::Progress {
-                        current: 0, total: indices.len() as u64,
-                        file: String::new(), bytes: 0,
-                    });
+                    send_msg(
+                        &mut stdout,
+                        &WorkerMessage::Progress {
+                            current: 0,
+                            total: indices.len() as u64,
+                            file: String::new(),
+                            bytes: 0,
+                        },
+                    );
                     let options = ExtractOptions {
-                        overwrite_mode: bit7z_domain::archive::OverwriteMode::Overwrite,
+                        overwrite_mode: OverwriteMode::Overwrite,
                         cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                         paused: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                         notifier: Arc::new(NoopNotifier),
                     };
-                    let result = repo.extract(&archive, &indices, &dest, &options);
+                    let result = service.extract(&archive, &indices, &dest, &options);
                     match result {
-                        Ok(()) => send_msg(&mut stdout, &WorkerMessage::Complete {
-                            total_files: indices.len() as u64,
-                            total_bytes: 0, duration_ms: 0,
-                        }),
-                        Err(e) => send_msg(&mut stdout, &WorkerMessage::Error {
-                            code: 1, message: e.to_string(),
-                        }),
+                        Ok(()) => send_msg(
+                            &mut stdout,
+                            &WorkerMessage::Complete {
+                                total_files: indices.len() as u64,
+                                total_bytes: 0,
+                                duration_ms: 0,
+                            },
+                        ),
+                        Err(e) => send_msg(
+                            &mut stdout,
+                            &WorkerMessage::Error {
+                                code: 1,
+                                message: e.to_string(),
+                            },
+                        ),
                     }
-                    repo.close(&archive);
+                    service.close(&archive);
                 }
-                Err(e) => send_msg(&mut stdout, &WorkerMessage::Error {
-                    code: 1, message: e.to_string(),
-                }),
+                Err(e) => send_msg(
+                    &mut stdout,
+                    &WorkerMessage::Error {
+                        code: 1,
+                        message: e.to_string(),
+                    },
+                ),
             }
         }
     }

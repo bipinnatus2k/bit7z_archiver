@@ -26,12 +26,7 @@ impl SessionStore for InMemorySessionStore {
     }
 
     fn get(&self, id: SessionId) -> Option<SessionRef> {
-        self.states
-            .read()
-            .unwrap()
-            .get(&id)
-            .cloned()
-            .map(Arc::new)
+        self.states.read().unwrap().get(&id).cloned().map(Arc::new)
     }
 
     fn remove(&self, id: SessionId) -> Option<SessionState> {

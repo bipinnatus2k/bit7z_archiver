@@ -1,7 +1,7 @@
 //! Shell context menu integration trait.
 
-pub mod windows;
 pub mod linux;
+pub mod windows;
 
 pub trait ShellIntegration: Send + Sync {
     fn register() -> Result<(), ShellError>;

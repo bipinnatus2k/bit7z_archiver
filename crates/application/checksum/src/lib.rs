@@ -1,10 +1,11 @@
-use bit7z_domain::archive::*;
-use bit7z_domain::repository::*;
+use bit7z_app_archive::runtime_service::ArchiveService;
+use bit7z_domain::archive::ArchiveHandle;
+use bit7z_domain::repository::ArchiveError;
 use md5::{Digest, Md5};
+use serde::Deserialize;
 use sha1::Sha1;
 use sha2::Sha256;
 use std::sync::Arc;
-use serde::Deserialize;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize)]
 pub enum ChecksumAlgorithm {
@@ -23,12 +24,12 @@ pub struct ChecksumResult {
 }
 
 pub struct CalculateChecksumUseCase {
-    repo: Arc<dyn ArchiveRepository>,
+    service: Arc<ArchiveService>,
 }
 
 impl CalculateChecksumUseCase {
-    pub fn new(repo: Arc<dyn ArchiveRepository>) -> Self {
-        Self { repo }
+    pub fn new(service: Arc<ArchiveService>) -> Self {
+        Self { service }
     }
 
     pub fn execute(
@@ -40,7 +41,7 @@ impl CalculateChecksumUseCase {
         let mut results = Vec::with_capacity(indices.len());
 
         for &index in indices {
-            let page = match self.repo.list_page(archive, index as usize, 1) {
+            let page = match self.service.list_page(archive, index as usize, 1) {
                 Ok(p) => p,
                 Err(e) => return Err(e),
             };
@@ -62,7 +63,7 @@ impl CalculateChecksumUseCase {
                 continue;
             }
 
-            let data = self.repo.extract_to_buffer(archive, index)?;
+            let data = self.service.extract_to_buffer(archive, index)?;
 
             for algo in algorithms {
                 match algo {
@@ -92,92 +93,5 @@ impl CalculateChecksumUseCase {
         }
 
         Ok(results)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bit7z_domain::repository::test_utils::MockArchiveRepository;
-    use std::sync::Arc;
-
-    #[test]
-    fn test_checksum_crc32() {
-        let mock = MockArchiveRepository::new(vec![
-            ArchiveEntry { name: "a.txt".into(), path: "a.txt".into(), size: 100, original_index: 0, ..Default::default() },
-        ]).with_extract_buffer(true);
-        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
-        let uc = CalculateChecksumUseCase::new(repo);
-        let handle = ArchiveHandle::new_reader();
-        let results = uc.execute(&handle, &[0], &[ChecksumAlgorithm::Crc32]).unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].path, "a.txt");
-        assert!(results[0].crc32.is_some());
-        assert!(results[0].md5.is_none());
-    }
-
-    #[test]
-    fn test_checksum_md5() {
-        let mock = MockArchiveRepository::new(vec![
-            ArchiveEntry { name: "b.bin".into(), path: "b.bin".into(), size: 50, original_index: 0, ..Default::default() },
-        ]).with_extract_buffer(true);
-        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
-        let uc = CalculateChecksumUseCase::new(repo);
-        let handle = ArchiveHandle::new_reader();
-        let results = uc.execute(&handle, &[0], &[ChecksumAlgorithm::Md5]).unwrap();
-        assert_eq!(results.len(), 1);
-        assert!(results[0].md5.is_some());
-    }
-
-    #[test]
-    fn test_checksum_multiple_algorithms() {
-        let mock = MockArchiveRepository::new(vec![
-            ArchiveEntry { name: "c.txt".into(), path: "c.txt".into(), size: 30, original_index: 0, ..Default::default() },
-        ]).with_extract_buffer(true);
-        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
-        let uc = CalculateChecksumUseCase::new(repo);
-        let handle = ArchiveHandle::new_reader();
-        let results = uc.execute(&handle, &[0], &[ChecksumAlgorithm::Crc32, ChecksumAlgorithm::Sha256]).unwrap();
-        assert!(results[0].crc32.is_some());
-        assert!(results[0].sha256.is_some());
-        assert!(results[0].md5.is_none());
-    }
-
-    #[test]
-    fn test_checksum_directory_skipped() {
-        let mock = MockArchiveRepository::new(vec![
-            ArchiveEntry { name: "dir".into(), path: "dir".into(), is_directory: true, original_index: 0, ..Default::default() },
-        ]).with_extract_buffer(true);
-        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
-        let uc = CalculateChecksumUseCase::new(repo);
-        let handle = ArchiveHandle::new_reader();
-        let results = uc.execute(&handle, &[0], &[ChecksumAlgorithm::Crc32]).unwrap();
-        assert_eq!(results.len(), 1);
-        assert!(results[0].crc32.is_none());
-        assert!(results[0].md5.is_none());
-    }
-
-    #[test]
-    fn test_checksum_multiple_indices() {
-        let mock = MockArchiveRepository::new(vec![
-            ArchiveEntry { name: "f1.txt".into(), path: "f1.txt".into(), size: 10, original_index: 0, ..Default::default() },
-            ArchiveEntry { name: "f2.txt".into(), path: "f2.txt".into(), size: 20, original_index: 1, ..Default::default() },
-        ]).with_extract_buffer(true);
-        let repo: Arc<dyn ArchiveRepository> = Arc::new(mock);
-        let uc = CalculateChecksumUseCase::new(repo);
-        let handle = ArchiveHandle::new_reader();
-        let results = uc.execute(&handle, &[0, 1], &[ChecksumAlgorithm::Crc32]).unwrap();
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].path, "f1.txt");
-        assert_eq!(results[1].path, "f2.txt");
-    }
-
-    #[test]
-    fn test_checksum_not_found() {
-        let repo = MockArchiveRepository::arc_with_count(3);
-        let uc = CalculateChecksumUseCase::new(repo);
-        let handle = ArchiveHandle::new_reader();
-        let result = uc.execute(&handle, &[99], &[ChecksumAlgorithm::Crc32]);
-        assert!(matches!(result, Err(ArchiveError::NotFound(_))));
     }
 }

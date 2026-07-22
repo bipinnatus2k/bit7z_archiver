@@ -3,6 +3,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::JobManager;
+use crate::OperationEvent;
+use crate::RuntimeContext;
 use crate::cancel::CancellationToken;
 use crate::executor::{ExecutionContext, Executor, PortSet};
 use crate::job::{
@@ -11,9 +14,6 @@ use crate::job::{
 use crate::resource::{ResourceManager, ResourceToken};
 use crate::scheduler::Scheduler;
 use crate::session::SessionManager;
-use crate::JobManager;
-use crate::OperationEvent;
-use crate::RuntimeContext;
 
 /// Default implementation of the JobManager.
 ///
@@ -71,18 +71,15 @@ impl DefaultJobManager {
     }
 
     fn emit(&self, inner: &mut ManagerInner, event: OperationEvent) {
-        inner.subscribers.retain(|sender| {
-            sender.unbounded_send(event.clone()).is_ok()
-        });
+        inner
+            .subscribers
+            .retain(|sender| sender.unbounded_send(event.clone()).is_ok());
     }
 
     /// Emit a progress event for a running operation.
     pub fn emit_progress(&self, handle: OperationHandle, percent: u32) {
         let mut inner = self.inner.lock().unwrap();
-        self.emit(
-            &mut *inner,
-            OperationEvent::Progress { handle, percent },
-        );
+        self.emit(&mut *inner, OperationEvent::Progress { handle, percent });
     }
 
     fn operation_request_to_job(&self, id: JobId, request: OperationRequest) -> Job {
@@ -91,7 +88,9 @@ impl DefaultJobManager {
             crate::job::OperationKind::CreateArchive { path, format } => {
                 JobKind::CreateArchive { path, format }
             }
-            crate::job::OperationKind::SaveArchive { session_id } => JobKind::SaveArchive { session_id },
+            crate::job::OperationKind::SaveArchive { session_id } => {
+                JobKind::SaveArchive { session_id }
+            }
             crate::job::OperationKind::Extract {
                 session_id,
                 indices,
@@ -125,7 +124,9 @@ impl DefaultJobManager {
 
         let capacity = self.resource_manager.query();
         let running_jobs: Vec<Job> = inner.running.values().map(|r| r.job.clone()).collect();
-        let selected = self.scheduler.select_next(&inner.pending, &running_jobs, capacity);
+        let selected = self
+            .scheduler
+            .select_next(&inner.pending, &running_jobs, capacity);
         if selected.is_empty() {
             return;
         }
@@ -138,7 +139,10 @@ impl DefaultJobManager {
             .collect();
 
         for job in selected_jobs {
-            let token = match self.resource_manager.acquire(job.descriptor.resource_claim.clone()) {
+            let token = match self
+                .resource_manager
+                .acquire(job.descriptor.resource_claim.clone())
+            {
                 Ok(t) => t,
                 Err(_) => {
                     inner.pending.push(job);
@@ -155,16 +159,16 @@ impl DefaultJobManager {
             };
             inner.running.insert(job.id, running);
 
-            self.emit(
-                &mut *inner,
-                OperationEvent::Started { handle },
-            );
+            self.emit(&mut *inner, OperationEvent::Started { handle });
 
             let executor = self.executor.clone();
             let runtime_context = self.context.clone();
             let ports = self.ports.clone();
             let manager = self.clone();
-            let progress = Arc::new(crate::progress::RuntimeProgressReporter::new(handle, manager.clone()));
+            let progress = Arc::new(crate::progress::RuntimeProgressReporter::new(
+                handle,
+                manager.clone(),
+            ));
             let ctx = ExecutionContext::new(runtime_context, ports, progress);
 
             let task = executor.execute(job, ctx);

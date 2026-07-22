@@ -54,9 +54,13 @@ impl Default for WindowDialogOptions {
             close_action: CloseAction::CloseDialog,
             window_decorations: {
                 #[cfg(target_os = "linux")]
-                { Some(WindowDecorations::Client) }
+                {
+                    Some(WindowDecorations::Client)
+                }
                 #[cfg(not(target_os = "linux"))]
-                { None }
+                {
+                    None
+                }
             },
             window_background: WindowBackgroundAppearance::Opaque,
         }
@@ -83,7 +87,10 @@ impl WindowDialogOptions {
             ..Default::default()
         };
         if let (Some(w), Some(h)) = (self.min_width, self.min_height) {
-            opts.window_min_size = Some(Size { width: w, height: h });
+            opts.window_min_size = Some(Size {
+                width: w,
+                height: h,
+            });
         }
         opts
     }
@@ -154,11 +161,8 @@ impl<E: Render> Render for WindowDialogEntity<E> {
 /// ```ignore
 /// open_window_dialog(cx, opts, |_window, cx| cx.new(|_| AboutContent));
 /// ```
-pub fn open_window_dialog<E, F>(
-    cx: &mut App,
-    options: WindowDialogOptions,
-    build: F,
-) where
+pub fn open_window_dialog<E, F>(cx: &mut App, options: WindowDialogOptions, build: F)
+where
     E: Render + 'static,
     F: FnOnce(&mut Window, &mut App) -> Entity<E> + 'static,
 {
@@ -175,11 +179,8 @@ pub fn open_window_dialog<E, F>(
 }
 
 /// Same as [`open_window_dialog`] but accepts `&mut AsyncApp`.
-pub fn open_window_dialog_async<E, F>(
-    cx: &mut AsyncApp,
-    options: WindowDialogOptions,
-    build: F,
-) where
+pub fn open_window_dialog_async<E, F>(cx: &mut AsyncApp, options: WindowDialogOptions, build: F)
+where
     E: Render + 'static,
     F: FnOnce(&mut Window, &mut App) -> Entity<E> + 'static,
 {
@@ -194,7 +195,8 @@ pub fn open_window_dialog_async<E, F>(
             let content = build(window, cx);
             entity_in_window(content, window, cx)
         });
-    }).detach();
+    })
+    .detach();
 }
 
 fn entity_in_window<E: Render>(

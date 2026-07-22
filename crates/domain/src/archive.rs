@@ -247,8 +247,6 @@ impl ArchiveHandle {
     }
 }
 
-
-
 /// Paginated result for large archives.
 #[derive(Debug, Clone)]
 pub struct Page<T> {
@@ -259,7 +257,11 @@ pub struct Page<T> {
 
 impl<T> Page<T> {
     pub fn new(items: Vec<T>, offset: usize, total: Option<usize>) -> Self {
-        Self { items, offset, total }
+        Self {
+            items,
+            offset,
+            total,
+        }
     }
 }
 
@@ -306,7 +308,9 @@ impl Password {
         self.0.expose_secret().is_empty()
     }
 
-    pub fn empty() -> Self { Self("".into()) }
+    pub fn empty() -> Self {
+        Self("".into())
+    }
 }
 
 impl fmt::Debug for Password {
@@ -344,9 +348,14 @@ impl OverwriteMode {
     }
 
     pub fn all() -> Vec<OverwriteMode> {
-        vec![OverwriteMode::Ask, OverwriteMode::Overwrite, OverwriteMode::Skip, OverwriteMode::RenameExtracted]
+        vec![
+            OverwriteMode::Ask,
+            OverwriteMode::Overwrite,
+            OverwriteMode::Skip,
+            OverwriteMode::RenameExtracted,
+        ]
     }
-    
+
     pub fn index(self) -> i32 {
         match self {
             OverwriteMode::Ask => 0,
@@ -427,15 +436,23 @@ pub struct ChangeSet {
 
 impl ChangeSet {
     pub fn new() -> Self {
-        Self { changes: Vec::new() }
+        Self {
+            changes: Vec::new(),
+        }
     }
 
     pub fn add(&mut self, fs_path: PathBuf, archive_path: String) {
-        self.changes.push(ArchiveChange::Add { fs_path, archive_path });
+        self.changes.push(ArchiveChange::Add {
+            fs_path,
+            archive_path,
+        });
     }
 
     pub fn update(&mut self, fs_path: PathBuf, archive_path: String) {
-        self.changes.push(ArchiveChange::Update { fs_path, archive_path });
+        self.changes.push(ArchiveChange::Update {
+            fs_path,
+            archive_path,
+        });
     }
 
     pub fn delete(&mut self, index: u32) {
@@ -548,7 +565,11 @@ mod tests {
 
         #[test]
         fn test_all_passed() {
-            let r = TestResult { total: 10, passed: 10, failed: vec![] };
+            let r = TestResult {
+                total: 10,
+                passed: 10,
+                failed: vec![],
+            };
             assert_eq!(r.total, 10);
             assert_eq!(r.passed, 10);
             assert!(r.failed.is_empty());
@@ -556,14 +577,23 @@ mod tests {
 
         #[test]
         fn test_all_failed() {
-            let failures: Vec<TestFailure> = (0..3).map(|i| TestFailure {
-                entry_path: format!("f{}.txt", i),
-                error: "CRC mismatch".into(),
-                index: i,
-                path: format!("f{}.txt", i),
-                reason: TestFailureReason::CrcMismatch { expected: i as u32, actual: 99 },
-            }).collect();
-            let r = TestResult { total: 3, passed: 0, failed: failures };
+            let failures: Vec<TestFailure> = (0..3)
+                .map(|i| TestFailure {
+                    entry_path: format!("f{}.txt", i),
+                    error: "CRC mismatch".into(),
+                    index: i,
+                    path: format!("f{}.txt", i),
+                    reason: TestFailureReason::CrcMismatch {
+                        expected: i as u32,
+                        actual: 99,
+                    },
+                })
+                .collect();
+            let r = TestResult {
+                total: 3,
+                passed: 0,
+                failed: failures,
+            };
             assert_eq!(r.total, 3);
             assert_eq!(r.passed, 0);
             assert_eq!(r.failed.len(), 3);
@@ -575,8 +605,10 @@ mod tests {
                 total: 5,
                 passed: 4,
                 failed: vec![TestFailure {
-                    entry_path: "bad.txt".into(), error: "err".into(),
-                    index: 1, path: "bad.txt".into(),
+                    entry_path: "bad.txt".into(),
+                    error: "err".into(),
+                    index: 1,
+                    path: "bad.txt".into(),
                     reason: TestFailureReason::ReadError("err".into()),
                 }],
             };
@@ -585,7 +617,11 @@ mod tests {
 
         #[test]
         fn test_empty() {
-            let r = TestResult { total: 0, passed: 0, failed: vec![] };
+            let r = TestResult {
+                total: 0,
+                passed: 0,
+                failed: vec![],
+            };
             assert_eq!(r.total, 0);
             assert_eq!(r.passed, 0);
         }

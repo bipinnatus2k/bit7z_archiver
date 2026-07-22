@@ -48,8 +48,7 @@ pub fn general_page(cx: &mut App) -> SettingPage {
                     "Minimize to system tray instead of taskbar",
                     |cx| SettingsStore::get(cx).prefs.ui.minimize_to_tray,
                     |val, cx| {
-                        SettingsStore::get_mut(cx)
-                            .update_and_save(|p| p.ui.minimize_to_tray = val);
+                        SettingsStore::get_mut(cx).update_and_save(|p| p.ui.minimize_to_tray = val);
                     },
                 ),
                 renderer::bool_switch(
@@ -57,8 +56,7 @@ pub fn general_page(cx: &mut App) -> SettingPage {
                     "Show confirmation dialog before deleting files",
                     |cx| SettingsStore::get(cx).prefs.ui.confirm_delete,
                     |val, cx| {
-                        SettingsStore::get_mut(cx)
-                            .update_and_save(|p| p.ui.confirm_delete = val);
+                        SettingsStore::get_mut(cx).update_and_save(|p| p.ui.confirm_delete = val);
                     },
                 ),
             ]),
@@ -96,8 +94,15 @@ pub fn general_page(cx: &mut App) -> SettingPage {
                 renderer::number_input(
                     "Compression Level",
                     "Default compression level (0 = store, 9 = maximum)",
-                    0.0, 9.0, 1.0,
-                    |cx| SettingsStore::get(cx).prefs.archive.default_compression_level as f64,
+                    0.0,
+                    9.0,
+                    1.0,
+                    |cx| {
+                        SettingsStore::get(cx)
+                            .prefs
+                            .archive
+                            .default_compression_level as f64
+                    },
                     |val, cx| {
                         SettingsStore::get_mut(cx)
                             .update_and_save(|p| p.archive.default_compression_level = val as u8);

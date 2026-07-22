@@ -42,21 +42,21 @@ impl Bit7zWriterAdapter {
     }
 
     fn raw_ptr(&self, session_id: SessionId) -> Result<*mut std::ffi::c_void, ArchiveError> {
-        let guard = self.handles.lock().map_err(|_| {
-            ArchiveError::Internal("[Bit7zWriterAdapter] lock poisoned".into())
-        })?;
-        guard
-            .get(&session_id)
-            .map(|h| h.ptr())
-            .ok_or_else(|| {
-                ArchiveError::Internal(format!(
-                    "[Bit7zWriterAdapter] session {} not found",
-                    session_id
-                ))
-            })
+        let guard = self
+            .handles
+            .lock()
+            .map_err(|_| ArchiveError::Internal("[Bit7zWriterAdapter] lock poisoned".into()))?;
+        guard.get(&session_id).map(|h| h.ptr()).ok_or_else(|| {
+            ArchiveError::Internal(format!(
+                "[Bit7zWriterAdapter] session {} not found",
+                session_id
+            ))
+        })
     }
 
-    fn archive_format_to_writer_format(format: ArchiveFormat) -> Result<bit7z::WriterFormat, ArchiveError> {
+    fn archive_format_to_writer_format(
+        format: ArchiveFormat,
+    ) -> Result<bit7z::WriterFormat, ArchiveError> {
         match format {
             ArchiveFormat::SevenZip => Ok(bit7z::WriterFormat::SevenZip),
             ArchiveFormat::Zip => Ok(bit7z::WriterFormat::Zip),
@@ -84,11 +84,12 @@ impl ArchiveWriter for Bit7zWriterAdapter {
         })?;
 
         let writer_format = Self::archive_format_to_writer_format(format)?;
-        let writer = bit7z::Writer::create(self.lib.as_ref(), writer_format)
-            .map_err(|e| ArchiveError::Internal(format!(
+        let writer = bit7z::Writer::create(self.lib.as_ref(), writer_format).map_err(|e| {
+            ArchiveError::Internal(format!(
                 "[create] failed to create writer for format {:?}: {}",
                 writer_format, e
-            )))?;
+            ))
+        })?;
 
         if let Some(enc) = encryption {
             if !enc.password.is_empty() {
@@ -131,7 +132,11 @@ impl ArchiveWriter for Bit7zWriterAdapter {
         let _cancel = Arc::new(AtomicBool::new(false));
         let _paused = Arc::new(AtomicBool::new(false));
 
-        if plan.deletes.is_empty() && plan.renames.is_empty() && plan.adds.is_empty() && plan.updates.is_empty() {
+        if plan.deletes.is_empty()
+            && plan.renames.is_empty()
+            && plan.adds.is_empty()
+            && plan.updates.is_empty()
+        {
             return Ok(());
         }
 
@@ -243,4 +248,3 @@ fn execute_with_writer(
 
     Ok(())
 }
-

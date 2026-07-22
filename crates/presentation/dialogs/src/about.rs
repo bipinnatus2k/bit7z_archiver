@@ -1,10 +1,10 @@
+use bit7z_pres_components::window_dialog::{
+    CloseAction, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+    WindowDialogOptions, open_window_dialog,
+};
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::v_flex;
-use bit7z_pres_components::window_dialog::{
-    DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-    open_window_dialog, WindowDialogOptions, CloseAction,
-};
 
 pub struct AboutContent;
 
@@ -13,10 +13,7 @@ impl Render for AboutContent {
         v_flex()
             .size_full()
             .gap(px(12.))
-            .child(
-                DialogHeader::new()
-                    .child(DialogTitle::new().child("About bit7z Archiver")),
-            )
+            .child(DialogHeader::new().child(DialogTitle::new().child("About bit7z Archiver")))
             .child(
                 DialogContent::new().child(
                     v_flex()
@@ -46,16 +43,16 @@ impl Render for AboutContent {
             )
             .child(
                 DialogFooter::new()
-                // .justify_center()
-                .child(
-                    Button::new("ok")
-                        .label("OK")
-                        .primary()
-                        .cursor_pointer()
-                        .on_click(|_, window, _cx| {
-                            window.remove_window();
-                        }),
-                ),
+                    // .justify_center()
+                    .child(
+                        Button::new("ok")
+                            .label("OK")
+                            .primary()
+                            .cursor_pointer()
+                            .on_click(|_, window, _cx| {
+                                window.remove_window();
+                            }),
+                    ),
             )
     }
 }

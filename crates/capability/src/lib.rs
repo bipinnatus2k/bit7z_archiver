@@ -165,7 +165,12 @@ impl CapabilityRegistry {
     }
 
     pub fn all(&self) -> Vec<Capability> {
-        self.capabilities.read().unwrap().values().cloned().collect()
+        self.capabilities
+            .read()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn by_backend(&self, backend: BackendId) -> Vec<Capability> {
@@ -222,9 +227,7 @@ impl CapabilityResolver for DefaultCapabilityResolver {
         let mut candidates: Vec<&Capability> = caps
             .iter()
             .filter(|c| {
-                c.kind == request.kind
-                    && c.formats.contains(&request.format)
-                    && c.is_available()
+                c.kind == request.kind && c.formats.contains(&request.format) && c.is_available()
             })
             .collect();
 
@@ -278,9 +281,9 @@ impl CapabilityResolver for DefaultCapabilityResolver {
                 ExecutionPolicy::Immediate
             }
             CapabilityKind::Extract | CapabilityKind::Hash => ExecutionPolicy::Queued,
-            CapabilityKind::Write
-            | CapabilityKind::Compress
-            | CapabilityKind::Encrypt => ExecutionPolicy::Queued,
+            CapabilityKind::Write | CapabilityKind::Compress | CapabilityKind::Encrypt => {
+                ExecutionPolicy::Queued
+            }
         };
 
         Ok(ExecutionDescriptor {
@@ -337,7 +340,12 @@ mod tests {
     #[test]
     fn resolve_selects_backend_by_kind_and_format() {
         let registry = Arc::new(CapabilityRegistry::new());
-        registry.register(make_cap(1, 1, CapabilityKind::Read, &[ArchiveFormat::SevenZip]));
+        registry.register(make_cap(
+            1,
+            1,
+            CapabilityKind::Read,
+            &[ArchiveFormat::SevenZip],
+        ));
         registry.register(make_cap(2, 2, CapabilityKind::Write, &[ArchiveFormat::Zip]));
 
         let resolver = DefaultCapabilityResolver::new(registry);
@@ -386,9 +394,10 @@ mod tests {
         };
         let descriptor = resolver.resolve(request).unwrap();
         assert_eq!(descriptor.resource_claim.session_locks.len(), 1);
-        assert!(
-            matches!(descriptor.resource_claim.session_locks[0], SessionLock::Exclusive(42))
-        );
+        assert!(matches!(
+            descriptor.resource_claim.session_locks[0],
+            SessionLock::Exclusive(42)
+        ));
     }
 
     #[test]

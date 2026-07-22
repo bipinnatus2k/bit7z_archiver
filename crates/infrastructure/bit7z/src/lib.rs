@@ -2,11 +2,11 @@
 
 pub mod worker;
 
+use autocxx::c_int;
+use autocxx::c_void;
 use bit7z_domain::archive::Password;
 use std::ffi::CStr;
 use std::ptr;
-use autocxx::c_int;
-use autocxx::c_void;
 
 /// Opaque handle wrapping a raw C++ pointer stored as usize.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,15 +65,24 @@ unsafe impl Sync for FfiHandle {}
 
 impl FfiHandle {
     pub fn reader(ptr: *mut std::ffi::c_void) -> Self {
-        Self { ptr, kind: HandleKind::Reader }
+        Self {
+            ptr,
+            kind: HandleKind::Reader,
+        }
     }
 
     pub fn writer(ptr: *mut std::ffi::c_void) -> Self {
-        Self { ptr, kind: HandleKind::Writer }
+        Self {
+            ptr,
+            kind: HandleKind::Writer,
+        }
     }
 
     pub fn editor(ptr: *mut std::ffi::c_void) -> Self {
-        Self { ptr, kind: HandleKind::Editor }
+        Self {
+            ptr,
+            kind: HandleKind::Editor,
+        }
     }
 
     pub fn ptr(&self) -> *mut std::ffi::c_void {
@@ -141,20 +150,28 @@ impl Library {
 
     /// Check if archive at path has encrypted headers (static check without opening).
     pub fn is_header_encrypted(&self, path: &str) -> bool {
-        let c_path = match std::ffi::CString::new(path) { Ok(p) => p, Err(_) => return false };
+        let c_path = match std::ffi::CString::new(path) {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
         unsafe { bit7z_ffi::bit7z_is_header_encrypted(self.raw.as_ptr(), c_path.as_ptr()) != 0 }
     }
 
     /// Check if archive at path is encrypted (static check without opening).
     pub fn is_encrypted(&self, path: &str) -> bool {
-        let c_path = match std::ffi::CString::new(path) { Ok(p) => p, Err(_) => return false };
+        let c_path = match std::ffi::CString::new(path) {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
         unsafe { bit7z_ffi::bit7z_is_encrypted(self.raw.as_ptr(), c_path.as_ptr()) != 0 }
     }
 }
 
 impl Drop for Library {
     fn drop(&mut self) {
-        unsafe { bit7z_ffi::bit7z_destroy_library(self.raw.as_ptr()); }
+        unsafe {
+            bit7z_ffi::bit7z_destroy_library(self.raw.as_ptr());
+        }
     }
 }
 
@@ -176,7 +193,9 @@ unsafe impl Sync for ArchiveReader {}
 impl ArchiveReader {
     pub fn open(lib: &Library, path: &str, password: Option<&Password>) -> Result<Self, String> {
         let c_path = std::ffi::CString::new(path).map_err(|e| format!("Invalid path: {}", e))?;
-        let c_pw = password.map(|p| std::ffi::CString::new(p.as_str())).transpose()
+        let c_pw = password
+            .map(|p| std::ffi::CString::new(p.as_str()))
+            .transpose()
             .map_err(|e| format!("Invalid password: {}", e))?;
         let raw = unsafe {
             Handle::from_raw(bit7z_ffi::bit7z_reader_open(
@@ -196,7 +215,10 @@ impl ArchiveReader {
     }
 
     pub fn item(&self, index: u32) -> Item<'_> {
-        Item { reader: self, index }
+        Item {
+            reader: self,
+            index,
+        }
     }
 
     pub fn extract_to(&self, indices: &[u32], dest: &str) -> Result<(), String> {
@@ -209,26 +231,27 @@ impl ArchiveReader {
                 c_dest.as_ptr(),
             )
         };
-        if ret != 0 { Err("Extraction failed".into()) } else { Ok(()) }
+        if ret != 0 {
+            Err("Extraction failed".into())
+        } else {
+            Ok(())
+        }
     }
 
     pub fn extract_to_buffer(&self, index: u32) -> Result<Vec<u8>, String> {
         let mut out_data: *mut std::ffi::c_void = std::ptr::null_mut();
         let mut out_size: i64 = 0;
         let ret = unsafe {
-            bit7z_reader_extract_to_buffer_c(
-                self.raw.as_ptr(),
-                index,
-                &mut out_data,
-                &mut out_size,
-            )
+            bit7z_reader_extract_to_buffer_c(self.raw.as_ptr(), index, &mut out_data, &mut out_size)
         };
         if ret != 0 || out_data.is_null() || out_size <= 0 {
             return Err("Extraction to buffer failed".into());
         }
         let slice = unsafe { std::slice::from_raw_parts(out_data as *const u8, out_size as usize) };
         let result = slice.to_vec();
-        unsafe { bit7z_ffi::bit7z_reader_free_buffer(out_data as *mut autocxx::c_void); }
+        unsafe {
+            bit7z_ffi::bit7z_reader_free_buffer(out_data as *mut autocxx::c_void);
+        }
         Ok(result)
     }
 
@@ -265,12 +288,17 @@ impl ArchiveReader {
         if !all_ok && failed_count > 0 {
             let error_msg = unsafe {
                 let ptr = bit7z_ffi::bit7z_test_result_error(result);
-                if ptr.is_null() { "test failed".to_string() }
-                else { std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned() }
+                if ptr.is_null() {
+                    "test failed".to_string()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
             };
             failed_errors.push(error_msg);
         }
-        unsafe { bit7z_ffi::bit7z_test_result_free(result); }
+        unsafe {
+            bit7z_ffi::bit7z_test_result_free(result);
+        }
         Ok((all_ok, total, failed_count, failed_paths, failed_errors))
     }
 
@@ -282,7 +310,9 @@ impl ArchiveReader {
 
 impl Drop for ArchiveReader {
     fn drop(&mut self) {
-        unsafe { bit7z_ffi::bit7z_reader_close(self.raw.as_ptr()); }
+        unsafe {
+            bit7z_ffi::bit7z_reader_close(self.raw.as_ptr());
+        }
     }
 }
 
@@ -294,7 +324,17 @@ unsafe extern "C" {
         count: u32,
         dest: *const std::ffi::c_char,
         ctx: *mut std::ffi::c_void,
-        on_overwrite: Option<unsafe extern "C" fn(*const std::ffi::c_char, *const std::ffi::c_char, u64, u64, i64, i64, *mut std::ffi::c_void) -> i32>,
+        on_overwrite: Option<
+            unsafe extern "C" fn(
+                *const std::ffi::c_char,
+                *const std::ffi::c_char,
+                u64,
+                u64,
+                i64,
+                i64,
+                *mut std::ffi::c_void,
+            ) -> i32,
+        >,
         on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
         on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, u64, *mut std::ffi::c_void)>,
     ) -> i32;
@@ -309,7 +349,17 @@ impl ArchiveReader {
         indices: &[u32],
         dest: &str,
         ctx: *mut std::ffi::c_void,
-        on_overwrite: Option<unsafe extern "C" fn(*const std::ffi::c_char, *const std::ffi::c_char, u64, u64, i64, i64, *mut std::ffi::c_void) -> i32>,
+        on_overwrite: Option<
+            unsafe extern "C" fn(
+                *const std::ffi::c_char,
+                *const std::ffi::c_char,
+                u64,
+                u64,
+                i64,
+                i64,
+                *mut std::ffi::c_void,
+            ) -> i32,
+        >,
         on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
         on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, u64, *mut std::ffi::c_void)>,
     ) -> Result<(), String> {
@@ -326,7 +376,11 @@ impl ArchiveReader {
                 on_file,
             )
         };
-        if ret == 0 { Ok(()) } else { Err("extraction failed or cancelled".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("extraction failed or cancelled".into())
+        }
     }
 
     /// Extract all items with per-file rename/skip/overwrite via RenameCallback.
@@ -335,7 +389,16 @@ impl ArchiveReader {
         &self,
         dest: &str,
         ctx: *mut std::ffi::c_void,
-        on_rename: Option<unsafe extern "C" fn(*const std::ffi::c_char, u64, i32, *mut std::ffi::c_char, u32, *mut std::ffi::c_void) -> i32>,
+        on_rename: Option<
+            unsafe extern "C" fn(
+                *const std::ffi::c_char,
+                u64,
+                i32,
+                *mut std::ffi::c_char,
+                u32,
+                *mut std::ffi::c_void,
+            ) -> i32,
+        >,
         on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
         on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
     ) -> Result<(), String> {
@@ -350,7 +413,11 @@ impl ArchiveReader {
                 on_file,
             )
         };
-        if ret == 0 { Ok(()) } else { Err("extraction failed or cancelled".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("extraction failed or cancelled".into())
+        }
     }
 }
 
@@ -359,7 +426,16 @@ unsafe extern "C" {
         reader: *mut std::ffi::c_void,
         dest: *const std::ffi::c_char,
         ctx: *mut std::ffi::c_void,
-        on_rename: Option<unsafe extern "C" fn(*const std::ffi::c_char, u64, i32, *mut std::ffi::c_char, u32, *mut std::ffi::c_void) -> i32>,
+        on_rename: Option<
+            unsafe extern "C" fn(
+                *const std::ffi::c_char,
+                u64,
+                i32,
+                *mut std::ffi::c_char,
+                u32,
+                *mut std::ffi::c_void,
+            ) -> i32,
+        >,
         on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
         on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
     ) -> i32;
@@ -371,19 +447,34 @@ unsafe extern "C" {
 
 unsafe extern "C" {
     fn bit7z_writer_create(lib: *mut std::ffi::c_void, format: i32) -> *mut std::ffi::c_void;
-    fn bit7z_writer_open(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char, format: i32, password: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+    fn bit7z_writer_open(
+        lib: *mut std::ffi::c_void,
+        path: *const std::ffi::c_char,
+        format: i32,
+        password: *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_void;
     fn bit7z_writer_close(w: *mut std::ffi::c_void);
     fn bit7z_writer_set_threads(w: *mut std::ffi::c_void, n: u32);
     fn bit7z_writer_set_compression_level(w: *mut std::ffi::c_void, level: i32);
     fn bit7z_writer_set_password(w: *mut std::ffi::c_void, password: *const std::ffi::c_char);
     fn bit7z_writer_set_update_mode(w: *mut std::ffi::c_void, mode: i32);
     fn bit7z_writer_add_file(w: *mut std::ffi::c_void, path: *const std::ffi::c_char) -> i32;
-    fn bit7z_writer_add_files(w: *mut std::ffi::c_void, paths: *const *const std::ffi::c_char, count: u32) -> i32;
+    fn bit7z_writer_add_files(
+        w: *mut std::ffi::c_void,
+        paths: *const *const std::ffi::c_char,
+        count: u32,
+    ) -> i32;
     // bit7z_writer_add_items uses `const char**` which autocxx cannot bind,
     // so it is declared manually here instead of via generate!() in ffi.rs.
-    fn bit7z_writer_add_items(w: *mut std::ffi::c_void, paths: *const *const std::ffi::c_char, archive_paths: *const *const std::ffi::c_char, count: u32) -> i32;
+    fn bit7z_writer_add_items(
+        w: *mut std::ffi::c_void,
+        paths: *const *const std::ffi::c_char,
+        archive_paths: *const *const std::ffi::c_char,
+        count: u32,
+    ) -> i32;
     fn bit7z_writer_add_dir(w: *mut std::ffi::c_void, dir: *const std::ffi::c_char) -> i32;
-    fn bit7z_writer_compress_to(w: *mut std::ffi::c_void, out_path: *const std::ffi::c_char) -> i32;
+    fn bit7z_writer_compress_to(w: *mut std::ffi::c_void, out_path: *const std::ffi::c_char)
+    -> i32;
     fn bit7z_writer_compress_to_cb(
         w: *mut std::ffi::c_void,
         out_path: *const std::ffi::c_char,
@@ -391,9 +482,18 @@ unsafe extern "C" {
         on_progress: Option<unsafe extern "C" fn(u64, u64, *mut std::ffi::c_void) -> i32>,
         on_file: Option<unsafe extern "C" fn(*const std::ffi::c_char, *mut std::ffi::c_void)>,
     ) -> i32;
-    fn bit7z_editor_open(lib: *mut std::ffi::c_void, path: *const std::ffi::c_char, format: i32, password: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+    fn bit7z_editor_open(
+        lib: *mut std::ffi::c_void,
+        path: *const std::ffi::c_char,
+        format: i32,
+        password: *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_void;
     fn bit7z_editor_close(e: *mut std::ffi::c_void);
-    fn bit7z_editor_rename(e: *mut std::ffi::c_void, index: u32, new_path: *const std::ffi::c_char) -> i32;
+    fn bit7z_editor_rename(
+        e: *mut std::ffi::c_void,
+        index: u32,
+        new_path: *const std::ffi::c_char,
+    ) -> i32;
     fn bit7z_editor_delete(e: *mut std::ffi::c_void, index: u32) -> i32;
     fn bit7z_editor_apply(e: *mut std::ffi::c_void) -> i32;
 
@@ -494,15 +594,25 @@ unsafe impl Sync for Writer {}
 impl Writer {
     pub fn create(lib: &Library, format: WriterFormat) -> Result<Self, String> {
         let raw = unsafe { bit7z_writer_create(lib.raw_handle().as_ptr(), format as i32) };
-        if raw.is_null() { Err("failed to create writer".into()) }
-        else { Ok(Self { raw: Handle::from_raw(raw) }) }
+        if raw.is_null() {
+            Err("failed to create writer".into())
+        } else {
+            Ok(Self {
+                raw: Handle::from_raw(raw),
+            })
+        }
     }
 
     pub unsafe fn from_raw(raw: Handle) -> Self {
         Self { raw }
     }
 
-    pub fn open(lib: &Library, path: &str, format: WriterFormat, password: Option<&Password>) -> Result<Self, String> {
+    pub fn open(
+        lib: &Library,
+        path: &str,
+        format: WriterFormat,
+        password: Option<&Password>,
+    ) -> Result<Self, String> {
         let c_path = std::ffi::CString::new(path).map_err(|e| format!("{}", e))?;
         let c_pw = password.and_then(|p| std::ffi::CString::new(p.as_str()).ok());
         let raw = unsafe {
@@ -513,52 +623,83 @@ impl Writer {
                 c_pw.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
             )
         };
-        if raw.is_null() { Err("failed to open writer".into()) }
-        else { Ok(Self { raw: Handle::from_raw(raw) }) }
+        if raw.is_null() {
+            Err("failed to open writer".into())
+        } else {
+            Ok(Self {
+                raw: Handle::from_raw(raw),
+            })
+        }
     }
 
     pub fn set_threads(&self, n: u32) {
-        unsafe { bit7z_writer_set_threads(self.raw.as_ptr(), n); }
+        unsafe {
+            bit7z_writer_set_threads(self.raw.as_ptr(), n);
+        }
     }
 
     pub fn set_compression_level(&self, level: WriterCompressionLevel) {
-        unsafe { bit7z_writer_set_compression_level(self.raw.as_ptr(), level as i32); }
+        unsafe {
+            bit7z_writer_set_compression_level(self.raw.as_ptr(), level as i32);
+        }
     }
 
     pub fn set_password(&self, password: &str) {
         let c_pw = std::ffi::CString::new(password).unwrap();
-        unsafe { bit7z_writer_set_password(self.raw.as_ptr(), c_pw.as_ptr()); }
+        unsafe {
+            bit7z_writer_set_password(self.raw.as_ptr(), c_pw.as_ptr());
+        }
     }
 
     pub fn set_update_mode(&self, mode: UpdateMode) {
-        unsafe { bit7z_writer_set_update_mode(self.raw.as_ptr(), mode as i32); }
+        unsafe {
+            bit7z_writer_set_update_mode(self.raw.as_ptr(), mode as i32);
+        }
     }
 
     pub fn add_file(&self, path: &str) -> Result<(), String> {
         let c_path = std::ffi::CString::new(path).map_err(|e| format!("{}", e))?;
         let ret = unsafe { bit7z_writer_add_file(self.raw.as_ptr(), c_path.as_ptr()) };
-        if ret == 0 { Ok(()) } else { Err("add_file failed".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("add_file failed".into())
+        }
     }
 
     pub fn add_files(&self, paths: &[&str]) -> Result<(), String> {
-        let c_paths: Vec<std::ffi::CString> = paths.iter()
+        let c_paths: Vec<std::ffi::CString> = paths
+            .iter()
             .filter_map(|p| std::ffi::CString::new(*p).ok())
             .collect();
         let ptrs: Vec<*const std::ffi::c_char> = c_paths.iter().map(|s| s.as_ptr()).collect();
-        let ret = unsafe { bit7z_writer_add_files(self.raw.as_ptr(), ptrs.as_ptr(), ptrs.len() as u32) };
-        if ret == 0 { Ok(()) } else { Err("add_files failed".into()) }
+        let ret =
+            unsafe { bit7z_writer_add_files(self.raw.as_ptr(), ptrs.as_ptr(), ptrs.len() as u32) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("add_files failed".into())
+        }
     }
 
     pub fn add_directory(&self, dir: &str) -> Result<(), String> {
         let c_dir = std::ffi::CString::new(dir).map_err(|e| format!("{}", e))?;
         let ret = unsafe { bit7z_writer_add_dir(self.raw.as_ptr(), c_dir.as_ptr()) };
-        if ret == 0 { Ok(()) } else { Err("add_directory failed".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("add_directory failed".into())
+        }
     }
 
     pub fn compress_to(&self, out_path: &str) -> Result<(), String> {
         let c_out = std::ffi::CString::new(out_path).map_err(|e| format!("{}", e))?;
         let ret = unsafe { bit7z_writer_compress_to(self.raw.as_ptr(), c_out.as_ptr()) };
-        if ret == 0 { Ok(()) } else { Err("compress_to failed".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("compress_to failed".into())
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -579,32 +720,52 @@ impl Writer {
                 on_file,
             )
         };
-        if ret == 0 { Ok(()) } else { Err("compress_to failed or cancelled".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("compress_to failed or cancelled".into())
+        }
     }
 
     pub fn set_compression_method(&self, method: WriterCompressionMethod) {
-        unsafe { bit7z_ffi::bit7z_writer_set_compression_method(self.raw.as_ptr(), c_int(method as i32)); }
+        unsafe {
+            bit7z_ffi::bit7z_writer_set_compression_method(self.raw.as_ptr(), c_int(method as i32));
+        }
     }
 
     pub fn set_dictionary_size(&self, bytes: u32) {
-        unsafe { bit7z_ffi::bit7z_writer_set_dictionary_size(self.raw.as_ptr(), bytes); }
+        unsafe {
+            bit7z_ffi::bit7z_writer_set_dictionary_size(self.raw.as_ptr(), bytes);
+        }
     }
 
     pub fn set_word_size(&self, bytes: u32) {
-        unsafe { bit7z_ffi::bit7z_writer_set_word_size(self.raw.as_ptr(), bytes); }
+        unsafe {
+            bit7z_ffi::bit7z_writer_set_word_size(self.raw.as_ptr(), bytes);
+        }
     }
 
     pub fn set_solid_mode(&self, solid: bool) {
-        unsafe { bit7z_ffi::bit7z_writer_set_solid_mode(self.raw.as_ptr(), c_int(solid as i32)); }
+        unsafe {
+            bit7z_ffi::bit7z_writer_set_solid_mode(self.raw.as_ptr(), c_int(solid as i32));
+        }
     }
 
     pub fn set_volume_size(&self, bytes: u64) {
-        unsafe { bit7z_ffi::bit7z_writer_set_volume_size(self.raw.as_ptr(), bytes); }
+        unsafe {
+            bit7z_ffi::bit7z_writer_set_volume_size(self.raw.as_ptr(), bytes);
+        }
     }
 
     pub fn set_password_ex(&self, password: &str, encrypt_header: bool) {
         let c_pw = std::ffi::CString::new(password).unwrap();
-        unsafe { bit7z_ffi::bit7z_writer_set_password_ex(self.raw.as_ptr(), c_pw.as_ptr(), c_int(encrypt_header as i32)); }
+        unsafe {
+            bit7z_ffi::bit7z_writer_set_password_ex(
+                self.raw.as_ptr(),
+                c_pw.as_ptr(),
+                c_int(encrypt_header as i32),
+            );
+        }
     }
 
     pub fn set_store_timestamps(&self, modified: bool, created: bool, accessed: bool) {
@@ -618,7 +779,13 @@ impl Writer {
         }
     }
 
-    pub fn add_dir_filtered(&self, dir: &str, filter: &str, policy: FilterPolicy, recursive: bool) -> Result<(), String> {
+    pub fn add_dir_filtered(
+        &self,
+        dir: &str,
+        filter: &str,
+        policy: FilterPolicy,
+        recursive: bool,
+    ) -> Result<(), String> {
         let c_dir = std::ffi::CString::new(dir).map_err(|e| format!("{}", e))?;
         let c_filter = std::ffi::CString::new(filter).map_err(|e| format!("{}", e))?;
         let ret = unsafe {
@@ -630,7 +797,11 @@ impl Writer {
                 c_int(recursive as i32),
             )
         };
-        if ret == 0 { Ok(()) } else { Err("add_dir_filtered failed".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("add_dir_filtered failed".into())
+        }
     }
 
     pub fn add_items(&self, paths_and_names: &[(&str, &str)]) -> Result<(), String> {
@@ -652,7 +823,11 @@ impl Writer {
                 path_ptrs.len() as u32,
             )
         };
-        if ret == 0 { Ok(()) } else { Err("add_items failed".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("add_items failed".into())
+        }
     }
 
     /// Borrow the raw FFI handle.
@@ -670,7 +845,9 @@ impl Writer {
 
 impl Drop for Writer {
     fn drop(&mut self) {
-        unsafe { bit7z_writer_close(self.raw.as_ptr()); }
+        unsafe {
+            bit7z_writer_close(self.raw.as_ptr());
+        }
     }
 }
 
@@ -689,7 +866,12 @@ unsafe impl Send for Editor {}
 unsafe impl Sync for Editor {}
 
 impl Editor {
-    pub fn open(lib: &Library, path: &str, format: WriterFormat, password: Option<&str>) -> Result<Self, String> {
+    pub fn open(
+        lib: &Library,
+        path: &str,
+        format: WriterFormat,
+        password: Option<&str>,
+    ) -> Result<Self, String> {
         let c_path = std::ffi::CString::new(path).map_err(|e| format!("{}", e))?;
         let c_pw = password.and_then(|p| std::ffi::CString::new(p).ok());
         let raw = unsafe {
@@ -700,30 +882,49 @@ impl Editor {
                 c_pw.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
             )
         };
-        if raw.is_null() { Err("failed to open editor".into()) }
-        else { Ok(Self { raw: Handle::from_raw(raw) }) }
+        if raw.is_null() {
+            Err("failed to open editor".into())
+        } else {
+            Ok(Self {
+                raw: Handle::from_raw(raw),
+            })
+        }
     }
 
     pub fn rename(&self, index: u32, new_path: &str) -> Result<(), String> {
         let c_path = std::ffi::CString::new(new_path).map_err(|e| format!("{}", e))?;
         let ret = unsafe { bit7z_editor_rename(self.raw.as_ptr(), index, c_path.as_ptr()) };
-        if ret == 0 { Ok(()) } else { Err("rename failed".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("rename failed".into())
+        }
     }
 
     pub fn delete(&self, index: u32) -> Result<(), String> {
         let ret = unsafe { bit7z_editor_delete(self.raw.as_ptr(), index) };
-        if ret == 0 { Ok(()) } else { Err("delete failed".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("delete failed".into())
+        }
     }
 
     pub fn apply(&self) -> Result<(), String> {
         let ret = unsafe { bit7z_editor_apply(self.raw.as_ptr()) };
-        if ret == 0 { Ok(()) } else { Err("apply changes failed".into()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err("apply changes failed".into())
+        }
     }
 }
 
 impl Drop for Editor {
     fn drop(&mut self) {
-        unsafe { bit7z_editor_close(self.raw.as_ptr()); }
+        unsafe {
+            bit7z_editor_close(self.raw.as_ptr());
+        }
     }
 }
 
@@ -739,13 +940,19 @@ pub struct Item<'a> {
 impl<'a> Item<'a> {
     pub fn path(&self) -> String {
         let p = unsafe { bit7z_ffi::bit7z_item_path(self.reader.raw.as_ptr(), self.index) };
-        if p.is_null() { String::new() }
-        else { unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() } }
+        if p.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() }
+        }
     }
     pub fn name(&self) -> String {
         let n = unsafe { bit7z_ffi::bit7z_item_name(self.reader.raw.as_ptr(), self.index) };
-        if n.is_null() { String::new() }
-        else { unsafe { CStr::from_ptr(n).to_string_lossy().into_owned() } }
+        if n.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(n).to_string_lossy().into_owned() }
+        }
     }
     pub fn size(&self) -> u64 {
         unsafe { bit7z_ffi::bit7z_item_size(self.reader.raw.as_ptr(), self.index) }
@@ -793,9 +1000,15 @@ impl<'a> Item<'a> {
         let buf_size: u32 = 256;
         let mut buf: Vec<u8> = vec![0u8; buf_size as usize];
         let ret = unsafe {
-            bit7z_ffi::bit7z_item_compression_method(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
+            bit7z_ffi::bit7z_item_compression_method(
+                self.raw_ptr(),
+                buf.as_mut_ptr() as *mut _,
+                buf_size,
+            )
         };
-        if ret < 0 { return Err("failed to get compression method".into()); }
+        if ret < 0 {
+            return Err("failed to get compression method".into());
+        }
         let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
         Ok(c_str.to_string_lossy().into_owned())
     }
@@ -806,7 +1019,9 @@ impl<'a> Item<'a> {
         let ret = unsafe {
             bit7z_ffi::bit7z_item_comment(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
         };
-        if ret < 0 { return Err("failed to get comment".into()); }
+        if ret < 0 {
+            return Err("failed to get comment".into());
+        }
         let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
         Ok(c_str.to_string_lossy().into_owned())
     }
@@ -817,7 +1032,9 @@ impl<'a> Item<'a> {
         let ret = unsafe {
             bit7z_ffi::bit7z_item_user(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
         };
-        if ret < 0 { return Err("failed to get user".into()); }
+        if ret < 0 {
+            return Err("failed to get user".into());
+        }
         let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
         Ok(c_str.to_string_lossy().into_owned())
     }
@@ -828,7 +1045,9 @@ impl<'a> Item<'a> {
         let ret = unsafe {
             bit7z_ffi::bit7z_item_group(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
         };
-        if ret < 0 { return Err("failed to get group".into()); }
+        if ret < 0 {
+            return Err("failed to get group".into());
+        }
         let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
         Ok(c_str.to_string_lossy().into_owned())
     }
@@ -849,7 +1068,9 @@ impl<'a> Item<'a> {
         let ret = unsafe {
             bit7z_ffi::bit7z_item_extension(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
         };
-        if ret < 0 { return Err("failed to get extension".into()); }
+        if ret < 0 {
+            return Err("failed to get extension".into());
+        }
         let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
         Ok(c_str.to_string_lossy().into_owned())
     }
@@ -860,11 +1081,10 @@ impl<'a> Item<'a> {
         let ret = unsafe {
             bit7z_ffi::bit7z_item_hardlink(self.raw_ptr(), buf.as_mut_ptr() as *mut _, buf_size)
         };
-        if ret < 0 { return Err("failed to get hardlink".into()); }
+        if ret < 0 {
+            return Err("failed to get hardlink".into());
+        }
         let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const _) };
         Ok(c_str.to_string_lossy().into_owned())
     }
 }
-
-
-

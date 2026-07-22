@@ -1,4 +1,4 @@
-use gpui::{actions, Action};
+use gpui::{Action, actions};
 use serde::Deserialize;
 
 #[derive(Clone, Action, PartialEq, Eq, Deserialize)]
@@ -7,4 +7,19 @@ pub struct Confirm {
     pub secondary: bool,
 }
 
-actions!(ext_table, [Cancel, SelectUp, SelectDown, SelectLeft, SelectRight, SelectFirst, SelectLast, SelectPrevColumn, SelectNextColumn, SelectPageUp, SelectPageDown]);
+actions!(
+    ext_table,
+    [
+        Cancel,
+        SelectUp,
+        SelectDown,
+        SelectLeft,
+        SelectRight,
+        SelectFirst,
+        SelectLast,
+        SelectPrevColumn,
+        SelectNextColumn,
+        SelectPageUp,
+        SelectPageDown
+    ]
+);

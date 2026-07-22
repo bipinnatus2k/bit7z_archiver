@@ -1,15 +1,13 @@
-use gpui_component::{
-    ActiveTheme, Sizable, Size,
+use super::actions::{
+    Cancel, SelectDown, SelectFirst, SelectLast, SelectNextColumn, SelectPageDown, SelectPageUp,
+    SelectPrevColumn, SelectUp,
 };
+use super::{TableDelegate, TableState};
 use gpui::{
     App, Edges, Entity, Focusable, InteractiveElement, IntoElement, KeyBinding, ParentElement,
     RenderOnce, Styled, Window, div, prelude::FluentBuilder,
 };
-use super::{TableDelegate, TableState};
-use super::actions::{
-    Cancel, SelectDown, SelectFirst, SelectLast, SelectNextColumn, SelectPageDown,
-    SelectPageUp, SelectPrevColumn, SelectUp,
-};
+use gpui_component::{ActiveTheme, Sizable, Size};
 
 const CONTEXT: &'static str = "DataTable";
 pub(crate) fn init(cx: &mut App) {
@@ -57,7 +55,10 @@ where
     D: TableDelegate,
 {
     pub fn new(state: &Entity<TableState<D>>) -> Self {
-        Self { state: state.clone(), options: TableOptions::default() }
+        Self {
+            state: state.clone(),
+            options: TableOptions::default(),
+        }
     }
 
     pub fn stripe(mut self, stripe: bool) -> Self {
@@ -71,8 +72,11 @@ where
     }
 
     pub fn scrollbar_visible(mut self, vertical: bool, horizontal: bool) -> Self {
-        self.options.scrollbar_visible =
-            Edges { right: vertical, bottom: horizontal, ..Default::default() };
+        self.options.scrollbar_visible = Edges {
+            right: vertical,
+            bottom: horizontal,
+            ..Default::default()
+        };
         self
     }
 }
@@ -114,7 +118,9 @@ where
             .on_action(window.listener_for(&self.state, TableState::action_select_page_down))
             .bg(cx.theme().table)
             .when(bordered, |this| {
-                this.rounded(cx.theme().radius).border_1().border_color(cx.theme().border)
+                this.rounded(cx.theme().radius)
+                    .border_1()
+                    .border_color(cx.theme().border)
             })
             .child(self.state)
     }

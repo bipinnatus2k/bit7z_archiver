@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 bit7z-domain = { path = "../../domain" }
 bit7z-rt-ipc = { path = "../ipc" }
+bit7z-app-archive = { path = "../../application/archive" }
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true

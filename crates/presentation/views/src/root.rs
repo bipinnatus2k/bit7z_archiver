@@ -1,25 +1,25 @@
-use bit7z_infra_events::ArchiveVmEvent;
-use bit7z_pres_view_models::archive_state::{ArchiveState, ViewStatus};
-use gpui::prelude::FluentBuilder;
 use crate::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::archive_file_list::{ArchiveFileList, FileListIntent};
-use bit7z_pres_dialogs::password::PasswordDialog;
 use crate::menu::{self, Menu};
 use crate::preview_panel::PreviewPanel;
 use crate::root_controller::RootController;
 use crate::status_bar::StatusBar;
 use crate::toolbar::{Toolbar, ToolbarIntent};
 use bit7z_domain::repository::ArchiveError;
+use bit7z_infra_events::ArchiveVmEvent;
+use bit7z_pres_dialogs::password::PasswordDialog;
 use bit7z_pres_settings::SettingsStore;
+use bit7z_pres_view_models::archive_state::{ArchiveState, ViewStatus};
 use bit7z_rt_app_state::AppState;
 use bit7z_rt_ipc::GuiCommand;
 use crossbeam_channel::unbounded;
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
-use std::path::Path;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use gpui_component::{Root, StyleSized, v_flex};
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 pub struct RootView {
     pub app_state: Arc<AppState>,
@@ -47,7 +47,7 @@ impl RootView {
         open_password: Option<String>,
     ) -> Entity<Self> {
         cx.new(|cx| {
-            let repo = app_state.repository.clone();
+            let service = app_state.service.clone();
 
             let menu = cx.new(|cx| Menu::new(false, cx));
             let toolbar = cx.new(|_| Toolbar::new());
@@ -79,7 +79,7 @@ impl RootView {
                         }
                         ToolbarIntent::AddFiles => {
                             if let Some(ref handle) = this.state.archive {
-                                let repo = this.controller.repo();
+                                let repo = this.controller.service();
                                 let h = handle.clone();
                                 cx.spawn(async move |_, cx| {
                                     bit7z_pres_dialogs::add_files::AddFilesDialog::open(cx, bit7z_domain::archive::ArchiveFormat::SevenZip, Some(h), Some(repo), false);
@@ -130,7 +130,7 @@ impl RootView {
                                 Some(this.state.selected_indices())
                             };
                             let handle = this.state.archive.clone();
-                            let repo = this.controller.repo();
+                            let repo = this.controller.service();
                             cx.spawn(async move |_, cx| {
                                 if let Some(h) = handle {
                                     bit7z_pres_dialogs::test::TestDialog::open_with_entries(cx, h, indices, repo);
@@ -186,7 +186,7 @@ impl RootView {
                             this.sync_children(cx);
                             if let Some(idx) = indices.first() {
                                 if let Some(ref archive) = this.state.archive {
-                                    let repo = this.controller.repo();
+                                    let repo = this.controller.service();
                                     let panel = this.preview_panel.clone();
                                     let h = archive.clone();
                                     let idx = *idx;
@@ -239,7 +239,7 @@ impl RootView {
                                         this.load_current_directory(cx);
                                     } else {
                                         let idx = entry.original_index;
-                                        let repo = this.controller.repo();
+                                        let repo = this.controller.service();
                                         let handle = h.clone();
                                         cx.background_spawn(async move {
                                             let uc = bit7z_app_archive::open_entry::OpenEntryUseCase::new(repo);
@@ -291,7 +291,7 @@ impl RootView {
                         FileListIntent::TestSelected => {
                             let indices: Vec<u32> = this.state.selected_indices();
                             let handle = this.state.archive.clone();
-                            let repo = this.controller.repo();
+                            let repo = this.controller.service();
                             if let Some(ref h) = handle {
                                 let h_clone = h.clone();
                                 cx.spawn(async move |_, cx| {
@@ -307,7 +307,7 @@ impl RootView {
                             let handle = this.state.archive.clone();
                             let indices: Vec<u32> = this.state.selected_indices();
                             if !indices.is_empty() {
-                                let repo = this.controller.repo();
+                                let repo = this.controller.service();
                                 cx.spawn(async move |_, cx| {
                                     bit7z_pres_dialogs::delete::DeleteDialog::open(cx, indices, handle.unwrap(), repo);
                                 }).detach();
@@ -317,7 +317,7 @@ impl RootView {
                             let handle = this.state.archive.clone();
                             let indices: Vec<u32> = this.state.selected_indices();
                             if !indices.is_empty() {
-                                let repo = this.controller.repo();
+                                let repo = this.controller.service();
                                 cx.spawn(async move |_, cx| {
                                     bit7z_pres_dialogs::checksum::ChecksumDialog::open_with_entries(cx, handle.unwrap(), indices, repo);
                                 }).detach();
@@ -333,10 +333,10 @@ impl RootView {
                                 let path_str = handle.path.as_ref()
                                     .map(|p| p.to_string_lossy().to_string())
                                     .unwrap_or_default();
-                                let repo = this.controller.repo();
+                                let controller = this.controller.clone();
                                 let h = handle.clone();
                                 cx.spawn(async move |_, cx| {
-                                    if let Ok(props) = repo.get_properties(&h) {
+                                    if let Ok(props) = controller.get_properties(&h) {
                                         bit7z_pres_dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
                                     }
                                 }).detach();
@@ -388,7 +388,7 @@ impl RootView {
 
             let focus_handle = cx.focus_handle();
 
-            let controller_repo = repo.clone();
+            let controller_service = service.clone();
             let mut root = Self {
                 app_state,
                 focus_handle,
@@ -396,7 +396,7 @@ impl RootView {
                 archive_browser, entry_list, preview_panel, status_bar,
                 pending_password_path: None,
                 state: ArchiveState::new(),
-                controller: RootController::new(controller_repo),
+                controller: RootController::new(controller_service),
                 sidebar_collapsed: false,
             };
             if let Some(cb) = deferred_open {
@@ -418,7 +418,9 @@ impl RootView {
 
     fn selected_entries_data(&self) -> (Vec<u32>, Vec<bit7z_domain::archive::ArchiveEntry>) {
         let indices = self.state.selected_indices();
-        let entries = self.state.directory_cache
+        let entries = self
+            .state
+            .directory_cache
             .get(&self.state.current_path)
             .map(|all| {
                 all.iter()
@@ -446,16 +448,14 @@ impl RootView {
             .update(cx, |c, cx| c.set_state(entries, status, path, cx));
         self.toolbar
             .update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
-        self.menu
-            .update(cx, |c, cx| {
-                c.set_sidebar_collapsed(self.sidebar_collapsed);
-                c.set_state(is_open, has_sel, single, cx);
-            });
-        self.archive_browser
-            .update(cx, |c, cx| {
-                c.set_collapsed(self.sidebar_collapsed, cx);
-                c.set_state(subdirs, vec![]);
-            });
+        self.menu.update(cx, |c, cx| {
+            c.set_sidebar_collapsed(self.sidebar_collapsed);
+            c.set_state(is_open, has_sel, single, cx);
+        });
+        self.archive_browser.update(cx, |c, cx| {
+            c.set_collapsed(self.sidebar_collapsed, cx);
+            c.set_state(subdirs, vec![]);
+        });
         self.status_bar
             .update(cx, |c, _| c.set_status(&status_text));
         self.sync_edit_state(cx);
@@ -471,10 +471,10 @@ impl RootView {
         self.sync_children(cx);
         cx.emit(ArchiveVmEvent::SelectionChanged(None));
 
-        let repo = self.controller.repo();
+        let service = self.controller.service();
         let path_buf = path.to_path_buf();
         let path_string = path.to_string_lossy().to_string();
-        let use_case = bit7z_app_archive::open::OpenArchiveUseCase::new(repo);
+        let use_case = bit7z_app_archive::open::OpenArchiveUseCase::new(service);
         let pw = password.map(|s| bit7z_domain::archive::Password::new(s));
         let pw_clone = pw.clone();
 
@@ -516,7 +516,7 @@ impl RootView {
     fn load_current_directory(&mut self, cx: &mut Context<Self>) {
         let handle = self.state.archive.clone();
         let path = self.state.current_path.clone();
-        let controller = self.controller.repo();
+        let controller = self.controller.service();
 
         cx.spawn(async move |this, cx| {
             if let Some(ref h) = handle {
@@ -547,21 +547,15 @@ impl RootView {
         .detach();
     }
 
-    fn handle_save_archive(&mut self, cx: &mut Context<Self>) {
+    fn handle_save_archive(&mut self, _cx: &mut Context<Self>) {
         if let Some(ref h) = self.state.archive {
-            let repo = self.controller.repo();
-            let handle = h.clone();
-            cx.background_spawn(async move {
-                let _ = repo.commit(&handle);
-            }).detach();
+            let _ = self.controller.commit_archive(h);
         }
     }
 
     fn handle_undo(&mut self, cx: &mut Context<Self>) {
         if let Some(ref h) = self.state.archive {
-            let repo = self.controller.repo();
-            let handle = h.clone();
-            let result = repo.undo(&handle);
+            let result = self.controller.undo_archive(h);
             if let Ok(true) = result {
                 self.state.directory_cache.clear();
                 self.load_current_directory(cx);
@@ -573,9 +567,7 @@ impl RootView {
 
     fn handle_redo(&mut self, cx: &mut Context<Self>) {
         if let Some(ref h) = self.state.archive {
-            let repo = self.controller.repo();
-            let handle = h.clone();
-            let result = repo.redo(&handle);
+            let result = self.controller.redo_archive(h);
             if let Ok(true) = result {
                 self.state.directory_cache.clear();
                 self.load_current_directory(cx);
@@ -590,35 +582,28 @@ impl RootView {
             Some(h) => h,
             None => return,
         };
-        let repo = self.controller.repo();
-        if repo.has_unsaved_changes(&h) {
-            cx.spawn(async move |_, cx| {
-                // TODO: Show unsaved changes dialog
-                // For now, discard pending changes and close
-                let _ = repo.discard_pending(&h);
-                repo.close(&h);
-            }).detach();
-        } else {
-            repo.close(&h);
+        if self.controller.has_unsaved_changes(&h) {
+            let _ = self.controller.discard_pending(&h);
         }
+        self.controller.close_archive(h);
         self.state = ArchiveState::new();
         self.sync_children(cx);
     }
 
     fn sync_edit_state(&mut self, cx: &mut Context<Self>) {
         if let Some(ref h) = self.state.archive {
-            let repo = self.controller.repo();
-            let has_unsaved = repo.has_unsaved_changes(h);
-            let can_undo = repo.can_undo(h);
-            let can_redo = repo.can_redo(h);
-            self.toolbar.update(cx, |t, _| t.set_edit_state(has_unsaved, can_undo, can_redo));
+            let has_unsaved = self.controller.has_unsaved_changes(h);
+            let can_undo = self.controller.can_undo(h);
+            let can_redo = self.controller.can_redo(h);
+            self.toolbar
+                .update(cx, |t, _| t.set_edit_state(has_unsaved, can_undo, can_redo));
         }
     }
 
     fn menu_checksum(&self, cx: &mut Context<Self>) {
         let handle = self.state.archive.clone();
         let indices: Vec<u32> = self.state.selection.iter().copied().collect();
-        let repo = self.controller.repo();
+        let repo = self.controller.service();
         cx.spawn(async move |_, cx| {
             if let Some(h) = handle {
                 bit7z_pres_dialogs::checksum::ChecksumDialog::open_with_entries(
@@ -748,7 +733,7 @@ impl Render for RootView {
                     }
                     "t" if cmd => {
                         let handle = this.state.archive.clone();
-                        let repo = this.controller.repo();
+                        let repo = this.controller.service();
                         cx.spawn(async move |_, cx| {
                             if let Some(h) = handle {
                                 bit7z_pres_dialogs::test::TestDialog::open_with_entries(cx, h, None, repo);
@@ -765,7 +750,7 @@ impl Render for RootView {
                     }
                     "f4" => {
                         if let Some(ref h) = this.state.archive {
-                            let repo = this.controller.repo();
+                            let repo = this.controller.service();
                             let handle = h.clone();
                             cx.background_spawn(async move {
                                 let _ = bit7z_app_archive::new_file::new_file_and_add(repo, &handle, "new_file.txt", None);
@@ -787,10 +772,10 @@ impl Render for RootView {
                             let path_str = handle.path.as_ref()
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_default();
-                            let repo = this.controller.repo();
+                            let controller = this.controller.clone();
                             let h = handle.clone();
                             cx.spawn(async move |_, cx| {
-                                if let Ok(props) = repo.get_properties(&h) {
+                                if let Ok(props) = controller.get_properties(&h) {
                                     bit7z_pres_dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
                                 }
                             }).detach();
@@ -800,7 +785,7 @@ impl Render for RootView {
                         let handle = this.state.archive.clone();
                         let indices: Vec<u32> = this.state.selected_indices();
                         if !indices.is_empty() {
-                            let repo = this.controller.repo();
+                            let repo = this.controller.service();
                             cx.spawn(async move |_, cx| {
                                 if let Some(h) = handle {
                                     bit7z_pres_dialogs::delete::DeleteDialog::open(cx, indices, h, repo);
@@ -824,7 +809,7 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this: &mut RootView, _: &menu::AddFiles, _window, cx| {
                 if let Some(ref handle) = this.state.archive {
-                    let repo = this.controller.repo();
+                    let repo = this.controller.service();
                     let h = handle.clone();
                     cx.spawn(async move |_, cx| {
                         bit7z_pres_dialogs::add_files::AddFilesDialog::open(cx, bit7z_domain::archive::ArchiveFormat::SevenZip, Some(h), Some(repo), false);
@@ -834,7 +819,7 @@ impl Render for RootView {
             .on_action(cx.listener(|this: &mut RootView, _: &menu::TestSelected, _window, cx| {
                 let indices: Vec<u32> = this.state.selected_indices();
                 let handle = this.state.archive.clone();
-                let repo = this.controller.repo();
+                let repo = this.controller.service();
                 cx.spawn(async move |_, cx| {
                     if let Some(h) = handle {
                         bit7z_pres_dialogs::test::TestDialog::open_with_entries(cx, h, Some(indices), repo);
@@ -843,7 +828,7 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this: &mut RootView, _: &menu::TestAll, _window, cx| {
                 let handle = this.state.archive.clone();
-                let repo = this.controller.repo();
+                let repo = this.controller.service();
                 cx.spawn(async move |_, cx| {
                     if let Some(h) = handle {
                         bit7z_pres_dialogs::test::TestDialog::open_with_entries(cx, h, None, repo);
@@ -865,10 +850,10 @@ impl Render for RootView {
                     let path_str = handle.path.as_ref()
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_default();
-                    let repo = this.controller.repo();
+                    let controller = this.controller.clone();
                     let h = handle.clone();
                     cx.spawn(async move |_, cx| {
-                        if let Ok(props) = repo.get_properties(&h) {
+                        if let Ok(props) = controller.get_properties(&h) {
                             bit7z_pres_dialogs::properties::PropertiesDialog::open_archive(path_str, props, cx);
                         }
                     }).detach();
@@ -886,7 +871,7 @@ impl Render for RootView {
             .on_action(cx.listener(|this: &mut RootView, _: &menu::DeleteSelected, _window, cx| {
                 if !this.state.selection.is_empty() {
                     if let Some(ref h) = this.state.archive {
-                        let repo = this.controller.repo(); let handle = h.clone(); let indices: Vec<u32> = this.state.selected_indices();
+                        let repo = this.controller.service(); let handle = h.clone(); let indices: Vec<u32> = this.state.selected_indices();
                         cx.spawn(async move |_, cx| { bit7z_pres_dialogs::delete::DeleteDialog::open(cx, indices, handle, repo); }).detach();
                     }
                 }

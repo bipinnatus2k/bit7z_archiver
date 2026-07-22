@@ -25,12 +25,28 @@ pub type JobHandle = OperationHandle;
 /// Kind of user-level operation.
 #[derive(Debug, Clone)]
 pub enum OperationKind {
-    OpenArchive { path: PathBuf },
-    CreateArchive { path: PathBuf, format: ArchiveFormat },
-    SaveArchive { session_id: SessionId },
-    Extract { session_id: SessionId, indices: Vec<u32>, destination: PathBuf },
-    Test { session_id: SessionId },
-    Preview { session_id: SessionId, index: u32 },
+    OpenArchive {
+        path: PathBuf,
+    },
+    CreateArchive {
+        path: PathBuf,
+        format: ArchiveFormat,
+    },
+    SaveArchive {
+        session_id: SessionId,
+    },
+    Extract {
+        session_id: SessionId,
+        indices: Vec<u32>,
+        destination: PathBuf,
+    },
+    Test {
+        session_id: SessionId,
+    },
+    Preview {
+        session_id: SessionId,
+        index: u32,
+    },
 }
 
 /// Priority of an operation.
@@ -62,12 +78,28 @@ pub struct Job {
 /// Internal kind of a job.
 #[derive(Debug, Clone)]
 pub enum JobKind {
-    OpenArchive { path: PathBuf },
-    CreateArchive { path: PathBuf, format: ArchiveFormat },
-    SaveArchive { session_id: SessionId },
-    Extract { session_id: SessionId, indices: Vec<u32>, destination: PathBuf },
-    Test { session_id: SessionId },
-    Preview { session_id: SessionId, index: u32 },
+    OpenArchive {
+        path: PathBuf,
+    },
+    CreateArchive {
+        path: PathBuf,
+        format: ArchiveFormat,
+    },
+    SaveArchive {
+        session_id: SessionId,
+    },
+    Extract {
+        session_id: SessionId,
+        indices: Vec<u32>,
+        destination: PathBuf,
+    },
+    Test {
+        session_id: SessionId,
+    },
+    Preview {
+        session_id: SessionId,
+        index: u32,
+    },
 }
 
 /// A graph of jobs with dependencies.

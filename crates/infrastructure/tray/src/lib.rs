@@ -5,7 +5,7 @@ pub mod linux;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
-use crossbeam_channel::{Sender, Receiver};
+use crossbeam_channel::{Receiver, Sender};
 use gpui::Global;
 use std::sync::Arc;
 

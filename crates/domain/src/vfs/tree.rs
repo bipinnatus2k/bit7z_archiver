@@ -1,5 +1,5 @@
+use super::{VfsError, VfsNode, VfsNodeId, next_vfs_id};
 use std::collections::HashMap;
-use super::{VfsNode, VfsNodeId, VfsError, next_vfs_id};
 
 #[derive(Debug, Clone)]
 pub struct Tree {
@@ -34,7 +34,8 @@ impl Tree {
     }
 
     pub fn root_children(&self) -> &[VfsNodeId] {
-        self.children.get(&Some(self.root))
+        self.children
+            .get(&Some(self.root))
             .map(|v| v.as_slice())
             .unwrap_or(&[])
     }
@@ -48,9 +49,9 @@ impl Tree {
         let mut current = self.root;
         for part in &parts {
             let kids = self.children.get(&Some(current))?;
-            let found = kids.iter().find(|&&id| {
-                self.nodes.get(&id).map(|n| n.name.as_str()) == Some(part)
-            })?;
+            let found = kids
+                .iter()
+                .find(|&&id| self.nodes.get(&id).map(|n| n.name.as_str()) == Some(part))?;
             current = *found;
         }
         Some(current)
@@ -81,7 +82,10 @@ impl Tree {
         }
         if let Some(pid) = parent {
             let siblings = self.children.entry(Some(pid)).or_default();
-            if siblings.iter().any(|&sid| self.nodes.get(&sid).map(|n| n.name.as_str()) == Some(&name)) {
+            if siblings
+                .iter()
+                .any(|&sid| self.nodes.get(&sid).map(|n| n.name.as_str()) == Some(&name))
+            {
                 return Err(VfsError::AlreadyExists(name));
             }
         }
@@ -91,14 +95,18 @@ impl Tree {
     }
 
     pub fn rename_node(&mut self, node_id: VfsNodeId, new_name: &str) -> Result<String, VfsError> {
-        let node = self.nodes.get_mut(&node_id)
+        let node = self
+            .nodes
+            .get_mut(&node_id)
             .ok_or(VfsError::NodeNotFound(node_id))?;
         let old_name = std::mem::replace(&mut node.name, new_name.to_string());
         Ok(old_name)
     }
 
     pub fn remove_node(&mut self, node_id: VfsNodeId) -> Result<VfsNode, VfsError> {
-        let node = self.nodes.remove(&node_id)
+        let node = self
+            .nodes
+            .remove(&node_id)
             .ok_or(VfsError::NodeNotFound(node_id))?;
         if let Some(parent) = node.parent
             && let Some(siblings) = self.children.get_mut(&Some(parent))
@@ -158,7 +166,9 @@ pub struct DirtyTree {
 
 impl DirtyTree {
     pub fn new() -> Self {
-        Self { entries: HashMap::new() }
+        Self {
+            entries: HashMap::new(),
+        }
     }
 
     pub fn mark(&mut self, node_id: VfsNodeId, change_type: DirtyType) {
@@ -186,7 +196,8 @@ impl DirtyTree {
     }
 
     pub fn by_type(&self, change_type: DirtyType) -> Vec<VfsNodeId> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .filter(|(_, t)| **t == change_type)
             .map(|(id, _)| *id)
             .collect()
@@ -245,9 +256,14 @@ mod tests {
         let root_id = next_vfs_id();
         let mut tree = Tree::new(root_id);
         tree.insert_node(VfsNode {
-            id: root_id, parent: None, name: String::new(),
-            is_directory: true, original_index: None, fs_path: None,
-        }).unwrap();
+            id: root_id,
+            parent: None,
+            name: String::new(),
+            is_directory: true,
+            original_index: None,
+            fs_path: None,
+        })
+        .unwrap();
 
         let dir = make_node("dir", Some(root_id), true);
         let dir_id = dir.id;
@@ -266,9 +282,14 @@ mod tests {
         let root_id = next_vfs_id();
         let mut tree = Tree::new(root_id);
         tree.insert_node(VfsNode {
-            id: root_id, parent: None, name: String::new(),
-            is_directory: true, original_index: None, fs_path: None,
-        }).unwrap();
+            id: root_id,
+            parent: None,
+            name: String::new(),
+            is_directory: true,
+            original_index: None,
+            fs_path: None,
+        })
+        .unwrap();
 
         let file = make_node("old.txt", Some(root_id), false);
         let file_id = file.id;
@@ -285,9 +306,14 @@ mod tests {
         let root_id = next_vfs_id();
         let mut tree = Tree::new(root_id);
         tree.insert_node(VfsNode {
-            id: root_id, parent: None, name: String::new(),
-            is_directory: true, original_index: None, fs_path: None,
-        }).unwrap();
+            id: root_id,
+            parent: None,
+            name: String::new(),
+            is_directory: true,
+            original_index: None,
+            fs_path: None,
+        })
+        .unwrap();
 
         let file = make_node("delete_me.txt", Some(root_id), false);
         let file_id = file.id;

@@ -1,6 +1,6 @@
 use gpui::*;
 use gpui_component::button::Button;
-use gpui_component::{h_flex, Disableable, IconName};
+use gpui_component::{Disableable, IconName, h_flex};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToolbarIntent {

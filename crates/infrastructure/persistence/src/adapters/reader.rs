@@ -13,7 +13,9 @@ use bit7z_ports::ArchiveReader;
 use bit7z_infra_bit7z as bit7z;
 use bit7z_infra_progress::ProgressSender;
 
-use crate::adapters::ffi_util::{detect_writer_format, read_all_entries, writer_format_to_archive_format};
+use crate::adapters::ffi_util::{
+    detect_writer_format, read_all_entries, writer_format_to_archive_format,
+};
 
 /// FFI-backed reader adapter.
 pub struct Bit7zReaderAdapter {
@@ -39,18 +41,16 @@ impl Bit7zReaderAdapter {
     /// Returns the raw FFI pointer for a session.
     #[allow(dead_code)]
     fn raw_ptr(&self, session_id: SessionId) -> Result<*mut std::ffi::c_void, ArchiveError> {
-        let guard = self.handles.lock().map_err(|_| {
-            ArchiveError::Internal("[Bit7zReaderAdapter] lock poisoned".into())
-        })?;
-        guard
-            .get(&session_id)
-            .map(|h| h.ptr())
-            .ok_or_else(|| {
-                ArchiveError::Internal(format!(
-                    "[Bit7zReaderAdapter] session {} not found",
-                    session_id
-                ))
-            })
+        let guard = self
+            .handles
+            .lock()
+            .map_err(|_| ArchiveError::Internal("[Bit7zReaderAdapter] lock poisoned".into()))?;
+        guard.get(&session_id).map(|h| h.ptr()).ok_or_else(|| {
+            ArchiveError::Internal(format!(
+                "[Bit7zReaderAdapter] session {} not found",
+                session_id
+            ))
+        })
     }
 
     pub fn close(&self, session_id: SessionId) {
@@ -68,8 +68,8 @@ impl Bit7zReaderAdapter {
         dest: &Path,
         progress: ProgressSender,
     ) -> Result<(), ArchiveError> {
-        use std::sync::atomic::{AtomicU64, Ordering};
         use std::sync::Mutex as StdMutex;
+        use std::sync::atomic::{AtomicU64, Ordering};
 
         let raw_ptr = self.raw_ptr(session.id)?;
 
@@ -92,7 +92,12 @@ impl Bit7zReaderAdapter {
             ctx: *mut std::ffi::c_void,
         ) -> i32 {
             let ctx = unsafe { &*(ctx as *const ExtractCtx) };
-            let file = ctx.current_file.lock().ok().map(|g| g.clone()).unwrap_or_default();
+            let file = ctx
+                .current_file
+                .lock()
+                .ok()
+                .map(|g| g.clone())
+                .unwrap_or_default();
             let file = if file.is_empty() { None } else { Some(file) };
             let _file_total = ctx.current_file_size.load(Ordering::Relaxed);
             let _ = ctx.progress.send(bit7z_domain::repository::ProgressUpdate {
@@ -178,7 +183,7 @@ impl ArchiveReader for Bit7zReaderAdapter {
                     return Err(ArchiveError::Internal(format!(
                         "[open] failed to open RAR '{}': {}",
                         path_str, e
-                    )))
+                    )));
                 }
             };
             (false, r)
@@ -187,12 +192,13 @@ impl ArchiveReader for Bit7zReaderAdapter {
             if enc && password.is_none() {
                 return Err(ArchiveError::EncryptedArchiveRequiresPassword);
             }
-            let r = bit7z::ArchiveReader::open(self.lib.as_ref(), path_str, password).map_err(|e| {
-                ArchiveError::Internal(format!(
-                    "[open] failed to open archive '{}': {}",
-                    path_str, e
-                ))
-            })?;
+            let r =
+                bit7z::ArchiveReader::open(self.lib.as_ref(), path_str, password).map_err(|e| {
+                    ArchiveError::Internal(format!(
+                        "[open] failed to open archive '{}': {}",
+                        path_str, e
+                    ))
+                })?;
             (enc, r)
         };
 
@@ -256,7 +262,9 @@ impl ArchiveReader for Bit7zReaderAdapter {
                 extension: e.extension,
                 hardlink: e.hardlink,
             })
-            .ok_or_else(|| ArchiveError::Internal(format!("metadata not found for index {}", index)))
+            .ok_or_else(|| {
+                ArchiveError::Internal(format!("metadata not found for index {}", index))
+            })
     }
 
     fn extract(
@@ -330,9 +338,7 @@ impl ArchiveReader for Bit7zReaderAdapter {
                 if ptr.is_null() {
                     "test failed".to_string()
                 } else {
-                    std::ffi::CStr::from_ptr(ptr)
-                        .to_string_lossy()
-                        .into_owned()
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
                 }
             };
             failed_errors.push(error_msg);

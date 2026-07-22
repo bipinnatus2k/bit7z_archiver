@@ -1,11 +1,11 @@
-use gpui::*;
 use gpui::prelude::FluentBuilder as _;
-use gpui_component::{h_flex, v_flex, ActiveTheme};
+use gpui::*;
+use gpui_component::{ActiveTheme, h_flex, v_flex};
 
 use crate::backend::store::SettingsStore;
-use crate::field::{AnySettingField, SettingField, bool_field, f64_field, dropdown_field};
-use bit7z_domain::preferences::{Preferences, ThemeMode};
+use crate::field::{AnySettingField, SettingField, bool_field, dropdown_field, f64_field};
 use bit7z_domain::archive::ArchiveFormat;
+use bit7z_domain::preferences::{Preferences, ThemeMode};
 
 // ── Section descriptor ───────────────────────────────────────────────────
 
@@ -97,7 +97,8 @@ impl SettingsPanel {
                             "0 = store, 9 = maximum",
                             |p| p.archive.default_compression_level as f64,
                             |p, v| p.archive.default_compression_level = v as u8,
-                            0.0, 9.0,
+                            0.0,
+                            9.0,
                         )),
                     ],
                 },
@@ -153,7 +154,12 @@ impl Render for SettingsPanel {
             children.push(
                 v_flex()
                     .gap_2()
-                    .child(div().text_color(primary).text_sm().child(section.title.clone()))
+                    .child(
+                        div()
+                            .text_color(primary)
+                            .text_sm()
+                            .child(section.title.clone()),
+                    )
                     .children(items)
                     .into_any_element(),
             );

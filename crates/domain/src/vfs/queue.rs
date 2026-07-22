@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use super::VfsNodeId;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub enum EditOperation {
@@ -52,9 +52,17 @@ impl EditTransaction {
     }
 
     pub fn reverse(&self) -> Vec<EditOperation> {
-        self.operations.iter().rev().map(|op| match op {
-            EditOperation::Add { node_id, parent_id: _, name: _, fs_path: _, is_directory: _ } => {
-                EditOperation::Delete {
+        self.operations
+            .iter()
+            .rev()
+            .map(|op| match op {
+                EditOperation::Add {
+                    node_id,
+                    parent_id: _,
+                    name: _,
+                    fs_path: _,
+                    is_directory: _,
+                } => EditOperation::Delete {
                     node_id: *node_id,
                     saved_name: String::new(),
                     saved_parent: None,
@@ -62,25 +70,33 @@ impl EditTransaction {
                     saved_original_index: None,
                     saved_fs_path: None,
                     saved_child_ids: Vec::new(),
-                }
-            }
-            EditOperation::Delete { node_id, saved_name, saved_parent, saved_is_directory, saved_original_index: _, saved_fs_path, saved_child_ids: _ } => {
-                EditOperation::Add {
+                },
+                EditOperation::Delete {
+                    node_id,
+                    saved_name,
+                    saved_parent,
+                    saved_is_directory,
+                    saved_original_index: _,
+                    saved_fs_path,
+                    saved_child_ids: _,
+                } => EditOperation::Add {
                     node_id: *node_id,
                     parent_id: saved_parent.unwrap_or(*node_id),
                     name: saved_name.clone(),
                     fs_path: saved_fs_path.clone(),
                     is_directory: *saved_is_directory,
-                }
-            }
-            EditOperation::Rename { node_id, old_name, new_name } => {
+                },
                 EditOperation::Rename {
+                    node_id,
+                    old_name,
+                    new_name,
+                } => EditOperation::Rename {
                     node_id: *node_id,
                     old_name: new_name.clone(),
                     new_name: old_name.clone(),
-                }
-            }
-        }).collect()
+                },
+            })
+            .collect()
     }
 }
 
@@ -162,13 +178,14 @@ mod tests {
         let mut queue = EditQueue::new();
         let id = next_vfs_id();
 
-        let tx = EditTransaction::with_ops("rename file", vec![
-            EditOperation::Rename {
+        let tx = EditTransaction::with_ops(
+            "rename file",
+            vec![EditOperation::Rename {
                 node_id: id,
                 old_name: "old.txt".into(),
                 new_name: "new.txt".into(),
-            },
-        ]);
+            }],
+        );
         queue.push(tx);
         assert!(queue.can_undo());
         assert!(!queue.can_redo());
@@ -185,12 +202,22 @@ mod tests {
         let mut queue = EditQueue::new();
         let id = next_vfs_id();
 
-        queue.push(EditTransaction::with_ops("op1", vec![
-            EditOperation::Rename { node_id: id, old_name: "a".into(), new_name: "b".into() },
-        ]));
-        queue.push(EditTransaction::with_ops("op2", vec![
-            EditOperation::Rename { node_id: id, old_name: "b".into(), new_name: "c".into() },
-        ]));
+        queue.push(EditTransaction::with_ops(
+            "op1",
+            vec![EditOperation::Rename {
+                node_id: id,
+                old_name: "a".into(),
+                new_name: "b".into(),
+            }],
+        ));
+        queue.push(EditTransaction::with_ops(
+            "op2",
+            vec![EditOperation::Rename {
+                node_id: id,
+                old_name: "b".into(),
+                new_name: "c".into(),
+            }],
+        ));
 
         queue.undo();
         assert!(queue.can_undo());
@@ -206,15 +233,25 @@ mod tests {
         let mut queue = EditQueue::new();
         let id = next_vfs_id();
 
-        queue.push(EditTransaction::with_ops("op1", vec![
-            EditOperation::Rename { node_id: id, old_name: "a".into(), new_name: "b".into() },
-        ]));
+        queue.push(EditTransaction::with_ops(
+            "op1",
+            vec![EditOperation::Rename {
+                node_id: id,
+                old_name: "a".into(),
+                new_name: "b".into(),
+            }],
+        ));
         queue.undo();
         assert!(queue.can_redo());
 
-        queue.push(EditTransaction::with_ops("op2", vec![
-            EditOperation::Rename { node_id: id, old_name: "b".into(), new_name: "c".into() },
-        ]));
+        queue.push(EditTransaction::with_ops(
+            "op2",
+            vec![EditOperation::Rename {
+                node_id: id,
+                old_name: "b".into(),
+                new_name: "c".into(),
+            }],
+        ));
         assert!(!queue.can_redo());
     }
 
@@ -241,15 +278,16 @@ mod tests {
         let node_id = next_vfs_id();
         let parent_id = next_vfs_id();
 
-        let tx = EditTransaction::with_ops("add file", vec![
-            EditOperation::Add {
+        let tx = EditTransaction::with_ops(
+            "add file",
+            vec![EditOperation::Add {
                 node_id,
                 parent_id,
                 name: "new.txt".into(),
                 fs_path: None,
                 is_directory: false,
-            },
-        ]);
+            }],
+        );
 
         let reversed = tx.reverse();
         assert_eq!(reversed.len(), 1);
@@ -263,8 +301,9 @@ mod tests {
     fn test_transaction_reverse_delete() {
         let node_id = next_vfs_id();
 
-        let tx = EditTransaction::with_ops("delete file", vec![
-            EditOperation::Delete {
+        let tx = EditTransaction::with_ops(
+            "delete file",
+            vec![EditOperation::Delete {
                 node_id,
                 saved_name: "file.txt".into(),
                 saved_parent: None,
@@ -272,13 +311,15 @@ mod tests {
                 saved_original_index: Some(5),
                 saved_fs_path: None,
                 saved_child_ids: Vec::new(),
-            },
-        ]);
+            }],
+        );
 
         let reversed = tx.reverse();
         assert_eq!(reversed.len(), 1);
         match &reversed[0] {
-            EditOperation::Add { node_id: n, name, .. } => {
+            EditOperation::Add {
+                node_id: n, name, ..
+            } => {
                 assert_eq!(*n, node_id);
                 assert_eq!(name, "file.txt");
             }
@@ -290,17 +331,22 @@ mod tests {
     fn test_reverse_rename_swaps_names() {
         let node_id = next_vfs_id();
 
-        let tx = EditTransaction::with_ops("rename", vec![
-            EditOperation::Rename {
+        let tx = EditTransaction::with_ops(
+            "rename",
+            vec![EditOperation::Rename {
                 node_id,
                 old_name: "old".into(),
                 new_name: "new".into(),
-            },
-        ]);
+            }],
+        );
 
         let reversed = tx.reverse();
         match &reversed[0] {
-            EditOperation::Rename { node_id: n, old_name, new_name } => {
+            EditOperation::Rename {
+                node_id: n,
+                old_name,
+                new_name,
+            } => {
                 assert_eq!(*n, node_id);
                 assert_eq!(old_name, "new");
                 assert_eq!(new_name, "old");

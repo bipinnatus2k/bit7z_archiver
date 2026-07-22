@@ -6,8 +6,8 @@ pub mod panels;
 pub mod renderer;
 
 pub use backend::store::SettingsStore;
-pub use gpui_component::setting::*;
 pub use gpui_component::ActiveTheme;
+pub use gpui_component::setting::*;
 
 use gpui::*;
 
@@ -30,5 +30,4 @@ pub fn register_panel_entity(entity: &Entity<panels::SettingsPanel>) {
 pub fn init(cx: &mut App) {
     SettingsStore::init(cx);
     renderer::SettingFieldRenderer::init(cx);
-
 }

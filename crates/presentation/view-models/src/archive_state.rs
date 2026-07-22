@@ -65,7 +65,11 @@ impl ArchiveState {
     }
 
     pub fn update_selection(&mut self, row: usize) {
-        let index = self.level_entries.get(row).map(|e| e.original_index).unwrap_or(0);
+        let index = self
+            .level_entries
+            .get(row)
+            .map(|e| e.original_index)
+            .unwrap_or(0);
         self.selection.clear();
         self.selection.insert(index);
         self.selection_anchor = Some(index);
@@ -84,7 +88,11 @@ impl ArchiveState {
     }
 
     pub fn invert_selection(&mut self) {
-        let all: HashSet<u32> = self.level_entries.iter().map(|e| e.original_index).collect();
+        let all: HashSet<u32> = self
+            .level_entries
+            .iter()
+            .map(|e| e.original_index)
+            .collect();
         for idx in &all {
             if self.selection.contains(idx) {
                 self.selection.remove(idx);
@@ -147,7 +155,11 @@ impl ArchiveState {
     }
 
     pub fn reapply_filter_and_sort(&mut self) {
-        let snapshot = self.directory_cache.get(&self.current_path).cloned().unwrap_or_default();
+        let snapshot = self
+            .directory_cache
+            .get(&self.current_path)
+            .cloned()
+            .unwrap_or_default();
         self.apply_filter_and_sort(&snapshot);
     }
 
@@ -171,13 +183,20 @@ impl ArchiveState {
 
         items.sort_by(|a, b| {
             if a.is_directory != b.is_directory {
-                return if self.sort_ascending { b.is_directory.cmp(&a.is_directory) } else { a.is_directory.cmp(&b.is_directory) };
+                return if self.sort_ascending {
+                    b.is_directory.cmp(&a.is_directory)
+                } else {
+                    a.is_directory.cmp(&b.is_directory)
+                };
             }
             let c = match self.sort_column {
                 1 => a.size.cmp(&b.size),
                 2 => a.compressed_size.cmp(&b.compressed_size),
                 3 => Self::ratio_key(a).cmp(&Self::ratio_key(b)),
-                _ => a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()),
+                _ => a
+                    .display_name
+                    .to_lowercase()
+                    .cmp(&b.display_name.to_lowercase()),
             };
             if self.sort_ascending { c } else { c.reverse() }
         });
@@ -185,8 +204,11 @@ impl ArchiveState {
     }
 
     fn ratio_key(e: &LevelEntry) -> u64 {
-        if e.size == 0 { 0 }
-        else { (((1.0 - e.compressed_size as f64 / e.size as f64) * 10000.0).max(0.0)) as u64 }
+        if e.size == 0 {
+            0
+        } else {
+            (((1.0 - e.compressed_size as f64 / e.size as f64) * 10000.0).max(0.0)) as u64
+        }
     }
 
     pub fn displayed_entries(&self) -> &[LevelEntry] {
@@ -194,8 +216,11 @@ impl ArchiveState {
     }
 
     pub fn selected_entries(&self) -> Vec<ArchiveEntry> {
-        if self.selection.is_empty() { return vec![]; }
-        self.directory_cache.values()
+        if self.selection.is_empty() {
+            return vec![];
+        }
+        self.directory_cache
+            .values()
             .flat_map(|entries| entries.iter())
             .filter(|e| self.selection.contains(&e.original_index))
             .cloned()
@@ -219,9 +244,11 @@ impl ArchiveState {
     }
 
     pub fn current_subdirs(&self) -> Vec<String> {
-        self.directory_cache.get(&self.current_path)
+        self.directory_cache
+            .get(&self.current_path)
             .map(|entries| {
-                let mut dirs: Vec<String> = entries.iter()
+                let mut dirs: Vec<String> = entries
+                    .iter()
                     .filter(|e| e.is_directory)
                     .map(|e| e.name.clone())
                     .collect();
@@ -236,7 +263,8 @@ impl ArchiveState {
             return self.current_subdirs();
         }
         let filter_lower = self.filter_text.to_lowercase();
-        self.current_subdirs().into_iter()
+        self.current_subdirs()
+            .into_iter()
             .filter(|name| name.to_lowercase().contains(&filter_lower))
             .collect()
     }

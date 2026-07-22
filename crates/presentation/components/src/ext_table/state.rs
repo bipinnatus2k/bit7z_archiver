@@ -1,12 +1,11 @@
 use std::{collections::HashSet, ops::Range, rc::Rc, time::Duration};
 
-use gpui_component::{
-    ActiveTheme, ElementExt, Icon, IconName, StyledExt,
-    h_flex,
-    menu::{ContextMenuExt, PopupMenu},
-    scroll::{ScrollableMask, Scrollbar},
-    v_flex,
+use super::actions::{
+    Cancel, SelectDown, SelectFirst, SelectLast, SelectNextColumn, SelectPageDown, SelectPageUp,
+    SelectPrevColumn, SelectUp,
 };
+use super::*;
+use crate::virtual_list;
 use gpui::{
     AppContext, Axis, Bounds, ClickEvent, Context, Div, DragMoveEvent, EventEmitter, FocusHandle,
     Focusable, InteractiveElement, IntoElement, ListSizingBehavior, MouseButton, MouseDownEvent,
@@ -14,12 +13,12 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Task, UniformListScrollHandle, Window, div,
     prelude::FluentBuilder, px, uniform_list,
 };
-use crate::virtual_list;
-use super::actions::{
-        Cancel, SelectDown, SelectFirst, SelectLast, SelectNextColumn, SelectPageDown,
-        SelectPageUp, SelectPrevColumn, SelectUp,
+use gpui_component::{
+    ActiveTheme, ElementExt, Icon, IconName, StyledExt, h_flex,
+    menu::{ContextMenuExt, PopupMenu},
+    scroll::{ScrollableMask, Scrollbar},
+    v_flex,
 };
-use super::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum SelectionMode {
@@ -518,7 +517,11 @@ where
                 let is_down = ix > row_ix;
                 self.vertical_scroll_handle.scroll_to_item(
                     ix,
-                    if is_down { ScrollStrategy::Bottom } else { ScrollStrategy::Top },
+                    if is_down {
+                        ScrollStrategy::Bottom
+                    } else {
+                        ScrollStrategy::Top
+                    },
                 );
             }
             cx.emit(TableEvent::SelectRow(row_ix));

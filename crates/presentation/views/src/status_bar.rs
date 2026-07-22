@@ -5,7 +5,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable};
 
 pub struct StatusBar {
     status_text: String,
-    show_preview :bool,
+    show_preview: bool,
 }
 
 impl StatusBar {

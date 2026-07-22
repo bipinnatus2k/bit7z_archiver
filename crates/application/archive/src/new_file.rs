@@ -1,10 +1,11 @@
 use crate::add_to::AddToArchiveUseCase;
-use bit7z_domain::archive::*;
-use bit7z_domain::repository::*;
+use crate::runtime_service::ArchiveService;
+use bit7z_domain::archive::{ArchiveHandle, Password};
+use bit7z_domain::repository::ArchiveError;
 use std::sync::Arc;
 
 pub fn new_file_and_add(
-    repo: Arc<dyn ArchiveRepository>,
+    service: Arc<ArchiveService>,
     archive: &ArchiveHandle,
     file_name: &str,
     _password: Option<&Password>,
@@ -25,7 +26,9 @@ pub fn new_file_and_add(
             .status()
             .map_err(|e| ArchiveError::Internal(format!("Failed to launch editor: {}", e)))?;
         if !status.success() {
-            return Err(ArchiveError::Internal("Editor exited with non-zero status".into()));
+            return Err(ArchiveError::Internal(
+                "Editor exited with non-zero status".into(),
+            ));
         }
     }
 
@@ -35,9 +38,14 @@ pub fn new_file_and_add(
         let status = std::process::Command::new(&editor)
             .arg(temp_path.to_str().unwrap_or(""))
             .status()
-            .map_err(|e| ArchiveError::Internal(format!("Failed to launch editor '{}': {}", editor, e)))?;
+            .map_err(|e| {
+                ArchiveError::Internal(format!("Failed to launch editor '{}': {}", editor, e))
+            })?;
         if !status.success() {
-            return Err(ArchiveError::Internal(format!("Editor '{}' exited with non-zero status", editor)));
+            return Err(ArchiveError::Internal(format!(
+                "Editor '{}' exited with non-zero status",
+                editor
+            )));
         }
     }
 
@@ -48,7 +56,9 @@ pub fn new_file_and_add(
             .status()
             .map_err(|e| ArchiveError::Internal(format!("Failed to launch editor: {}", e)))?;
         if !status.success() {
-            return Err(ArchiveError::Internal("Editor exited with non-zero status".into()));
+            return Err(ArchiveError::Internal(
+                "Editor exited with non-zero status".into(),
+            ));
         }
     }
 
@@ -58,7 +68,7 @@ pub fn new_file_and_add(
 
     let was_modified = after_size != initial_size || after_modified != initial_modified;
     if was_modified {
-        let uc = AddToArchiveUseCase::new(repo);
+        let uc = AddToArchiveUseCase::new(service);
         let files = [temp_path];
         uc.execute(archive, &files, None)?;
     }
