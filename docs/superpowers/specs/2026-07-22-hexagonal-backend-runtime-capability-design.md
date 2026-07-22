@@ -540,15 +540,20 @@ Completed:
 3. ✅ Added `Capability` support flags (`supports_encryption`, `supports_solid`, `supports_streaming`, `supports_incremental`).
 4. ✅ Added unit tests for capability resolution.
 
-### Phase 5: Migrate Application Services
+### Phase 5: Migrate Application Services ✅
 
-- Convert each use case service to resolve capabilities and submit `OperationRequest`.
-- Examples: `OpenArchiveService`, `ExtractService`, `CommitService`, `TestService`.
-- Keep navigation and session queries synchronous.
+Completed:
 
-### Phase 6: Remove Bit7zRepository
+1. ✅ Added `RuntimeArchiveRepository` implementing the legacy `ArchiveRepository` trait on top of `Runtime` + `CapabilityResolver`, allowing the presentation layer to migrate incrementally.
+2. ✅ Added `build_bit7z_runtime()` production wiring helper in `application/archive`.
+3. ✅ Updated `bit7z-rt-gui` to construct the runtime and use `RuntimeArchiveRepository` as the app repository.
+4. ✅ Updated `ArchiveFormat` capability registration to match the current enum variants.
+5. ✅ Added `SessionStore::all()` / `SessionManager::all()` for session discovery.
 
-- Once all services use the new runtime, delete `Bit7zRepository` and the `ArchiveRepository` trait.
+### Phase 6: Remove Bit7zRepository (next)
+
+- Once the runtime-backed repository is proven in daily use, delete `Bit7zRepository` and the `ArchiveRepository` trait.
+- Convert views to use runtime services directly instead of the repository adapter.
 - Clean up unused infrastructure code.
 
 ---
