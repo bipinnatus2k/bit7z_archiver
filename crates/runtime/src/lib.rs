@@ -16,6 +16,7 @@ pub mod executor;
 pub mod executor_impl;
 pub mod job;
 pub mod manager;
+pub mod progress;
 pub mod resource;
 pub mod scheduler;
 pub mod session;
@@ -67,41 +68,54 @@ impl Runtime {
     /// This is intended for tests and synchronous callers; production code should
     /// subscribe to events or await the handle through the async API.
     pub fn wait(&self, handle: OperationHandle) -> Option<JobResult> {
+        smol::block_on(self.wait_async(handle))
+    }
+
+    /// Returns a future that resolves when the operation completes.
+    ///
+    /// The future subscribes to runtime events and yields the job result for the
+    /// requested handle.
+    pub fn wait_async(
+        &self,
+        handle: OperationHandle,
+    ) -> impl std::future::Future<Output = Option<JobResult>> + '_ {
+        use futures::StreamExt;
+
         let mut rx_events = {
             let (tx_bridge, rx_bridge) = futures::channel::mpsc::unbounded::<OperationEvent>();
             self.subscribe(tx_bridge);
             rx_bridge
         };
 
-        // First, check if the job is already completed.
-        if let Some(state) = self.state(handle) {
-            if matches!(
-                state.state,
-                JobState::Completed | JobState::Failed | JobState::Cancelled
-            ) {
-                // Map terminal state back to a JobResult. We only have the state,
-                // not the original result; for Completed we assume Ok.
-                return Some(match state.state {
-                    JobState::Completed => JobResult::Ok,
-                    JobState::Failed => JobResult::Failed("failed".into()),
-                    JobState::Cancelled => JobResult::Cancelled,
-                    _ => unreachable!(),
-                });
-            }
-        }
-
-        // Poll events until the target handle completes.
-        loop {
-            match rx_events.try_recv() {
-                Ok(OperationEvent::Completed {
-                    handle: event_handle,
-                    result,
-                }) if event_handle == handle => return Some(result),
-                Ok(_) => continue,
-                Err(_) => {
-                    std::thread::sleep(std::time::Duration::from_millis(5));
+        async move {
+            // First, check if the job is already completed.
+            if let Some(state) = self.state(handle) {
+                if matches!(
+                    state.state,
+                    JobState::Completed | JobState::Failed | JobState::Cancelled
+                ) {
+                    return Some(match state.state {
+                        JobState::Completed => JobResult::Ok,
+                        JobState::Failed => JobResult::Failed("failed".into()),
+                        JobState::Cancelled => JobResult::Cancelled,
+                        _ => unreachable!(),
+                    });
                 }
             }
+
+            while let Some(event) = rx_events.next().await {
+                if let OperationEvent::Completed {
+                    handle: event_handle,
+                    result,
+                } = event
+                {
+                    if event_handle == handle {
+                        return Some(result);
+                    }
+                }
+            }
+
+            None
         }
     }
 }

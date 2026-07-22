@@ -3,8 +3,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use bit7z_ports::progress::NoopProgressReporter;
-
 use crate::cancel::CancellationToken;
 use crate::executor::{ExecutionContext, Executor, PortSet};
 use crate::job::{
@@ -76,6 +74,15 @@ impl DefaultJobManager {
         inner.subscribers.retain(|sender| {
             sender.unbounded_send(event.clone()).is_ok()
         });
+    }
+
+    /// Emit a progress event for a running operation.
+    pub fn emit_progress(&self, handle: OperationHandle, percent: u32) {
+        let mut inner = self.inner.lock().unwrap();
+        self.emit(
+            &mut *inner,
+            OperationEvent::Progress { handle, percent },
+        );
     }
 
     fn operation_request_to_job(&self, id: JobId, request: OperationRequest) -> Job {
@@ -156,9 +163,9 @@ impl DefaultJobManager {
             let executor = self.executor.clone();
             let runtime_context = self.context.clone();
             let ports = self.ports.clone();
-            let progress = Arc::new(NoopProgressReporter);
-            let ctx = ExecutionContext::new(runtime_context, ports, progress);
             let manager = self.clone();
+            let progress = Arc::new(crate::progress::RuntimeProgressReporter::new(handle, manager.clone()));
+            let ctx = ExecutionContext::new(runtime_context, ports, progress);
 
             let task = executor.execute(job, ctx);
             let fut = async move {
