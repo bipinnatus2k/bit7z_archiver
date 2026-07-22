@@ -550,11 +550,14 @@ Completed:
 4. ✅ Updated `ArchiveFormat` capability registration to match the current enum variants.
 5. ✅ Added `SessionStore::all()` / `SessionManager::all()` for session discovery.
 
-### Phase 6: Remove Bit7zRepository (next)
+### Phase 6: Remove Bit7zRepository and ArchiveRepository trait
 
-- Once the runtime-backed repository is proven in daily use, delete `Bit7zRepository` and the `ArchiveRepository` trait.
-- Convert views to use runtime services directly instead of the repository adapter.
-- Clean up unused infrastructure code.
+In progress:
+
+1. ✅ Deleted `Bit7zRepository` and its private helpers from `bit7z-infra-persistence`.
+2. ⏳ `ArchiveRepository` trait still exists as a transitional abstraction via `RuntimeArchiveRepository` in `application/archive`. Views still use `RootController.repo()`.
+3. ⏳ Convert views to use runtime services directly and remove the `ArchiveRepository` trait.
+4. ⏳ Clean up unused infrastructure code and old application use-case modules once the trait is gone.
 
 ---
 
