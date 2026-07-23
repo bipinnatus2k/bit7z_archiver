@@ -16,6 +16,7 @@ use bit7z_domain::archive::{
     Password, TestResult,
 };
 use bit7z_domain::repository::{ArchiveError, ArchiveProperties, ExtractOptions, WriteOptions};
+use bit7z_domain::vfs::SessionState;
 use bit7z_infra_persistence::adapters::{
     Bit7zReaderAdapter, Bit7zWriterAdapter, InMemorySessionStore,
 };
@@ -269,6 +270,18 @@ impl ArchiveService {
             JobResult::Failed(msg) => Err(ArchiveError::Internal(msg)),
             JobResult::Cancelled => Err(ArchiveError::Canceled),
         }
+    }
+
+    pub fn get_session_state(
+        &self,
+        archive: &ArchiveHandle,
+    ) -> Result<SessionState, ArchiveError> {
+        let session = self.lookup_session(archive)?;
+        self.runtime
+            .session_manager
+            .get(session.id)
+            .ok_or_else(|| ArchiveError::NotFound(format!("session {}", session.id)))
+            .map(|ref_state| (*ref_state).clone())
     }
 
     pub fn list_page(
