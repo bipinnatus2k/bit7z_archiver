@@ -1,4 +1,5 @@
 pub mod add_to;
+pub mod auto_format;
 pub mod create;
 pub mod delete;
 pub mod extract;
@@ -9,3 +10,4 @@ pub mod open;
 pub mod open_entry;
 pub mod rename;
 pub mod runtime_service;
+pub mod validator;
