@@ -6,44 +6,12 @@ use bit7z_testing::bit7z_harness::Bit7zHarness;
 use bit7z_testing::cli_referee::CliReferee;
 use bit7z_testing::harness::TestHarness;
 
+mod common;
 mod fixtures;
-
-fn library() -> Option<bit7z_infra_bit7z::Library> {
-    let path = bit7z_infra_platform::find_7z_library()?;
-    bit7z_infra_bit7z::Library::open(&path.to_string_lossy()).ok()
-}
-
-fn find_7z_exe() -> Option<std::path::PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        let candidates = [
-            r"C:\Program Files\7-Zip\7z.exe",
-            r"C:\Program Files (x86)\7-Zip\7z.exe",
-        ];
-        for p in &candidates {
-            let path = std::path::PathBuf::from(p);
-            if path.exists() {
-                return Some(path);
-            }
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(paths) = std::env::var("PATH") {
-            for dir in std::env::split_paths(&paths) {
-                let candidate = dir.join("7z");
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
-    }
-    None
-}
 
 #[test]
 fn test_list_simple_zip() {
-    let lib = match library() {
+    let lib = match common::library() {
         Some(l) => l,
         None => return,
     };
@@ -52,7 +20,7 @@ fn test_list_simple_zip() {
     let harness = Bit7zHarness::new(service);
 
     let fixture = fixtures::simple::create_zip().expect("fixture creation failed");
-    let seven_zip = find_7z_exe().expect("7z executable not found");
+    let seven_zip = common::find_7z_exe().expect("7z executable not found");
     let cli = CliReferee::new(seven_zip);
 
     let bit7z_state = harness
