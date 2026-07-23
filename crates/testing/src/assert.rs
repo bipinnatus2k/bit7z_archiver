@@ -16,7 +16,8 @@ pub fn assert_extraction_matches(ground_truth: &SessionState, extracted_root: &P
             continue;
         }
         let path = tree.path_of(id).unwrap();
-        let file_path = extracted_root.join(&path);
+        let normalized = path.replace('/', std::path::MAIN_SEPARATOR_STR);
+        let file_path = extracted_root.join(&normalized);
         assert!(
             file_path.exists(),
             "missing extracted file: {path} (expected at {})",

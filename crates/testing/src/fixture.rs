@@ -67,18 +67,15 @@ impl ArchiveFixture {
             writer.set_password(pw);
         }
 
-        let disk_paths: Vec<PathBuf> = entries
+        let items: Vec<(String, &str)> = entries
             .iter()
             .filter(|e| !e.is_directory)
-            .map(|e| root.join(e.path))
+            .map(|e| (root.join(e.path).to_str().expect("non-UTF8 path").to_string(), e.path))
             .collect();
-        let file_paths: Vec<&str> = disk_paths
-            .iter()
-            .map(|p| p.to_str().expect("non-UTF8 path"))
-            .collect();
+        let items_refs: Vec<(&str, &str)> = items.iter().map(|(p, n)| (p.as_str(), *n)).collect();
 
         writer
-            .add_files(&file_paths)
+            .add_items(&items_refs)
             .map_err(|e| e.to_string())?;
         writer
             .compress_to(&archive_path.to_string_lossy())
