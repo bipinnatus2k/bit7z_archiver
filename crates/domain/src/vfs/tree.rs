@@ -121,6 +121,15 @@ impl Tree {
         Ok(node)
     }
 
+    /// Return all node paths sorted.
+    pub fn all_paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = self.nodes.keys()
+            .filter_map(|&id| self.path_of(id))
+            .collect();
+        paths.sort();
+        paths
+    }
+
     pub fn all_ids(&self) -> Vec<VfsNodeId> {
         self.nodes.keys().copied().collect()
     }

@@ -423,6 +423,25 @@ impl OverlayVfs {
     pub fn original_index_of(&self, node_id: VfsNodeId) -> Option<u32> {
         self.base_tree.node(node_id).and_then(|n| n.original_index)
     }
+
+    /// Panics if `other` has a different tree structure or metadata.
+    /// Used by the cross-harness test framework.
+    pub fn assert_structural_eq(&self, other: &OverlayVfs) {
+        let base = self.base_tree();
+        let other_base = other.base_tree();
+
+        let paths = base.all_paths();
+        let other_paths = other_base.all_paths();
+        assert_eq!(paths, other_paths, "tree structure mismatch");
+
+        for path in &paths {
+            let id = base.resolve_path(path).unwrap();
+            let other_id = other_base.resolve_path(path).unwrap();
+            let meta = self.metadata_cache.get(&id);
+            let other_meta = other.metadata_cache.get(&other_id);
+            assert_eq!(meta, other_meta, "metadata mismatch for '{path}'");
+        }
+    }
 }
 
 fn parent_dir(path: &str) -> String {

@@ -27,7 +27,7 @@ pub struct VfsNode {
     pub fs_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct VfsMetadata {
     pub size: u64,
     pub compressed_size: u64,
