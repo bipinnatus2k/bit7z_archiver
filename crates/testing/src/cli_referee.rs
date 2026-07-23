@@ -85,9 +85,8 @@ impl ParsedEntry {
                 if value.starts_with('D') {
                     self.is_directory = true;
                 }
-                if let Some(attrs) = value.split_whitespace().nth(1) {
-                    self.attributes =
-                        Some(attrs.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32)));
+                if !(value.starts_with("A ") || value.starts_with("D ")) {
+                    self.attributes = u32::from_str_radix(value.trim(), 16).ok();
                 }
             }
             "SymLink" => self.is_symlink = value != "-",
@@ -113,6 +112,37 @@ fn parse_7z_time(s: &str) -> Option<DateTime<Utc>> {
         .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
 }
 
+fn detect_format(path: &Path) -> ArchiveFormat {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("7z") => ArchiveFormat::SevenZip,
+        Some("zip") => ArchiveFormat::Zip,
+        Some("tar") => ArchiveFormat::Tar,
+        Some("gz") => {
+            if path.to_string_lossy().ends_with(".tar.gz") {
+                ArchiveFormat::TarGz
+            } else {
+                ArchiveFormat::Tar
+            }
+        }
+        Some("bz2") => {
+            if path.to_string_lossy().ends_with(".tar.bz2") {
+                ArchiveFormat::TarBz2
+            } else {
+                ArchiveFormat::Tar
+            }
+        }
+        Some("xz") => {
+            if path.to_string_lossy().ends_with(".tar.xz") {
+                ArchiveFormat::TarXz
+            } else {
+                ArchiveFormat::Tar
+            }
+        }
+        Some("rar") => ArchiveFormat::Rar,
+        _ => ArchiveFormat::Zip,
+    }
+}
+
 impl CliReferee {
     fn parse_list_output(&self, stdout: &str, archive_path: &Path) -> Result<SessionState, String> {
         let mut entries: Vec<ParsedEntry> = Vec::new();
@@ -121,24 +151,24 @@ impl CliReferee {
         for line in stdout.lines() {
             let line = line.trim();
             if line == "--" {
-                if let Some(entry) = current.take() {
-                    if !entry.path.is_empty() {
-                        entries.push(entry);
-                    }
+                if let Some(entry) = current.take()
+                    && !entry.path.is_empty()
+                {
+                    entries.push(entry);
                 }
                 current = Some(ParsedEntry::default());
                 continue;
             }
-            if let Some(ref mut entry) = current {
-                if let Some((key, value)) = line.split_once(" = ") {
-                    entry.apply(key.trim(), value.trim());
-                }
+            if let Some(ref mut entry) = current
+                && let Some((key, value)) = line.split_once(" = ")
+            {
+                entry.apply(key.trim(), value.trim());
             }
         }
-        if let Some(entry) = current.take() {
-            if !entry.path.is_empty() {
-                entries.push(entry);
-            }
+        if let Some(entry) = current.take()
+            && !entry.path.is_empty()
+        {
+            entries.push(entry);
         }
 
         let root_id = next_vfs_id();
@@ -215,7 +245,8 @@ impl CliReferee {
             );
         }
 
-        let session = ArchiveSession::new(archive_path.to_path_buf(), ArchiveFormat::Zip);
+        let fmt = detect_format(archive_path);
+        let session = ArchiveSession::new(archive_path.to_path_buf(), fmt);
         let vfs = OverlayVfs::build_for_test(base_tree, metadata_cache.clone());
 
         Ok(SessionState {
@@ -269,14 +300,14 @@ impl TestHarness for CliReferee {
         path: &Path,
         password: Option<&str>,
     ) -> Result<SessionState, String> {
-        let path_str = path.to_str().unwrap();
+        let path_str = path.to_string_lossy().to_string();
         let pw_arg;
         let mut args = vec!["l", "-slt"];
         if let Some(pw) = password {
             pw_arg = format!("-p{pw}");
             args.push(&pw_arg);
         }
-        args.push(path_str);
+        args.push(&path_str);
         let stdout = self.run_7z(&args)?;
         self.parse_list_output(&stdout, path)
     }
