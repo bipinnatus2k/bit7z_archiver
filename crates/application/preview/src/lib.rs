@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 pub enum PreviewData {
     Text(String),
-    Hex(Vec<u8>),
+    // Hex(Vec<u8>),
     Image(Vec<u8>),
     Unsupported(String),
 }
@@ -47,6 +47,6 @@ impl PreviewEntryUseCase {
         }
 
         // Fall back to hex
-        Ok(PreviewData::Hex(truncated))
+        Ok(PreviewData::Unsupported("".into()))
     }
 }

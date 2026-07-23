@@ -42,11 +42,11 @@ impl Render for PreviewPanel {
                     .overflow_y_scrollbar()
                     .child(text.clone())
                     .into_any_element(),
-                Some(PreviewData::Hex(_)) => div()
-                    .font_family("monospace")
-                    .text_sm()
-                    .child("Binary data (hex view)")
-                    .into_any_element(),
+                // Some(PreviewData::Hex(_)) => div()
+                //     .font_family("monospace")
+                //     .text_sm()
+                //     .child("Binary data (hex view)")
+                //     .into_any_element(),
                 Some(PreviewData::Image(_)) => div().child("Image preview").into_any_element(),
                 Some(PreviewData::Unsupported(msg)) => div()
                     .text_color(cx.theme().muted)

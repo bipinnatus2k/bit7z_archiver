@@ -181,9 +181,9 @@ pub fn run_cli(service: Arc<ArchiveService>, cli: &Cli) {
                 }
                 let options = ExtractOptions {
                     overwrite_mode: OverwriteMode::Ask,
-                    cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                    paused: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                    notifier: std::sync::Arc::new(NoopNotifier),
+                    cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    paused: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    notifier: Arc::new(NoopNotifier),
                 };
                 service.extract(handle, &indices, Path::new(dest), &options)?;
                 println!("Extracted {} entries to {}", indices.len(), dest);
@@ -300,24 +300,24 @@ pub fn run_cli(service: Arc<ArchiveService>, cli: &Cli) {
                     match uc.execute(&handle, *index, *max_bytes) {
                         Ok(data) => match data {
                             bit7z_app_preview::PreviewData::Text(t) => println!("{}", t),
-                            bit7z_app_preview::PreviewData::Hex(h) => {
-                                for (ci, chunk) in h.chunks(16).enumerate() {
-                                    let offset = ci * 16;
-                                    let hex: String =
-                                        chunk.iter().map(|b| format!("{:02x} ", b)).collect();
-                                    let ascii: String = chunk
-                                        .iter()
-                                        .map(|&b| {
-                                            if b.is_ascii_graphic() || b == b' ' {
-                                                b as char
-                                            } else {
-                                                '.'
-                                            }
-                                        })
-                                        .collect();
-                                    println!("{:08x}  {:<48}  {}", offset, hex, ascii);
-                                }
-                            }
+                            // bit7z_app_preview::PreviewData::Hex(h) => {
+                            //     for (ci, chunk) in h.chunks(16).enumerate() {
+                            //         let offset = ci * 16;
+                            //         let hex: String =
+                            //             chunk.iter().map(|b| format!("{:02x} ", b)).collect();
+                            //         let ascii: String = chunk
+                            //             .iter()
+                            //             .map(|&b| {
+                            //                 if b.is_ascii_graphic() || b == b' ' {
+                            //                     b as char
+                            //                 } else {
+                            //                     '.'
+                            //                 }
+                            //             })
+                            //             .collect();
+                            //         println!("{:08x}  {:<48}  {}", offset, hex, ascii);
+                            //     }
+                            // }
                             bit7z_app_preview::PreviewData::Image(img) => {
                                 println!("Image preview: {} bytes", img.len());
                             }
@@ -345,9 +345,9 @@ pub fn run_cli(service: Arc<ArchiveService>, cli: &Cli) {
                     return;
                 }
             };
-            let paths: Vec<std::path::PathBuf> =
-                files.iter().map(std::path::PathBuf::from).collect();
-            let uc = bit7z_app_archive::add_to::AddToArchiveUseCase::new(service.clone());
+            let paths: Vec<PathBuf> =
+                files.iter().map(PathBuf::from).collect();
+            let uc = AddToArchiveUseCase::new(service.clone());
             match uc.execute(&mut handle, &paths, None) {
                 Ok(()) => println!("Added {} files to {}", files.len(), path),
                 Err(e) => eprintln!("Add error: {}", e),
