@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-
+use bit7z_domain::archive::Password;
 use crate::executor::{ExecutionContext, Executor};
 use crate::job::{Job, JobKind, JobResult};
 use bit7z_domain::vfs::OverlayVfs;
@@ -27,7 +27,7 @@ impl LocalExecutor {
             }
 
             match job.kind {
-                JobKind::OpenArchive { path } => open_archive(ctx, path).await,
+                JobKind::OpenArchive { path, password } => open_archive(ctx, path, password).await,
                 JobKind::CreateArchive { path, format } => create_archive(ctx, path, format).await,
                 JobKind::SaveArchive { session_id } => save_archive(ctx, session_id).await,
                 JobKind::Extract {
@@ -58,8 +58,8 @@ impl Executor for LocalExecutor {
     }
 }
 
-async fn open_archive(ctx: ExecutionContext, path: std::path::PathBuf) -> JobResult {
-    let session = match ctx.ports.reader.open(&path, None) {
+async fn open_archive(ctx: ExecutionContext, path: std::path::PathBuf, password: Option<Password>) -> JobResult {
+    let session = match ctx.ports.reader.open(&path, password.as_ref()) {
         Ok(s) => s,
         Err(e) => return JobResult::Failed(e.to_string()),
     };

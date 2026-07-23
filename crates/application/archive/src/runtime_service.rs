@@ -190,7 +190,7 @@ impl ArchiveService {
     pub fn open(
         &self,
         path: &Path,
-        _password: Option<&Password>,
+        password: Option<&Password>,
     ) -> Result<ArchiveHandle, ArchiveError> {
         let format = self.resolve_format(path);
         let descriptor = self
@@ -202,10 +202,11 @@ impl ArchiveService {
                 session_id: None,
             })
             .map_err(|e| ArchiveError::Internal(e.to_string()))?;
-
+        
         let handle = self.runtime.submit(OperationRequest {
             kind: OperationKind::OpenArchive {
                 path: path.to_path_buf(),
+                password: password.cloned(),
             },
             descriptor,
             priority: Priority::User,

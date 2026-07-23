@@ -84,7 +84,7 @@ impl DefaultJobManager {
 
     fn operation_request_to_job(&self, id: JobId, request: OperationRequest) -> Job {
         let kind = match request.kind {
-            crate::job::OperationKind::OpenArchive { path } => JobKind::OpenArchive { path },
+            crate::job::OperationKind::OpenArchive { path, password } => JobKind::OpenArchive { path, password },
             crate::job::OperationKind::CreateArchive { path, format } => {
                 JobKind::CreateArchive { path, format }
             }

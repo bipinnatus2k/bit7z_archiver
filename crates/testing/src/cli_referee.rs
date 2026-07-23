@@ -85,9 +85,7 @@ impl ParsedEntry {
                 if value.starts_with('D') {
                     self.is_directory = true;
                 }
-                if !(value.starts_with("A ") || value.starts_with("D ")) {
-                    self.attributes = u32::from_str_radix(value.trim(), 16).ok();
-                }
+                self.attributes = parse_7z_attributes(value);
             }
             "SymLink" => self.is_symlink = value != "-",
             "Host OS" => {
@@ -101,6 +99,31 @@ impl ParsedEntry {
             _ => {}
         }
     }
+}
+
+fn parse_7z_attributes(value: &str) -> Option<u32> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let is_dos = trimmed
+        .chars()
+        .all(|c| matches!(c, 'A' | 'D' | 'R' | 'H' | 'S' | '_' | ' '));
+    if is_dos {
+        let mut attrs = 0u32;
+        for c in trimmed.chars() {
+            match c {
+                'A' => attrs |= 0x20,
+                'D' => attrs |= 0x10,
+                'R' => attrs |= 0x01,
+                'H' => attrs |= 0x02,
+                'S' => attrs |= 0x04,
+                _ => {}
+            }
+        }
+        return Some(attrs);
+    }
+    u32::from_str_radix(trimmed, 16).ok()
 }
 
 fn parse_7z_time(s: &str) -> Option<DateTime<Utc>> {
@@ -204,7 +227,7 @@ impl CliReferee {
 
         for (idx, entry) in entries.iter().enumerate() {
             let node_id = next_vfs_id();
-            let path = &entry.path;
+            let path = &entry.path.replace('\\', "/");
             let is_dir = entry.is_directory;
 
             let parent_path = path
@@ -260,7 +283,7 @@ impl CliReferee {
 
         let fmt = detect_format(archive_path);
         let session = ArchiveSession::new(archive_path.to_path_buf(), fmt);
-        let vfs = OverlayVfs::build_for_test(base_tree, metadata_cache.clone());
+        let vfs = OverlayVfs::build_for_test(base_tree, metadata_cache.clone(), Some(fmt));
 
         Ok(SessionState {
             session,

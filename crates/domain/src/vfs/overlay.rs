@@ -89,7 +89,7 @@ impl OverlayVfs {
         // Build parent→children tree from entry paths.
         // Order does not matter because ensure_dir creates all missing ancestors.
         for entry in entries {
-            let normalized_path = entry.path.trim_end_matches('/').to_string();
+            let normalized_path = entry.path.trim_end_matches('/').replace('\\', "/");
             let parent_path = parent_dir(&normalized_path);
             let parent_id = ensure_dir(&mut base_tree, &mut path_map, &parent_path, root_id);
 
@@ -149,6 +149,7 @@ impl OverlayVfs {
     pub fn build_for_test(
         base_tree: Tree,
         metadata_cache: HashMap<VfsNodeId, VfsMetadata>,
+        archive_format: Option<ArchiveFormat>,
     ) -> Self {
         Self {
             base_tree: base_tree.clone(),
@@ -157,7 +158,7 @@ impl OverlayVfs {
             edit_queue: EditQueue::new(),
             metadata_cache,
             archive_path: PathBuf::new(),
-            archive_format: None,
+            archive_format,
         }
     }
 
@@ -453,6 +454,11 @@ impl OverlayVfs {
         let other_paths = other_base.all_paths();
         assert_eq!(paths, other_paths, "tree structure mismatch");
 
+        let crc_supported = !self
+            .archive_format
+            .or(other.archive_format)
+            .is_some_and(|f| matches!(f, ArchiveFormat::Tar | ArchiveFormat::TarGz | ArchiveFormat::TarBz2 | ArchiveFormat::TarXz));
+
         for path in &paths {
             let id = base.resolve_path(path).unwrap();
             let other_id = other_base.resolve_path(path).unwrap();
@@ -465,7 +471,9 @@ impl OverlayVfs {
                 (Some(_), None) => panic!("metadata missing for '{path}' in right"),
                 (Some(m), Some(o)) => {
                     assert_eq!(m.size, o.size, "size mismatch for '{path}'");
-                    assert_eq!(m.crc, o.crc, "crc mismatch for '{path}'");
+                    if crc_supported {
+                        assert_eq!(m.crc, o.crc, "crc mismatch for '{path}'");
+                    }
                     assert_eq!(
                         m.is_encrypted, o.is_encrypted,
                         "is_encrypted mismatch for '{path}'"
@@ -474,6 +482,12 @@ impl OverlayVfs {
                         m.is_symlink, o.is_symlink,
                         "is_symlink mismatch for '{path}'"
                     );
+                    if let (Some(a), Some(b)) = (m.attributes, o.attributes) {
+                        assert_eq!(a, b, "attributes mismatch for '{path}'");
+                    }
+                    if let (Some(a), Some(b)) = (m.posix_attrib, o.posix_attrib) {
+                        assert_eq!(a, b, "posix_attrib mismatch for '{path}'");
+                    }
                 }
             }
         }

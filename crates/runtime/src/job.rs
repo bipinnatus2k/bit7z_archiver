@@ -1,7 +1,7 @@
 //! Job types and operation request model.
 
 use bit7z_capability::ExecutionDescriptor;
-use bit7z_domain::archive::{ArchiveFormat, SessionId, TestResult};
+use bit7z_domain::archive::{ArchiveFormat, Password, SessionId, TestResult};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -27,6 +27,7 @@ pub type JobHandle = OperationHandle;
 pub enum OperationKind {
     OpenArchive {
         path: PathBuf,
+        password: Option<Password>,
     },
     CreateArchive {
         path: PathBuf,
@@ -80,6 +81,7 @@ pub struct Job {
 pub enum JobKind {
     OpenArchive {
         path: PathBuf,
+        password: Option<Password>,
     },
     CreateArchive {
         path: PathBuf,

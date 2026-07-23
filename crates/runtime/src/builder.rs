@@ -306,6 +306,7 @@ mod tests {
         let handle = runtime.submit(OperationRequest {
             kind: OperationKind::OpenArchive {
                 path: PathBuf::from("test.zip"),
+                password: None,
             },
             descriptor: bit7z_capability::ExecutionDescriptor {
                 backend: bit7z_capability::BackendId(1),

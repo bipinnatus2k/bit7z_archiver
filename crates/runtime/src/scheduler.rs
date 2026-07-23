@@ -63,6 +63,7 @@ mod tests {
             id: JobId(id),
             kind: JobKind::OpenArchive {
                 path: PathBuf::from("test.7z"),
+                password: None,
             },
             priority,
             session_id,

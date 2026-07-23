@@ -34,13 +34,14 @@ impl ArchiveFixture {
         let dir = tempfile::TempDir::new().map_err(|e| e.to_string())?;
         let root = dir.path();
 
-        let (ground_truth, _) = Self::materialize_vfs(entries, format)?;
+        let (ground_truth, _) = Self::materialize_vfs(entries, format, password)?;
         Self::materialize_fs(entries, root)?;
 
         let ext = match format {
             ArchiveFormat::SevenZip => "7z",
             ArchiveFormat::Zip => "zip",
             ArchiveFormat::Tar => "tar",
+            ArchiveFormat::TarGz => "tar.gz",
             _ => {
                 return Err(format!(
                     "format {format:?} not supported by bit7z Writer::create"
@@ -58,6 +59,7 @@ impl ArchiveFixture {
             ArchiveFormat::SevenZip => bit7z_infra_bit7z::WriterFormat::SevenZip,
             ArchiveFormat::Zip => bit7z_infra_bit7z::WriterFormat::Zip,
             ArchiveFormat::Tar => bit7z_infra_bit7z::WriterFormat::Tar,
+            ArchiveFormat::TarGz => bit7z_infra_bit7z::WriterFormat::GZip,
             _ => unreachable!(),
         };
         let writer =
@@ -94,6 +96,7 @@ impl ArchiveFixture {
     fn materialize_vfs(
         entries: &[FileSpec],
         format: ArchiveFormat,
+        password: Option<&str>,
     ) -> Result<(SessionState, HashMap<String, VfsNodeId>), String> {
         let root_id = next_vfs_id();
         let mut base_tree = Tree::new(root_id);
@@ -163,7 +166,7 @@ impl ArchiveFixture {
                     created: None,
                     accessed: None,
                     crc,
-                    is_encrypted: false,
+                    is_encrypted: password.is_some() && format.supports_encryption(),
                     is_symlink: false,
                     attributes: entry.attributes,
                     posix_attrib: None,
@@ -183,7 +186,7 @@ impl ArchiveFixture {
         }
 
         let session = ArchiveSession::new(PathBuf::new(), format);
-        let vfs = OverlayVfs::build_for_test(base_tree, metadata_cache.clone());
+        let vfs = OverlayVfs::build_for_test(base_tree, metadata_cache.clone(), Some(format));
 
         Ok((
             SessionState {

@@ -24,13 +24,6 @@ pub fn create_zip() -> Result<ArchiveFixture, String> {
             modified: None,
             attributes: None,
         },
-        FileSpec {
-            path: "sub/empty",
-            content: b"",
-            is_directory: true,
-            modified: None,
-            attributes: None,
-        },
     ];
     ArchiveFixture::build("nested directories", ArchiveFormat::Zip, None, &entries)
 }

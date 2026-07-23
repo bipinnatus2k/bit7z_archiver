@@ -53,7 +53,8 @@ pub fn read_all_entries(raw: *mut std::ffi::c_void) -> Vec<ArchiveEntry> {
         let path_s = if p.is_null() {
             String::new()
         } else {
-            unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() }
+            let raw = unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() };
+            raw.replace('\\', "/")
         };
         let name_s = path_s
             .trim_end_matches('/')
