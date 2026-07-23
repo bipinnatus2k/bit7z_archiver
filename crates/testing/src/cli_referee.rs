@@ -147,17 +147,30 @@ impl CliReferee {
     fn parse_list_output(&self, stdout: &str, archive_path: &Path) -> Result<SessionState, String> {
         let mut entries: Vec<ParsedEntry> = Vec::new();
         let mut current: Option<ParsedEntry> = None;
+        let mut in_entries = false;
 
         for line in stdout.lines() {
             let line = line.trim();
-            if line == "--" {
+            if line.starts_with("----------") {
+                in_entries = true;
+                continue;
+            }
+            if !in_entries {
+                continue;
+            }
+            if line.is_empty() {
                 if let Some(entry) = current.take()
                     && !entry.path.is_empty()
                 {
                     entries.push(entry);
                 }
-                current = Some(ParsedEntry::default());
                 continue;
+            }
+            if line == "--" {
+                continue;
+            }
+            if current.is_none() && line.contains(" = ") {
+                current = Some(ParsedEntry::default());
             }
             if let Some(ref mut entry) = current
                 && let Some((key, value)) = line.split_once(" = ")

@@ -439,8 +439,12 @@ impl OverlayVfs {
         self.base_tree.node(node_id).and_then(|n| n.original_index)
     }
 
-    /// Panics if `other` has a different tree structure or metadata.
+    /// Panics if `other` has a different tree structure or essential metadata.
     /// Used by the cross-harness test framework.
+    ///
+    /// Only compares structural fields (size, crc, is_encrypted, is_symlink).
+    /// Skips implementation-specific fields like compressed_size, timestamps,
+    /// attributes, and compression method that vary between harnesses.
     pub fn assert_structural_eq(&self, other: &OverlayVfs) {
         let base = self.base_tree();
         let other_base = other.base_tree();
@@ -454,7 +458,24 @@ impl OverlayVfs {
             let other_id = other_base.resolve_path(path).unwrap();
             let meta = self.metadata_cache.get(&id);
             let other_meta = other.metadata_cache.get(&other_id);
-            assert_eq!(meta, other_meta, "metadata mismatch for '{path}'");
+
+            match (meta, other_meta) {
+                (None, None) => {}
+                (None, Some(_)) => panic!("metadata missing for '{path}' in left"),
+                (Some(_), None) => panic!("metadata missing for '{path}' in right"),
+                (Some(m), Some(o)) => {
+                    assert_eq!(m.size, o.size, "size mismatch for '{path}'");
+                    assert_eq!(m.crc, o.crc, "crc mismatch for '{path}'");
+                    assert_eq!(
+                        m.is_encrypted, o.is_encrypted,
+                        "is_encrypted mismatch for '{path}'"
+                    );
+                    assert_eq!(
+                        m.is_symlink, o.is_symlink,
+                        "is_symlink mismatch for '{path}'"
+                    );
+                }
+            }
         }
     }
 }
