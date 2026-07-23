@@ -16,9 +16,11 @@ async-trait = { workspace = true }
 smol = { workspace = true }
 futures = { workspace = true }
 file-format = "0.26"
+nom = "7"
 thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tokio = { version = "1", features = ["rt", "macros"] }
 bit7z-infra-platform = { path = "../../infrastructure/platform" }
 
