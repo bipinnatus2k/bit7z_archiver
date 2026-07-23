@@ -146,6 +146,21 @@ impl OverlayVfs {
         }
     }
 
+    pub fn build_for_test(
+        base_tree: Tree,
+        metadata_cache: HashMap<VfsNodeId, VfsMetadata>,
+    ) -> Self {
+        Self {
+            base_tree: base_tree.clone(),
+            working_tree: base_tree,
+            dirty_tree: DirtyTree::new(),
+            edit_queue: EditQueue::new(),
+            metadata_cache,
+            archive_path: PathBuf::new(),
+            archive_format: None,
+        }
+    }
+
     pub fn archive_path(&self) -> &PathBuf {
         &self.archive_path
     }
