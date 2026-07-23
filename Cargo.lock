@@ -1259,6 +1259,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "bit7z-testing"
+version = "0.1.0"
+dependencies = [
+ "bit7z-app-archive",
+ "bit7z-domain",
+ "bit7z-infra-bit7z",
+ "bit7z-infra-persistence",
+ "bit7z-infra-platform",
+ "bit7z-ports",
+ "bit7z-runtime",
+ "chrono",
+ "crc32fast",
+ "tempfile",
+]
+
+[[package]]
 name = "bit_field"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

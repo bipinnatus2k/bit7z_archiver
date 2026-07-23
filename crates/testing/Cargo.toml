@@ -1,0 +1,17 @@
+[package]
+name = "bit7z-testing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bit7z-domain = { path = "../domain" }
+bit7z-app-archive = { path = "../application/archive" }
+bit7z-runtime = { path = "../runtime" }
+bit7z-ports = { path = "../ports" }
+bit7z-infra-bit7z = { path = "../infrastructure/bit7z" }
+bit7z-infra-persistence = { path = "../infrastructure/persistence" }
+bit7z-infra-platform = { path = "../infrastructure/platform" }
+tempfile = { workspace = true }
+chrono = { workspace = true }
+crc32fast = "1"

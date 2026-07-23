@@ -28,6 +28,7 @@ members = [
     "crates/runtime/instance",
     "crates/runtime/ipc",
     "crates/runtime/worker",
+    "crates/testing",
 ]
 
 [workspace.package]
