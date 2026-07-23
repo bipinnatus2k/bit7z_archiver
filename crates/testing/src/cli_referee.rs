@@ -136,31 +136,24 @@ fn parse_7z_time(s: &str) -> Option<DateTime<Utc>> {
 }
 
 fn detect_format(path: &Path) -> ArchiveFormat {
+    let name = path.to_string_lossy().to_lowercase();
+    if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+        return ArchiveFormat::TarGz;
+    }
+    if name.ends_with(".tar.xz") || name.ends_with(".txz") {
+        return ArchiveFormat::TarXz;
+    }
+    if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") || name.ends_with(".tbz") {
+        return ArchiveFormat::TarBz2;
+    }
     match path.extension().and_then(|e| e.to_str()) {
         Some("7z") => ArchiveFormat::SevenZip,
         Some("zip") => ArchiveFormat::Zip,
         Some("tar") => ArchiveFormat::Tar,
-        Some("gz") => {
-            if path.to_string_lossy().ends_with(".tar.gz") {
-                ArchiveFormat::TarGz
-            } else {
-                ArchiveFormat::Tar
-            }
-        }
-        Some("bz2") => {
-            if path.to_string_lossy().ends_with(".tar.bz2") {
-                ArchiveFormat::TarBz2
-            } else {
-                ArchiveFormat::Tar
-            }
-        }
-        Some("xz") => {
-            if path.to_string_lossy().ends_with(".tar.xz") {
-                ArchiveFormat::TarXz
-            } else {
-                ArchiveFormat::Tar
-            }
-        }
+        Some("gz") => ArchiveFormat::GZip,
+        Some("bz2") => ArchiveFormat::BZip2,
+        Some("xz") => ArchiveFormat::Xz,
+        Some("wim") => ArchiveFormat::Wim,
         Some("rar") => ArchiveFormat::Rar,
         _ => ArchiveFormat::Zip,
     }

@@ -120,6 +120,22 @@ fn writable_formats() -> Vec<FormatItem> {
             format: ArchiveFormat::TarXz,
             label: "TAR.XZ".into(),
         },
+        FormatItem {
+            format: ArchiveFormat::GZip,
+            label: "GZIP".into(),
+        },
+        FormatItem {
+            format: ArchiveFormat::BZip2,
+            label: "BZIP2".into(),
+        },
+        FormatItem {
+            format: ArchiveFormat::Xz,
+            label: "XZ".into(),
+        },
+        FormatItem {
+            format: ArchiveFormat::Wim,
+            label: "WIM".into(),
+        },
     ]
 }
 

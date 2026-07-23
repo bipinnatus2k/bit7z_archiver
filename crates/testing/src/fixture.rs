@@ -42,6 +42,10 @@ impl ArchiveFixture {
             ArchiveFormat::Zip => "zip",
             ArchiveFormat::Tar => "tar",
             ArchiveFormat::TarGz => "tar.gz",
+            ArchiveFormat::GZip => "gz",
+            ArchiveFormat::BZip2 => "bz2",
+            ArchiveFormat::Xz => "xz",
+            ArchiveFormat::Wim => "wim",
             _ => {
                 return Err(format!(
                     "format {format:?} not supported by bit7z Writer::create"
@@ -55,11 +59,14 @@ impl ArchiveFixture {
         let lib = bit7z_infra_bit7z::Library::open(&lib_path.to_string_lossy())
             .map_err(|e| format!("open library: {e}"))?;
 
-        let writer_format = match format {
+        let writer_format = match format.physical() {
             ArchiveFormat::SevenZip => bit7z_infra_bit7z::WriterFormat::SevenZip,
             ArchiveFormat::Zip => bit7z_infra_bit7z::WriterFormat::Zip,
             ArchiveFormat::Tar => bit7z_infra_bit7z::WriterFormat::Tar,
-            ArchiveFormat::TarGz => bit7z_infra_bit7z::WriterFormat::GZip,
+            ArchiveFormat::GZip => bit7z_infra_bit7z::WriterFormat::GZip,
+            ArchiveFormat::BZip2 => bit7z_infra_bit7z::WriterFormat::BZip2,
+            ArchiveFormat::Xz => bit7z_infra_bit7z::WriterFormat::Xz,
+            ArchiveFormat::Wim => bit7z_infra_bit7z::WriterFormat::Wim,
             _ => unreachable!(),
         };
         let writer =

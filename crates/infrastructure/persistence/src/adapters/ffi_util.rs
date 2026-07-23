@@ -19,6 +19,7 @@ pub fn detect_writer_format(path: &Path) -> bit7z::WriterFormat {
                 "gz" | "tgz" => Some(bit7z::WriterFormat::GZip),
                 "bz2" | "tbz" | "tbz2" => Some(bit7z::WriterFormat::BZip2),
                 "xz" | "txz" => Some(bit7z::WriterFormat::Xz),
+                "wim" => Some(bit7z::WriterFormat::Wim),
                 _ => None,
             }
         })
@@ -31,9 +32,10 @@ pub fn writer_format_to_archive_format(wf: bit7z::WriterFormat) -> Option<Archiv
         bit7z::WriterFormat::SevenZip => Some(ArchiveFormat::SevenZip),
         bit7z::WriterFormat::Zip => Some(ArchiveFormat::Zip),
         bit7z::WriterFormat::Tar => Some(ArchiveFormat::Tar),
-        bit7z::WriterFormat::GZip => Some(ArchiveFormat::TarGz),
-        bit7z::WriterFormat::BZip2 => Some(ArchiveFormat::TarBz2),
-        bit7z::WriterFormat::Xz => Some(ArchiveFormat::TarXz),
+        bit7z::WriterFormat::GZip => Some(ArchiveFormat::GZip),
+        bit7z::WriterFormat::BZip2 => Some(ArchiveFormat::BZip2),
+        bit7z::WriterFormat::Xz => Some(ArchiveFormat::Xz),
+        bit7z::WriterFormat::Wim => Some(ArchiveFormat::Wim),
         _ => None,
     }
 }

@@ -71,6 +71,10 @@ pub fn general_page(cx: &mut App) -> SettingPage {
                         ("TAR.GZ".into(), "tar.gz".into()),
                         ("TAR.BZ2".into(), "tar.bz2".into()),
                         ("TAR.XZ".into(), "tar.xz".into()),
+                        ("GZIP".into(), "gz".into()),
+                        ("BZIP2".into(), "bz2".into()),
+                        ("XZ".into(), "xz".into()),
+                        ("WIM".into(), "wim".into()),
                     ],
                     |cx| {
                         let s = SettingsStore::get(cx);
@@ -85,6 +89,10 @@ pub fn general_page(cx: &mut App) -> SettingPage {
                             "tar.gz" => ArchiveFormat::TarGz,
                             "tar.bz2" => ArchiveFormat::TarBz2,
                             "tar.xz" => ArchiveFormat::TarXz,
+                            "gz" => ArchiveFormat::GZip,
+                            "bz2" => ArchiveFormat::BZip2,
+                            "xz" => ArchiveFormat::Xz,
+                            "wim" => ArchiveFormat::Wim,
                             _ => ArchiveFormat::SevenZip,
                         };
                         SettingsStore::get_mut(cx)

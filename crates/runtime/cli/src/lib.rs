@@ -560,6 +560,10 @@ fn parse_format(s: &str) -> ArchiveFormat {
         "tar.gz" | "tgz" | "targz" => ArchiveFormat::TarGz,
         "tar.xz" | "txz" | "tarxz" => ArchiveFormat::TarXz,
         "tar.bz2" | "tbz2" | "tarbz2" => ArchiveFormat::TarBz2,
+        "gz" | "gzip" => ArchiveFormat::GZip,
+        "bz2" | "bzip2" => ArchiveFormat::BZip2,
+        "xz" => ArchiveFormat::Xz,
+        "wim" => ArchiveFormat::Wim,
         "rar" => ArchiveFormat::Rar,
         _ => ArchiveFormat::SevenZip,
     }

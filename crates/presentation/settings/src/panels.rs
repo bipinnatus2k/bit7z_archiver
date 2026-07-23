@@ -69,6 +69,10 @@ impl SettingsPanel {
                                 ("TAR.GZ", "tar.gz"),
                                 ("TAR.BZ2", "tar.bz2"),
                                 ("TAR.XZ", "tar.xz"),
+                                ("GZIP", "gz"),
+                                ("BZIP2", "bz2"),
+                                ("XZ", "xz"),
+                                ("WIM", "wim"),
                             ],
                             |p| match p.archive.default_format {
                                 ArchiveFormat::SevenZip => "7z",
@@ -77,6 +81,10 @@ impl SettingsPanel {
                                 ArchiveFormat::TarGz => "tar.gz",
                                 ArchiveFormat::TarBz2 => "tar.bz2",
                                 ArchiveFormat::TarXz => "tar.xz",
+                                ArchiveFormat::GZip => "gz",
+                                ArchiveFormat::BZip2 => "bz2",
+                                ArchiveFormat::Xz => "xz",
+                                ArchiveFormat::Wim => "wim",
                                 _ => "7z",
                             },
                             |p, v| {
@@ -86,6 +94,10 @@ impl SettingsPanel {
                                     "tar.gz" => ArchiveFormat::TarGz,
                                     "tar.bz2" => ArchiveFormat::TarBz2,
                                     "tar.xz" => ArchiveFormat::TarXz,
+                                    "gz" => ArchiveFormat::GZip,
+                                    "bz2" => ArchiveFormat::BZip2,
+                                    "xz" => ArchiveFormat::Xz,
+                                    "wim" => ArchiveFormat::Wim,
                                     _ => ArchiveFormat::SevenZip,
                                 };
                             },

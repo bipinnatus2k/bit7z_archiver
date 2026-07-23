@@ -76,9 +76,10 @@ fn register_bit7z_capabilities(registry: &CapabilityRegistry) {
         ArchiveFormat::SevenZip,
         ArchiveFormat::Zip,
         ArchiveFormat::Tar,
-        ArchiveFormat::TarGz,
-        ArchiveFormat::TarXz,
-        ArchiveFormat::TarBz2,
+        ArchiveFormat::GZip,
+        ArchiveFormat::BZip2,
+        ArchiveFormat::Xz,
+        ArchiveFormat::Wim,
     ];
 
     for (id, kind) in [
@@ -159,13 +160,25 @@ impl ArchiveService {
     fn resolve_format(&self, path: &Path) -> ArchiveFormat {
         // First version defaults to Zip for unknown extensions; bit7z format
         // detection will be wired in a follow-up.
+        let name = path.to_string_lossy().to_lowercase();
+        if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+            return ArchiveFormat::TarGz;
+        }
+        if name.ends_with(".tar.xz") || name.ends_with(".txz") {
+            return ArchiveFormat::TarXz;
+        }
+        if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") || name.ends_with(".tbz") {
+            return ArchiveFormat::TarBz2;
+        }
         match path.extension().and_then(|e| e.to_str()) {
             Some("7z") => ArchiveFormat::SevenZip,
             Some("zip") => ArchiveFormat::Zip,
             Some("tar") => ArchiveFormat::Tar,
-            Some("tar.gz") => ArchiveFormat::TarGz,
-            Some("tar.bz2") => ArchiveFormat::TarBz2,
-            Some("tar.xz") => ArchiveFormat::TarXz,
+            Some("gz") => ArchiveFormat::GZip,
+            Some("bz2") => ArchiveFormat::BZip2,
+            Some("xz") => ArchiveFormat::Xz,
+            Some("wim") => ArchiveFormat::Wim,
+            Some("rar") => ArchiveFormat::Rar,
             _ => ArchiveFormat::Zip,
         }
     }

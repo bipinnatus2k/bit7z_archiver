@@ -57,14 +57,15 @@ impl Bit7zWriterAdapter {
     fn archive_format_to_writer_format(
         format: ArchiveFormat,
     ) -> Result<bit7z::WriterFormat, ArchiveError> {
-        match format {
+        match format.physical() {
             ArchiveFormat::SevenZip => Ok(bit7z::WriterFormat::SevenZip),
             ArchiveFormat::Zip => Ok(bit7z::WriterFormat::Zip),
             ArchiveFormat::Tar => Ok(bit7z::WriterFormat::Tar),
-            ArchiveFormat::TarGz => Ok(bit7z::WriterFormat::GZip),
-            ArchiveFormat::TarBz2 => Ok(bit7z::WriterFormat::BZip2),
-            ArchiveFormat::TarXz => Ok(bit7z::WriterFormat::Xz),
-            ArchiveFormat::Rar => Err(ArchiveError::UnsupportedOperation),
+            ArchiveFormat::GZip => Ok(bit7z::WriterFormat::GZip),
+            ArchiveFormat::BZip2 => Ok(bit7z::WriterFormat::BZip2),
+            ArchiveFormat::Xz => Ok(bit7z::WriterFormat::Xz),
+            ArchiveFormat::Wim => Ok(bit7z::WriterFormat::Wim),
+            _ => Err(ArchiveError::UnsupportedOperation),
         }
     }
 }
