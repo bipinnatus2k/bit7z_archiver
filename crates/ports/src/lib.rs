@@ -26,6 +26,17 @@ pub trait ArchiveReader: Send + Sync {
         password: Option<&Password>,
     ) -> Result<bit7z_domain::archive::ArchiveSession, ArchiveError>;
 
+    /// Check whether the archive at `path` is encrypted, without opening it.
+    ///
+    /// A return value of `true` means the archive uses encryption and a password
+    /// will be required to open it. `false` means either the archive is not
+    /// encrypted or the backend cannot determine this statically.
+    ///
+    /// The default implementation returns `Ok(false)`.
+    fn check_encrypted(&self, _path: &Path) -> Result<bool, ArchiveError> {
+        Ok(false)
+    }
+
     /// Read all entries from the archive.
     fn read_entries(
         &self,

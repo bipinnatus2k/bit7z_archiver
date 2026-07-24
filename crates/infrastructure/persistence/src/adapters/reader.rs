@@ -229,6 +229,18 @@ impl ArchiveReader for Bit7zReaderAdapter {
         Ok(session)
     }
 
+    fn check_encrypted(&self, path: &Path) -> Result<bool, ArchiveError> {
+        let path_str = path.to_str().ok_or_else(|| {
+            ArchiveError::Internal(format!(
+                "[Bit7zReaderAdapter::check_encrypted] path is not valid UTF-8: {}",
+                path.display()
+            ))
+        })?;
+        // is_encrypted() and is_header_encrypted() are static checks that do NOT
+        // open the archive — safe to call synchronously without blocking.
+        Ok(self.lib.is_encrypted(path_str) || self.lib.is_header_encrypted(path_str))
+    }
+
     fn read_entries(&self, session: &ArchiveSession) -> Result<Vec<ArchiveEntry>, ArchiveError> {
         let raw_ptr = self.raw_ptr(session.id)?;
         Ok(read_all_entries(raw_ptr))

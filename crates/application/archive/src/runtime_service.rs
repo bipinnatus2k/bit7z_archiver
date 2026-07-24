@@ -229,7 +229,17 @@ impl ArchiveService {
             self.resolve_format(path)
         };
 
-        // 2. Resolve read capability with detected format.
+        // 2. Pre-flight encryption check — avoid blocking the async executor
+        //    on a synchronous FFI call when no password was provided.
+        if password.is_none() {
+            match self.runtime.ports.reader.check_encrypted(path) {
+                Ok(true) => return Err(ArchiveError::EncryptedArchiveRequiresPassword),
+                Ok(false) => {}
+                Err(e) => return Err(e),
+            }
+        }
+
+        // 3. Resolve read capability with detected format.
         let descriptor = self.resolve(ArchiveOpKind::Read, format, None)?;
 
         let handle = self.runtime.submit(OperationRequest {
