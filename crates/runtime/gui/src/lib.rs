@@ -35,8 +35,8 @@ pub fn run_gui_with_path(open_path: Option<PathBuf>, open_password: Option<Strin
             let lib_path_str = lib_path.to_string_lossy();
             let lib = Library::open(&lib_path_str).expect("Failed to load 7-Zip library");
 
-            let (runtime, resolver) = build_bit7z_runtime(lib);
-            let service: Arc<ArchiveService> = Arc::new(ArchiveService::new(runtime, resolver));
+            let (runtime, resolver, detector) = build_bit7z_runtime(lib);
+            let service: Arc<ArchiveService> = Arc::new(ArchiveService::new(runtime, resolver, Some(detector)));
 
             let tray = Arc::new(TrayManager::new());
 

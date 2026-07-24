@@ -12,6 +12,7 @@ use bit7z_domain::archive::{
 use bit7z_domain::repository::{ArchiveError, ArchiveProperties, ExtractOptions};
 use bit7z_domain::vfs::VfsMetadata;
 
+pub mod detection;
 pub mod fs;
 pub mod progress;
 pub mod session;

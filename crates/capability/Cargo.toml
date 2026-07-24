@@ -4,9 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-description = "Capability registry and resolver for the bit7z archiver."
+description = "Generic capability graph framework."
 
 [dependencies]
-bit7z-domain = { path = "../domain" }
-bit7z-ports = { path = "../ports" }
 thiserror = { workspace = true }

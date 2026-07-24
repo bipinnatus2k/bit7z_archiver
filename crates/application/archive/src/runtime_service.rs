@@ -1,15 +1,14 @@
 //! Runtime-backed archive application services.
 //!
 //! These services replace the legacy `ArchiveRepository`-based use cases by
-//! constructing `CapabilityRequest`s, resolving them through a
-//! `CapabilityResolver`, and submitting `OperationRequest`s to the runtime.
+//! constructing archive capability requests, resolving them through an
+//! archive-aware resolver, and submitting operations to the runtime.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bit7z_capability::{
-    Availability, BackendId, Capability, CapabilityId, CapabilityKind, CapabilityRegistry,
-    CapabilityRequest, CapabilityResolver, DefaultCapabilityResolver,
+    CapabilityRegistry, CapabilityResolver, ExecutionDescriptor, LockKey, Request,
 };
 use bit7z_domain::archive::{
     ArchiveEntry, ArchiveFormat, ArchiveHandle, ArchiveSession, ChangeSet, EncryptionConfig, Page,
@@ -20,6 +19,7 @@ use bit7z_domain::vfs::SessionState;
 use bit7z_infra_persistence::adapters::{
     Bit7zReaderAdapter, Bit7zWriterAdapter, InMemorySessionStore,
 };
+use bit7z_ports::detection::FormatDetector;
 use bit7z_ports::fs::{FileSystem, FsError, TempError, TempStorage};
 use bit7z_runtime::{
     JobResult, OperationHandle, OperationKind, OperationRequest, PortSet, Runtime, RuntimeBuilder,
@@ -27,6 +27,12 @@ use bit7z_runtime::{
 };
 
 use bit7z_runtime::job::Priority;
+
+use crate::auto_format::AutoFormat;
+use crate::capability::{
+    ArchiveCapMeta, ArchiveCapabilityResolver, ArchiveOpKind, bit7z_formats,
+    register_archive_capabilities,
+};
 
 const BIT7Z_BACKEND_ID: u64 = 1;
 
@@ -36,18 +42,29 @@ const BIT7Z_BACKEND_ID: u64 = 1;
 /// ports (e.g. for tests) should use [`RuntimeBuilder`] directly.
 pub fn build_bit7z_runtime(
     lib: bit7z_infra_bit7z::Library,
-) -> (Arc<Runtime>, Arc<dyn CapabilityResolver>) {
-    let registry = Arc::new(CapabilityRegistry::new());
-    register_bit7z_capabilities(&registry);
-    let resolver: Arc<dyn CapabilityResolver> =
-        Arc::new(DefaultCapabilityResolver::new(registry.clone()));
+) -> (
+    Arc<Runtime>,
+    Arc<dyn CapabilityResolver<ArchiveCapMeta>>,
+    Arc<dyn FormatDetector>,
+) {
+    let registry: Arc<CapabilityRegistry<ArchiveCapMeta>> =
+        Arc::new(CapabilityRegistry::new());
+    register_archive_capabilities(
+        &registry,
+        bit7z_capability::BackendId(BIT7Z_BACKEND_ID),
+        &bit7z_formats(),
+    );
+    let resolver: Arc<dyn CapabilityResolver<ArchiveCapMeta>> =
+        Arc::new(ArchiveCapabilityResolver::new(registry.clone()));
 
     let lib = Arc::new(lib);
     let reader: Arc<dyn bit7z_ports::ArchiveReader> =
         Arc::new(Bit7zReaderAdapter::new_shared(lib.clone()));
-    let writer: Arc<dyn bit7z_ports::ArchiveWriter> = Arc::new(Bit7zWriterAdapter::new_shared(lib));
+    let writer: Arc<dyn bit7z_ports::ArchiveWriter> =
+        Arc::new(Bit7zWriterAdapter::new_shared(lib));
     let session_store: Arc<dyn bit7z_ports::session::SessionStore> =
         Arc::new(InMemorySessionStore::new());
+    let detector: Arc<dyn FormatDetector> = Arc::new(AutoFormat::new());
 
     let ports = PortSet {
         reader: reader.clone(),
@@ -55,6 +72,7 @@ pub fn build_bit7z_runtime(
         session_store: session_store.clone(),
         fs: Arc::new(StubFileSystem),
         temp_storage: Arc::new(StubTempStorage),
+        detector: Some(detector.clone()),
     };
 
     let ex = Arc::new(smol::Executor::new());
@@ -64,47 +82,10 @@ pub fn build_bit7z_runtime(
 
     let runtime = Arc::new(RuntimeBuilder::new().build(ports, context));
 
-    // Keep the executor alive for the lifetime of the process. In a future
-    // revision this will be tied to application lifecycle and shutdown.
+    // Keep the executor alive for the lifetime of the process.
     std::thread::spawn(move || smol::block_on(ex.run(futures::future::pending::<()>())));
 
-    (runtime, resolver)
-}
-
-fn register_bit7z_capabilities(registry: &CapabilityRegistry) {
-    let formats = vec![
-        ArchiveFormat::SevenZip,
-        ArchiveFormat::Zip,
-        ArchiveFormat::Tar,
-        ArchiveFormat::GZip,
-        ArchiveFormat::BZip2,
-        ArchiveFormat::Xz,
-        ArchiveFormat::Wim,
-    ];
-
-    for (id, kind) in [
-        (1, CapabilityKind::Read),
-        (2, CapabilityKind::Write),
-        (3, CapabilityKind::Extract),
-        (4, CapabilityKind::Test),
-        (5, CapabilityKind::Preview),
-        (6, CapabilityKind::Hash),
-        (7, CapabilityKind::Compress),
-        (8, CapabilityKind::Encrypt),
-    ] {
-        registry.register(Capability {
-            id: CapabilityId(id),
-            backend: BackendId(BIT7Z_BACKEND_ID),
-            kind,
-            formats: formats.clone(),
-            availability: Availability::Always,
-            metadata: Default::default(),
-            supports_encryption: kind == CapabilityKind::Encrypt || kind == CapabilityKind::Write,
-            supports_solid: kind == CapabilityKind::Write || kind == CapabilityKind::Compress,
-            supports_streaming: kind == CapabilityKind::Extract,
-            supports_incremental: kind == CapabilityKind::Write,
-        });
-    }
+    (runtime, resolver, detector)
 }
 
 struct StubFileSystem;
@@ -144,22 +125,26 @@ impl TempStorage for StubTempStorage {
 /// runtime and queries the session manager for synchronous navigation.
 pub struct ArchiveService {
     runtime: Arc<Runtime>,
-    resolver: Arc<dyn CapabilityResolver>,
+    resolver: Arc<dyn CapabilityResolver<ArchiveCapMeta>>,
+    detector: Option<Arc<dyn FormatDetector>>,
     sessions: std::sync::Mutex<std::collections::HashMap<u64, ArchiveSession>>,
 }
 
 impl ArchiveService {
-    pub fn new(runtime: Arc<Runtime>, resolver: Arc<dyn CapabilityResolver>) -> Self {
+    pub fn new(
+        runtime: Arc<Runtime>,
+        resolver: Arc<dyn CapabilityResolver<ArchiveCapMeta>>,
+        detector: Option<Arc<dyn FormatDetector>>,
+    ) -> Self {
         Self {
             runtime,
             resolver,
+            detector,
             sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
     fn resolve_format(&self, path: &Path) -> ArchiveFormat {
-        // First version defaults to Zip for unknown extensions; bit7z format
-        // detection will be wired in a follow-up.
         let name = path.to_string_lossy().to_lowercase();
         if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
             return ArchiveFormat::TarGz;
@@ -167,7 +152,10 @@ impl ArchiveService {
         if name.ends_with(".tar.xz") || name.ends_with(".txz") {
             return ArchiveFormat::TarXz;
         }
-        if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") || name.ends_with(".tbz") {
+        if name.ends_with(".tar.bz2")
+            || name.ends_with(".tbz2")
+            || name.ends_with(".tbz")
+        {
             return ArchiveFormat::TarBz2;
         }
         match path.extension().and_then(|e| e.to_str()) {
@@ -181,6 +169,28 @@ impl ArchiveService {
             Some("rar") => ArchiveFormat::Rar,
             _ => ArchiveFormat::Zip,
         }
+    }
+
+    fn resolve(
+        &self,
+        kind: ArchiveOpKind,
+        format: ArchiveFormat,
+        session_id: Option<u64>,
+    ) -> Result<ExecutionDescriptor, ArchiveError> {
+        self.resolver
+            .resolve(&Request {
+                meta: ArchiveCapMeta {
+                    kind,
+                    formats: vec![format],
+                    supports_encryption: false,
+                    supports_solid: false,
+                    supports_streaming: false,
+                    supports_incremental: false,
+                },
+                tags: vec![],
+                lock_key: session_id.map(LockKey),
+            })
+            .map_err(|e| ArchiveError::Internal(e.to_string()))
     }
 
     fn wait(&self, handle: OperationHandle) -> Result<JobResult, ArchiveError> {
@@ -205,17 +215,23 @@ impl ArchiveService {
         path: &Path,
         password: Option<&Password>,
     ) -> Result<ArchiveHandle, ArchiveError> {
-        let format = self.resolve_format(path);
-        let descriptor = self
-            .resolver
-            .resolve(CapabilityRequest {
-                kind: CapabilityKind::Read,
-                format,
-                constraints: vec![],
-                session_id: None,
-            })
-            .map_err(|e| ArchiveError::Internal(e.to_string()))?;
-        
+        // 1. Try magic-bytes-based format detection.
+        let format = if let Some(detector) = &self.detector {
+            // Resolve detection capability as a policy check.
+            let _ = self
+                .resolve(ArchiveOpKind::DetectFormat, self.resolve_format(path), None)
+                .map_err(|e| ArchiveError::Internal(e.to_string()))?;
+            match detector.detect_format(path) {
+                Ok(f) => f,
+                Err(_) => self.resolve_format(path), // fallback to extension
+            }
+        } else {
+            self.resolve_format(path)
+        };
+
+        // 2. Resolve read capability with detected format.
+        let descriptor = self.resolve(ArchiveOpKind::Read, format, None)?;
+
         let handle = self.runtime.submit(OperationRequest {
             kind: OperationKind::OpenArchive {
                 path: path.to_path_buf(),
@@ -248,15 +264,7 @@ impl ArchiveService {
         format: ArchiveFormat,
         _encryption: Option<&EncryptionConfig>,
     ) -> Result<ArchiveHandle, ArchiveError> {
-        let descriptor = self
-            .resolver
-            .resolve(CapabilityRequest {
-                kind: CapabilityKind::Write,
-                format,
-                constraints: vec![],
-                session_id: None,
-            })
-            .map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let descriptor = self.resolve(ArchiveOpKind::Write, format, None)?;
 
         let handle = self.runtime.submit(OperationRequest {
             kind: OperationKind::CreateArchive {
@@ -323,7 +331,6 @@ impl ArchiveService {
             .session_manager
             .get(session.id)
             .ok_or_else(|| ArchiveError::NotFound(format!("session {}", session.id)))?;
-        // Properties are not yet computed by the runtime store; return defaults.
         Ok(ArchiveProperties::default())
     }
 
@@ -335,15 +342,7 @@ impl ArchiveService {
         _options: &ExtractOptions,
     ) -> Result<(), ArchiveError> {
         let session = self.lookup_session(archive)?;
-        let descriptor = self
-            .resolver
-            .resolve(CapabilityRequest {
-                kind: CapabilityKind::Extract,
-                format: session.format,
-                constraints: vec![],
-                session_id: Some(session.id),
-            })
-            .map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let descriptor = self.resolve(ArchiveOpKind::Extract, session.format, Some(session.id))?;
 
         let handle = self.runtime.submit(OperationRequest {
             kind: OperationKind::Extract {
@@ -378,15 +377,7 @@ impl ArchiveService {
 
     pub fn test(&self, archive: &ArchiveHandle) -> Result<TestResult, ArchiveError> {
         let session = self.lookup_session(archive)?;
-        let descriptor = self
-            .resolver
-            .resolve(CapabilityRequest {
-                kind: CapabilityKind::Test,
-                format: session.format,
-                constraints: vec![],
-                session_id: Some(session.id),
-            })
-            .map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let descriptor = self.resolve(ArchiveOpKind::Test, session.format, Some(session.id))?;
 
         let handle = self.runtime.submit(OperationRequest {
             kind: OperationKind::Test {
@@ -437,15 +428,7 @@ impl ArchiveService {
         _options: &WriteOptions,
     ) -> Result<(), ArchiveError> {
         let session = self.lookup_session(archive)?;
-        let descriptor = self
-            .resolver
-            .resolve(CapabilityRequest {
-                kind: CapabilityKind::Write,
-                format: session.format,
-                constraints: vec![],
-                session_id: Some(session.id),
-            })
-            .map_err(|e| ArchiveError::Internal(e.to_string()))?;
+        let descriptor = self.resolve(ArchiveOpKind::Write, session.format, Some(session.id))?;
 
         let handle = self.runtime.submit(OperationRequest {
             kind: OperationKind::SaveArchive {
@@ -536,8 +519,8 @@ mod tests {
             &[("a.txt", "hello"), ("b.txt", "world"), ("c.txt", "foo")],
         );
 
-        let (runtime, resolver) = build_bit7z_runtime(lib);
-        let service = ArchiveService::new(runtime, resolver);
+        let (runtime, resolver, detector) = build_bit7z_runtime(lib);
+        let service = ArchiveService::new(runtime, resolver, Some(detector));
         let handle = service.open(&archive_path, None).expect("open archive");
 
         let result = service.test(&handle).expect("test archive");
@@ -559,8 +542,8 @@ mod tests {
             &[("a.txt", "hello"), ("b.txt", "world"), ("c.txt", "foo")],
         );
 
-        let (runtime, resolver) = build_bit7z_runtime(lib);
-        let service = ArchiveService::new(runtime, resolver);
+        let (runtime, resolver, detector) = build_bit7z_runtime(lib);
+        let service = ArchiveService::new(runtime, resolver, Some(detector));
         let handle = service.open(&archive_path, None).expect("open archive");
 
         let dest = temp.path().join("extracted");

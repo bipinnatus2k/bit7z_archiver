@@ -1,12 +1,26 @@
-//! Capability registry and resolver.
+//! Generic capability graph framework.
 //!
-//! The capability layer answers the question: "Can this operation be executed,
-//! and by whom?" It sits between the Application layer and the Runtime layer.
+//! The capability layer is domain-agnostic. Each domain defines its own
+//! capability metadata (`CapMeta`) and maps its resource keys to the
+//! opaque [`LockKey`] type.
 
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::collections::{HashMap, HashSet};
+use std::sync::RwLock;
 
-use bit7z_domain::archive::ArchiveFormat;
+/// Domain-specific capability metadata.
+///
+/// Implement this trait for your domain's metadata type. The blanket impl
+/// covers any type that satisfies the bounds.
+pub trait CapMeta: Clone + std::fmt::Debug + Send + Sync + 'static {}
+impl<T: Clone + std::fmt::Debug + Send + Sync + 'static> CapMeta for T {}
+
+/// Opaque resource lock key.
+///
+/// Domains map their own key types (e.g. `SessionId`) to this type via
+/// a simple conversion. This keeps the runtime and capability framework
+/// free of domain-specific type parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LockKey(pub u64);
 
 /// Identifier for a registered backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,21 +30,8 @@ pub struct BackendId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CapabilityId(pub u64);
 
-/// Kind of capability a backend can provide.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CapabilityKind {
-    Read,
-    Write,
-    Extract,
-    Test,
-    Preview,
-    Hash,
-    Compress,
-    Encrypt,
-}
-
 /// Availability of a capability.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Availability {
     /// Always available at runtime.
     Always,
@@ -40,7 +41,20 @@ pub enum Availability {
     ExternalDependency(&'static str),
 }
 
-/// Metadata attached to a capability.
+impl Availability {
+    /// Returns whether this capability is considered available.
+    pub fn is_available(&self) -> bool {
+        match self {
+            Availability::Always => true,
+            Availability::FeatureFlag(_) | Availability::ExternalDependency(_) => {
+                // Runtime checks will be added by the domain resolver.
+                true
+            }
+        }
+    }
+}
+
+/// Generic metadata attached to a capability.
 #[derive(Debug, Clone, Default)]
 pub struct CapabilityMetadata {
     pub name: String,
@@ -48,79 +62,55 @@ pub struct CapabilityMetadata {
     pub version: String,
 }
 
-/// A registered capability.
+/// A registered capability, generic over domain metadata.
 #[derive(Debug, Clone)]
-pub struct Capability {
+pub struct Capability<M: CapMeta> {
     pub id: CapabilityId,
     pub backend: BackendId,
-    pub kind: CapabilityKind,
-    pub formats: Vec<ArchiveFormat>,
+    pub meta: M,
     pub availability: Availability,
     pub metadata: CapabilityMetadata,
-    pub supports_encryption: bool,
-    pub supports_solid: bool,
-    pub supports_streaming: bool,
-    pub supports_incremental: bool,
 }
 
-impl Capability {
-    /// Returns whether this capability is considered available at this time.
-    ///
-    /// The current implementation treats every capability as available; runtime
-    /// checks for feature flags or external dependencies will be added later.
+impl<M: CapMeta> Capability<M> {
     pub fn is_available(&self) -> bool {
-        true
+        self.availability.is_available()
     }
 }
 
 /// Request to resolve a capability.
 #[derive(Debug, Clone)]
-pub struct CapabilityRequest {
-    pub kind: CapabilityKind,
-    pub format: ArchiveFormat,
-    pub constraints: Vec<Constraint>,
-    pub session_id: Option<bit7z_domain::archive::SessionId>,
+pub struct Request<M: CapMeta> {
+    /// Domain-specific capability metadata to match against.
+    pub meta: M,
+    /// Domain-specific tags for filtering (e.g. "encryption", "streaming").
+    pub tags: Vec<String>,
+    /// Optional resource key to lock during execution.
+    pub lock_key: Option<LockKey>,
 }
 
-/// Constraint on a capability.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Constraint {
-    /// Requires encryption support.
-    RequireEncryption,
-    /// Requires solid archive support.
-    RequireSolid,
-    /// Requires a specific backend.
-    Backend(BackendId),
-    /// Requires writing in a streaming manner.
-    RequireStreaming,
-    /// Requires incremental update support.
-    RequireIncremental,
+/// Lock type for a resource.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceLock {
+    /// Shared lock: allows concurrent access on the same resource.
+    Shared(LockKey),
+    /// Exclusive lock: forbids any other operation on the resource.
+    Exclusive(LockKey),
 }
 
 /// Resource claim required to execute an operation.
 #[derive(Debug, Clone, Default)]
 pub struct ResourceClaim {
-    /// Sessions that must be locked.
-    pub session_locks: Vec<SessionLock>,
+    /// Resources that must be locked.
+    pub resource_locks: Vec<ResourceLock>,
     /// Whether this operation needs a global concurrency token.
     pub concurrency_token: bool,
     /// Memory budget in bytes.
     pub memory_budget: Option<usize>,
     /// Thread budget.
     pub thread_budget: Option<usize>,
-    /// Temporary directory space in bytes.
-    pub temp_storage: Option<usize>,
-    /// FFI/native handle budget.
+    /// FFI / native handle budget.
     pub handle_budget: Option<usize>,
-}
-
-/// Lock type for a session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionLock {
-    /// Shared lock: allows concurrent reads on the same session.
-    Shared(bit7z_domain::archive::SessionId),
-    /// Exclusive lock: forbids any other operation on the session.
-    Exclusive(bit7z_domain::archive::SessionId),
 }
 
 /// Policy for executing an operation.
@@ -143,273 +133,341 @@ pub struct ExecutionDescriptor {
     pub policy: ExecutionPolicy,
 }
 
-/// Registry for backend capabilities.
-#[derive(Debug)]
-pub struct CapabilityRegistry {
-    capabilities: RwLock<HashMap<CapabilityId, Capability>>,
+/// Edge kind in the capability dependency graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeKind {
+    /// Target capability is required.
+    Requires,
+    /// Target capability conflicts.
+    Conflicts,
+    /// Target capability is implied.
+    Implies,
 }
 
-impl CapabilityRegistry {
+/// A capability dependency graph with typed edges.
+#[derive(Debug, Clone)]
+pub struct CapGraph<M: CapMeta> {
+    nodes: HashMap<CapabilityId, Capability<M>>,
+    edges: HashMap<CapabilityId, Vec<(EdgeKind, CapabilityId)>>,
+}
+
+impl<M: CapMeta> CapGraph<M> {
     pub fn new() -> Self {
         Self {
-            capabilities: RwLock::new(HashMap::new()),
+            nodes: HashMap::new(),
+            edges: HashMap::new(),
         }
     }
 
-    pub fn register(&self, cap: Capability) {
-        self.capabilities.write().unwrap().insert(cap.id, cap);
+    pub fn register(&mut self, cap: Capability<M>) {
+        self.edges.entry(cap.id).or_default();
+        self.nodes.insert(cap.id, cap);
+    }
+
+    pub fn unregister(&mut self, id: CapabilityId) {
+        self.nodes.remove(&id);
+        self.edges.remove(&id);
+        for edges in self.edges.values_mut() {
+            edges.retain(|(_, target)| *target != id);
+        }
+    }
+
+    pub fn add_edge(
+        &mut self,
+        from: CapabilityId,
+        kind: EdgeKind,
+        to: CapabilityId,
+    ) -> Result<(), CapError> {
+        if !self.nodes.contains_key(&from) {
+            return Err(CapError::CapabilityNotFound(from));
+        }
+        if !self.nodes.contains_key(&to) {
+            return Err(CapError::CapabilityNotFound(to));
+        }
+        if kind == EdgeKind::Conflicts && from == to {
+            return Err(CapError::InvalidEdge(
+                "a capability cannot conflict with itself",
+            ));
+        }
+        self.edges.entry(from).or_default().push((kind, to));
+        Ok(())
+    }
+
+    pub fn all(&self) -> Vec<&Capability<M>> {
+        self.nodes.values().collect()
+    }
+
+    pub fn get(&self, id: CapabilityId) -> Option<&Capability<M>> {
+        self.nodes.get(&id)
+    }
+
+    pub fn by_backend(&self, backend: BackendId) -> Vec<&Capability<M>> {
+        self.nodes
+            .values()
+            .filter(|c| c.backend == backend)
+            .collect()
+    }
+
+    /// Resolve transitive dependencies via DFS.
+    pub fn transitive_deps(&self, from: CapabilityId) -> Result<HashSet<CapabilityId>, CapError> {
+        if !self.nodes.contains_key(&from) {
+            return Err(CapError::CapabilityNotFound(from));
+        }
+        let mut visited = HashSet::new();
+        let mut result = HashSet::new();
+        self.visit_deps(from, &mut visited, &mut result);
+        Ok(result)
+    }
+
+    fn visit_deps(
+        &self,
+        id: CapabilityId,
+        visited: &mut HashSet<CapabilityId>,
+        result: &mut HashSet<CapabilityId>,
+    ) {
+        if !visited.insert(id) {
+            return;
+        }
+        if let Some(edges) = self.edges.get(&id) {
+            for (kind, target) in edges {
+                if *kind == EdgeKind::Requires || *kind == EdgeKind::Implies {
+                    result.insert(*target);
+                    self.visit_deps(*target, visited, result);
+                }
+            }
+        }
+    }
+
+    /// Check for conflicts within a set of capability IDs.
+    pub fn check_conflicts(&self, ids: &[CapabilityId]) -> Result<(), CapError> {
+        for &id in ids {
+            if let Some(edges) = self.edges.get(&id) {
+                for (kind, target) in edges {
+                    if *kind == EdgeKind::Conflicts && ids.contains(target) {
+                        return Err(CapError::Conflict(id, *target));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<M: CapMeta> Default for CapGraph<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Thread-safe capability registry.
+#[derive(Debug)]
+pub struct CapabilityRegistry<M: CapMeta> {
+    graph: RwLock<CapGraph<M>>,
+}
+
+impl<M: CapMeta> CapabilityRegistry<M> {
+    pub fn new() -> Self {
+        Self {
+            graph: RwLock::new(CapGraph::new()),
+        }
+    }
+
+    pub fn register(&self, cap: Capability<M>) {
+        self.graph.write().unwrap().register(cap);
     }
 
     pub fn unregister(&self, id: CapabilityId) {
-        self.capabilities.write().unwrap().remove(&id);
+        self.graph.write().unwrap().unregister(id);
     }
 
-    pub fn all(&self) -> Vec<Capability> {
-        self.capabilities
+    pub fn all(&self) -> Vec<Capability<M>> {
+        self.graph
             .read()
             .unwrap()
-            .values()
+            .all()
+            .into_iter()
             .cloned()
             .collect()
     }
 
-    pub fn by_backend(&self, backend: BackendId) -> Vec<Capability> {
-        self.capabilities
+    pub fn by_backend(&self, backend: BackendId) -> Vec<Capability<M>> {
+        self.graph
             .read()
             .unwrap()
-            .values()
-            .filter(|c| c.backend == backend)
+            .by_backend(backend)
+            .into_iter()
             .cloned()
             .collect()
+    }
+
+    pub fn add_edge(
+        &self,
+        from: CapabilityId,
+        kind: EdgeKind,
+        to: CapabilityId,
+    ) -> Result<(), CapError> {
+        self.graph.write().unwrap().add_edge(from, kind, to)
+    }
+
+    /// Expose the inner graph for domain-specific traversal.
+    pub fn graph(&self) -> std::sync::RwLockReadGuard<'_, CapGraph<M>> {
+        self.graph.read().unwrap()
     }
 }
 
-impl Default for CapabilityRegistry {
+impl<M: CapMeta> Default for CapabilityRegistry<M> {
     fn default() -> Self {
-        Self {
-            capabilities: RwLock::new(HashMap::new()),
-        }
+        Self::new()
     }
 }
 
 /// Error returned by capability resolution.
 #[derive(Debug, thiserror::Error)]
-pub enum CapabilityError {
-    #[error("no backend satisfies the request: {0:?}")]
-    NoMatchingBackend(CapabilityRequest),
-    #[error("required constraint unsupported: {0:?}")]
-    UnsupportedConstraint(Constraint),
-    #[error("backend unavailable: {0:?}")]
-    BackendUnavailable(BackendId),
+pub enum CapError {
+    #[error("capability not found: {0:?}")]
+    CapabilityNotFound(CapabilityId),
+    #[error("no matching capability for request")]
+    NoMatch,
+    #[error("capability conflict: {0:?} conflicts with {1:?}")]
+    Conflict(CapabilityId, CapabilityId),
+    #[error("invalid edge: {0}")]
+    InvalidEdge(&'static str),
 }
 
 /// Resolves capability requests into execution descriptors.
-pub trait CapabilityResolver: Send + Sync {
-    fn resolve(&self, request: CapabilityRequest) -> Result<ExecutionDescriptor, CapabilityError>;
+///
+/// Domain-agnostic trait. Each domain provides its own resolver
+/// that knows how to interpret its metadata type `M`.
+pub trait CapabilityResolver<M: CapMeta>: Send + Sync {
+    fn resolve(&self, request: &Request<M>) -> Result<ExecutionDescriptor, CapError>;
 }
 
-/// Default resolver that matches against a registry.
-pub struct DefaultCapabilityResolver {
-    registry: Arc<CapabilityRegistry>,
-}
-
-impl DefaultCapabilityResolver {
-    pub fn new(registry: Arc<CapabilityRegistry>) -> Self {
-        Self { registry }
-    }
-}
-
-impl CapabilityResolver for DefaultCapabilityResolver {
-    fn resolve(&self, request: CapabilityRequest) -> Result<ExecutionDescriptor, CapabilityError> {
-        let caps = self.registry.all();
-
-        // 1. Basic filtering by kind, format, and availability.
-        let mut candidates: Vec<&Capability> = caps
-            .iter()
-            .filter(|c| {
-                c.kind == request.kind && c.formats.contains(&request.format) && c.is_available()
-            })
-            .collect();
-
-        // 2. Apply explicit constraints.
-        for constraint in &request.constraints {
-            candidates.retain(|c| match constraint {
-                Constraint::RequireEncryption => c.supports_encryption,
-                Constraint::RequireSolid => c.supports_solid,
-                Constraint::RequireStreaming => c.supports_streaming,
-                Constraint::RequireIncremental => c.supports_incremental,
-                Constraint::Backend(b) => c.backend == *b,
-            });
-        }
-
-        // 3. Prefer backends that satisfy the most explicit constraints.
-        candidates.sort_by(|a, b| {
-            let a_score = score(&request.constraints, a);
-            let b_score = score(&request.constraints, b);
-            b_score.cmp(&a_score)
-        });
-
-        let chosen = (*candidates
-            .first()
-            .ok_or_else(|| CapabilityError::NoMatchingBackend(request.clone()))?)
-        .clone();
-
-        // 4. Build resource claim based on operation kind and session.
-        let mut resource_claim = ResourceClaim::default();
-        if let Some(session_id) = request.session_id {
-            let lock = match request.kind {
-                CapabilityKind::Read
-                | CapabilityKind::Extract
-                | CapabilityKind::Test
-                | CapabilityKind::Preview
-                | CapabilityKind::Hash => SessionLock::Shared(session_id),
-                _ => SessionLock::Exclusive(session_id),
-            };
-            resource_claim.session_locks.push(lock);
-        }
-        // Memory-intensive operations require a budget hint.
-        resource_claim.memory_budget = match request.kind {
-            CapabilityKind::Compress | CapabilityKind::Encrypt | CapabilityKind::Extract => {
-                Some(64 * 1024 * 1024)
-            }
-            _ => None,
-        };
-
-        // 5. Determine execution policy.
-        let policy = match request.kind {
-            CapabilityKind::Read | CapabilityKind::Test | CapabilityKind::Preview => {
-                ExecutionPolicy::Immediate
-            }
-            CapabilityKind::Extract | CapabilityKind::Hash => ExecutionPolicy::Queued,
-            CapabilityKind::Write | CapabilityKind::Compress | CapabilityKind::Encrypt => {
-                ExecutionPolicy::Queued
-            }
-        };
-
-        Ok(ExecutionDescriptor {
-            backend: chosen.backend,
-            capabilities: vec![chosen.id],
-            resource_claim,
-            policy,
-        })
-    }
-}
-
-fn score(constraints: &[Constraint], cap: &Capability) -> usize {
-    let mut score = 0;
-    for c in constraints {
-        let satisfied = match c {
-            Constraint::RequireEncryption => cap.supports_encryption,
-            Constraint::RequireSolid => cap.supports_solid,
-            Constraint::RequireStreaming => cap.supports_streaming,
-            Constraint::RequireIncremental => cap.supports_incremental,
-            Constraint::Backend(b) => cap.backend == *b,
-        };
-        if satisfied {
-            score += 1;
-        }
-    }
-    score
-}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bit7z_domain::archive::ArchiveFormat;
 
-    fn make_cap(
-        id: u64,
-        backend: u64,
-        kind: CapabilityKind,
-        formats: &[ArchiveFormat],
-    ) -> Capability {
+    /// A minimal metadata type for testing.
+    #[derive(Clone, Debug, PartialEq)]
+    struct TestMeta {
+        kind: &'static str,
+        value: u32,
+    }
+
+    fn make_cap(id: u64, backend: u64, kind: &'static str) -> Capability<TestMeta> {
         Capability {
             id: CapabilityId(id),
             backend: BackendId(backend),
-            kind,
-            formats: formats.to_vec(),
+            meta: TestMeta { kind, value: 0 },
             availability: Availability::Always,
             metadata: CapabilityMetadata::default(),
-            supports_encryption: false,
-            supports_solid: false,
-            supports_streaming: false,
-            supports_incremental: false,
         }
     }
 
     #[test]
-    fn resolve_selects_backend_by_kind_and_format() {
-        let registry = Arc::new(CapabilityRegistry::new());
-        registry.register(make_cap(
-            1,
-            1,
-            CapabilityKind::Read,
-            &[ArchiveFormat::SevenZip],
-        ));
-        registry.register(make_cap(2, 2, CapabilityKind::Write, &[ArchiveFormat::Zip]));
+    fn register_and_query() {
+        let registry: CapabilityRegistry<TestMeta> = CapabilityRegistry::new();
+        registry.register(make_cap(1, 1, "read"));
+        registry.register(make_cap(2, 2, "write"));
 
-        let resolver = DefaultCapabilityResolver::new(registry);
-        let request = CapabilityRequest {
-            kind: CapabilityKind::Read,
-            format: ArchiveFormat::SevenZip,
-            constraints: vec![],
-            session_id: None,
-        };
-        let descriptor = resolver.resolve(request).unwrap();
-        assert_eq!(descriptor.backend, BackendId(1));
-        assert_eq!(descriptor.policy, ExecutionPolicy::Immediate);
+        let all = registry.all();
+        assert_eq!(all.len(), 2);
+
+        let by_b1 = registry.by_backend(BackendId(1));
+        assert_eq!(by_b1.len(), 1);
+        assert_eq!(by_b1[0].id, CapabilityId(1));
+
+        let by_b2 = registry.by_backend(BackendId(2));
+        assert_eq!(by_b2.len(), 1);
+        assert_eq!(by_b2[0].id, CapabilityId(2));
     }
 
     #[test]
-    fn resolve_applies_constraints() {
-        let registry = Arc::new(CapabilityRegistry::new());
-        let plain = make_cap(1, 1, CapabilityKind::Read, &[ArchiveFormat::Zip]);
-        let mut encrypted = make_cap(2, 2, CapabilityKind::Read, &[ArchiveFormat::Zip]);
-        encrypted.supports_encryption = true;
-        registry.register(plain);
-        registry.register(encrypted);
-
-        let resolver = DefaultCapabilityResolver::new(registry);
-        let request = CapabilityRequest {
-            kind: CapabilityKind::Read,
-            format: ArchiveFormat::Zip,
-            constraints: vec![Constraint::RequireEncryption],
-            session_id: None,
-        };
-        let descriptor = resolver.resolve(request).unwrap();
-        assert_eq!(descriptor.backend, BackendId(2));
+    fn unregister_removes_capability() {
+        let registry: CapabilityRegistry<TestMeta> = CapabilityRegistry::new();
+        registry.register(make_cap(1, 1, "read"));
+        assert_eq!(registry.all().len(), 1);
+        registry.unregister(CapabilityId(1));
+        assert!(registry.all().is_empty());
     }
 
     #[test]
-    fn resolve_adds_session_lock() {
-        let registry = Arc::new(CapabilityRegistry::new());
-        registry.register(make_cap(1, 1, CapabilityKind::Write, &[ArchiveFormat::Zip]));
+    fn graph_transitive_deps() {
+        let mut graph: CapGraph<TestMeta> = CapGraph::new();
+        graph.register(make_cap(1, 1, "admin"));
+        graph.register(make_cap(2, 1, "write"));
+        graph.register(make_cap(3, 1, "read"));
 
-        let resolver = DefaultCapabilityResolver::new(registry);
-        let request = CapabilityRequest {
-            kind: CapabilityKind::Write,
-            format: ArchiveFormat::Zip,
-            constraints: vec![],
-            session_id: Some(42),
-        };
-        let descriptor = resolver.resolve(request).unwrap();
-        assert_eq!(descriptor.resource_claim.session_locks.len(), 1);
-        assert!(matches!(
-            descriptor.resource_claim.session_locks[0],
-            SessionLock::Exclusive(42)
-        ));
+        graph
+            .add_edge(CapabilityId(1), EdgeKind::Requires, CapabilityId(2))
+            .unwrap();
+        graph
+            .add_edge(CapabilityId(2), EdgeKind::Requires, CapabilityId(3))
+            .unwrap();
+
+        let deps = graph.transitive_deps(CapabilityId(1)).unwrap();
+        assert!(deps.contains(&CapabilityId(2)));
+        assert!(deps.contains(&CapabilityId(3)));
     }
 
     #[test]
-    fn resolve_fails_when_no_backend_matches() {
-        let registry = Arc::new(CapabilityRegistry::new());
-        let resolver = DefaultCapabilityResolver::new(registry);
-        let request = CapabilityRequest {
-            kind: CapabilityKind::Read,
-            format: ArchiveFormat::Rar,
-            constraints: vec![],
-            session_id: None,
+    fn graph_conflict_detection() {
+        let mut graph: CapGraph<TestMeta> = CapGraph::new();
+        graph.register(make_cap(1, 1, "readonly"));
+        graph.register(make_cap(2, 1, "readwrite"));
+
+        graph
+            .add_edge(CapabilityId(1), EdgeKind::Conflicts, CapabilityId(2))
+            .unwrap();
+
+        // No conflict on its own.
+        assert!(graph.check_conflicts(&[CapabilityId(1)]).is_ok());
+        // Conflict when both are present.
+        assert!(graph
+            .check_conflicts(&[CapabilityId(1), CapabilityId(2)])
+            .is_err());
+    }
+
+    #[test]
+    fn add_edge_fails_for_missing_nodes() {
+        let mut graph: CapGraph<TestMeta> = CapGraph::new();
+        graph.register(make_cap(1, 1, "read"));
+
+        assert!(graph
+            .add_edge(CapabilityId(1), EdgeKind::Requires, CapabilityId(99))
+            .is_err());
+        assert!(graph
+            .add_edge(CapabilityId(99), EdgeKind::Requires, CapabilityId(1))
+            .is_err());
+    }
+
+    #[test]
+    fn request_with_lock_key() {
+        let req: Request<TestMeta> = Request {
+            meta: TestMeta {
+                kind: "read",
+                value: 42,
+            },
+            tags: vec![],
+            lock_key: Some(LockKey(100)),
         };
-        assert!(resolver.resolve(request).is_err());
+        assert_eq!(req.lock_key, Some(LockKey(100)));
+    }
+
+    #[test]
+    fn resource_lock_exclusive_prevents_shared() {
+        let key = LockKey(1);
+        let exclusive = ResourceLock::Exclusive(key);
+        let shared = ResourceLock::Shared(key);
+
+        // Both refer to the same key.
+        assert_eq!(
+            format!("{:?}", exclusive),
+            format!("Exclusive(LockKey(1))")
+        );
+        assert_eq!(format!("{:?}", shared), format!("Shared(LockKey(1))"));
     }
 }

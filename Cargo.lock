@@ -941,8 +941,6 @@ dependencies = [
 name = "bit7z-capability"
 version = "0.1.0"
 dependencies = [
- "bit7z-domain",
- "bit7z-ports",
  "thiserror 2.0.18",
 ]
 

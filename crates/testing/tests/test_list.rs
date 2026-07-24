@@ -12,8 +12,8 @@ mod fixtures;
 
 fn setup() -> (Bit7zHarness, CliReferee) {
     let lib = common::library().expect("7z library not found");
-    let (runtime, resolver) = build_bit7z_runtime(lib);
-    let service = Arc::new(ArchiveService::new(runtime, resolver));
+    let (runtime, resolver, detector) = build_bit7z_runtime(lib);
+    let service = Arc::new(ArchiveService::new(runtime, resolver, Some(detector)));
     let harness = Bit7zHarness::new(service);
     let cli = CliReferee::new(common::find_7z_exe().expect("7z exe not found"));
     (harness, cli)

@@ -4,6 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use bit7z_ports::detection::FormatDetector;
 use bit7z_ports::fs::{FileSystem, TempStorage};
 use bit7z_ports::progress::ProgressReporter;
 use bit7z_ports::session::SessionStore;
@@ -21,6 +22,8 @@ pub struct PortSet {
     pub session_store: Arc<dyn SessionStore>,
     pub fs: Arc<dyn FileSystem>,
     pub temp_storage: Arc<dyn TempStorage>,
+    /// Optional format detector for magic-byte-based detection.
+    pub detector: Option<Arc<dyn FormatDetector>>,
 }
 
 /// Executes a job by breaking it into tasks and running them.

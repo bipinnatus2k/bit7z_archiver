@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bit7z_domain::archive::ArchiveFormat;
+use bit7z_ports::detection::{DetectError, FormatDetector};
 
 use crate::validator::ValidatorRegistry;
 
@@ -186,4 +187,20 @@ fn resolve_logical_format(extensions: &[String]) -> Option<ArchiveFormat> {
         }
     }
     None
+}
+
+impl FormatDetector for AutoFormat {
+    fn detect_format(&self, path: &Path) -> Result<ArchiveFormat, DetectError> {
+        let detection = self.detect(path)?;
+        Ok(detection.format)
+    }
+}
+
+impl From<DetectionError> for DetectError {
+    fn from(e: DetectionError) -> Self {
+        match e {
+            DetectionError::Io(err) => DetectError::Io(err),
+            _ => DetectError::UnknownFormat,
+        }
+    }
 }

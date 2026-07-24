@@ -300,6 +300,7 @@ mod tests {
             session_store: mock_store.clone(),
             fs: Arc::new(MockFs),
             temp_storage: Arc::new(MockTemp),
+            detector: None,
         };
         let runtime = Arc::new(RuntimeBuilder::new().build(ports, context));
 
@@ -339,6 +340,7 @@ mod tests {
             session_store: mock_store.clone(),
             fs: Arc::new(MockFs),
             temp_storage: Arc::new(MockTemp),
+            detector: None,
         };
         let runtime = Arc::new(RuntimeBuilder::new().build(ports, context));
 
