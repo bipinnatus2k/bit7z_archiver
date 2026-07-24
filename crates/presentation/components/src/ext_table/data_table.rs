@@ -4,10 +4,10 @@ use super::actions::{
 };
 use super::{TableDelegate, TableState};
 use gpui::{
-    App, Edges, Entity, Focusable, InteractiveElement, IntoElement, KeyBinding, ParentElement,
-    RenderOnce, Styled, Window, div, prelude::FluentBuilder,
+    App, Context, Edges, Entity, Focusable, InteractiveElement, IntoElement, KeyBinding,
+    ParentElement, RenderOnce, Styled, Window, div, prelude::FluentBuilder,
 };
-use gpui_component::{ActiveTheme, Sizable, Size};
+use gpui_component::{ActiveTheme, Sizable, Size, menu::PopupMenu};
 
 const CONTEXT: &'static str = "DataTable";
 pub(crate) fn init(cx: &mut App) {
@@ -31,6 +31,8 @@ pub(crate) struct TableOptions {
     pub(crate) stripe: bool,
     pub(crate) bordered: bool,
     pub(crate) size: Size,
+    pub(crate) context_menu:
+        Option<Box<dyn Fn(usize, PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>>,
 }
 
 impl Default for TableOptions {
@@ -40,6 +42,7 @@ impl Default for TableOptions {
             stripe: false,
             bordered: false,
             size: Size::default(),
+            context_menu: None,
         }
     }
 }
@@ -77,6 +80,14 @@ where
             bottom: horizontal,
             ..Default::default()
         };
+        self
+    }
+
+    pub fn context_menu(
+        mut self,
+        f: impl Fn(usize, PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+    ) -> Self {
+        self.options.context_menu = Some(Box::new(f));
         self
     }
 }

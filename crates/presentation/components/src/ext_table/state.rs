@@ -1961,11 +1961,16 @@ where
             .child(self.render_table_header(left_columns_count, window, cx))
             .context_menu({
                 let view = cx.entity().clone();
+                let context_menu_cb = self.options.context_menu.take();
                 move |this, window: &mut Window, cx: &mut Context<PopupMenu>| {
                     if let Some(row_ix) = view.read(cx).right_clicked_row {
-                        view.update(cx, |menu, cx| {
-                            menu.delegate_mut().context_menu(row_ix, this, window, cx)
-                        })
+                        if let Some(ref cb) = context_menu_cb {
+                            cb(row_ix, this, window, cx)
+                        } else {
+                            view.update(cx, |menu, cx| {
+                                menu.delegate_mut().context_menu(row_ix, this, window, cx)
+                            })
+                        }
                     } else {
                         this
                     }

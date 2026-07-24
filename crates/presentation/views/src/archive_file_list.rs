@@ -145,45 +145,9 @@ impl TableDelegate for FileListTableDelegate {
         _row_ix: usize,
         menu: PopupMenu,
         _window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        _cx: &mut Context<TableState<Self>>,
     ) -> PopupMenu {
-        let fl = match self.file_list.upgrade() {
-            Some(f) => f,
-            None => return menu,
-        };
-        let has_selection = fl.read(cx).selection.len() > 0;
-        let single_selection = fl.read(cx).selection.len() == 1;
-        let ready = fl.read(cx).is_ready;
-
-        menu.when(has_selection, |m| {
-            m.menu("Open", Box::new(OpenEntry))
-                .when(single_selection, |m| {
-                    m.menu("Preview", Box::new(PreviewEntry))
-                })
-                .menu("Extract", Box::new(ExtractSelected))
-                .menu("Test", Box::new(TestSelected))
-                .separator()
-                .menu("Rename", Box::new(RenameEntry))
-                .menu("Delete", Box::new(DeleteSelected))
-                .separator()
-                .item(PopupMenuItem::submenu(
-                    "Checksum",
-                    PopupMenu::build(_window, cx, |menu, _window, _cx| {
-                        menu.menu("CRC32", Box::new(ChecksumCRC32))
-                            .menu("MD5", Box::new(ChecksumMD5))
-                            .menu("SHA-1", Box::new(ChecksumSHA1))
-                            .menu("SHA-256", Box::new(ChecksumSHA256))
-                    }),
-                ))
-        })
-        .separator()
-        .menu("Select All", Box::new(SelectAll))
-        .when(has_selection, |m| {
-            m.menu("Clear Selection", Box::new(ClearSelection))
-        })
-        .separator()
-        .when(ready, |m| m.menu("Refresh", Box::new(Refresh)))
-        .menu("Properties", Box::new(ShowProperties))
+        menu
     }
 
     fn render_td(
@@ -424,10 +388,60 @@ impl Render for ArchiveFileList {
                 );
 
                 let table_entity = self.table_state.clone();
+                let self_weak = cx.entity().downgrade();
                 container.child(
                     div()
                         .flex_1()
-                        .child(DataTable::new(&table_entity).scrollbar_visible(true, true))
+                        .child(
+                            DataTable::new(&table_entity)
+                                .scrollbar_visible(true, true)
+                                .context_menu(
+                                    move |_row_ix, menu, window, cx| {
+                                        let has_selection = self_weak
+                                            .upgrade()
+                                            .map(|fl| !fl.read(cx).selection.is_empty())
+                                            .unwrap_or(false);
+                                        let single_selection = self_weak
+                                            .upgrade()
+                                            .map(|fl| fl.read(cx).selection.len() == 1)
+                                            .unwrap_or(false);
+                                        let ready = self_weak
+                                            .upgrade()
+                                            .map(|fl| fl.read(cx).is_ready)
+                                            .unwrap_or(false);
+
+                                        menu.when(has_selection, |m| {
+                                            m.menu("Open", Box::new(OpenEntry))
+                                                .when(single_selection, |m| {
+                                                    m.menu("Preview", Box::new(PreviewEntry))
+                                                })
+                                                .menu("Extract", Box::new(ExtractSelected))
+                                                .menu("Test", Box::new(TestSelected))
+                                                .separator()
+                                                .menu("Rename", Box::new(RenameEntry))
+                                                .menu("Delete", Box::new(DeleteSelected))
+                                                .separator()
+                                                .item(PopupMenuItem::submenu(
+                                                    "Checksum",
+                                                    PopupMenu::build(window, cx, |menu, _window, _cx| {
+                                                        menu.menu("CRC32", Box::new(ChecksumCRC32))
+                                                            .menu("MD5", Box::new(ChecksumMD5))
+                                                            .menu("SHA-1", Box::new(ChecksumSHA1))
+                                                            .menu("SHA-256", Box::new(ChecksumSHA256))
+                                                    }),
+                                                ))
+                                        })
+                                        .separator()
+                                        .menu("Select All", Box::new(SelectAll))
+                                        .when(has_selection, |m| {
+                                            m.menu("Clear Selection", Box::new(ClearSelection))
+                                        })
+                                        .separator()
+                                        .when(ready, |m| m.menu("Refresh", Box::new(Refresh)))
+                                        .menu("Properties", Box::new(ShowProperties))
+                                    },
+                                ),
+                        )
                         .id("entry-table-area"),
                 )
             }
