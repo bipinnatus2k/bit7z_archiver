@@ -1,12 +1,13 @@
 use crate::archive_browser::{ArchiveBrowser, BrowserIntent};
 use crate::archive_file_list::{ArchiveFileList, FileListIntent};
-use crate::menu::{self, Menu};
-use crate::preview_panel::PreviewPanel;
+use crate::menu::{self, MenuView};
+use crate::preview_panel::PreviewPanelView;
 use crate::root_controller::RootController;
-use crate::status_bar::StatusBar;
-use crate::toolbar::{Toolbar, ToolbarIntent};
+use crate::status_bar::StatusBarView;
+use bit7z_app_preview::PreviewData;
 use bit7z_domain::repository::ArchiveError;
 use bit7z_infra_events::ArchiveVmEvent;
+use std::sync::Arc;
 use bit7z_pres_dialogs::password::PasswordDialog;
 use bit7z_pres_settings::SettingsStore;
 use bit7z_pres_view_models::archive_state::{ArchiveState, ViewStatus};
@@ -15,21 +16,21 @@ use bit7z_rt_ipc::GuiCommand;
 use crossbeam_channel::unbounded;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_component::button::Button;
+use gpui_component::menu::AppMenuBar;
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
-use gpui_component::{Root, StyleSized, v_flex};
+use gpui_component::{Disableable, GlobalState, IconName, Root, h_flex, v_flex};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 pub struct RootView {
     pub app_state: Arc<AppState>,
     focus_handle: FocusHandle,
-    menu: Entity<Menu>,
-    toolbar: Entity<Toolbar>,
+    menu_bar: Entity<AppMenuBar>,
     archive_browser: Entity<ArchiveBrowser>,
     entry_list: Entity<ArchiveFileList>,
-    preview_panel: Entity<PreviewPanel>,
-    status_bar: Entity<StatusBar>,
+    preview_data: Option<Arc<PreviewData>>,
+    preview_loading: bool,
     pending_password_path: Option<String>,
     state: ArchiveState,
     controller: RootController,
@@ -49,12 +50,9 @@ impl RootView {
         cx.new(|cx| {
             let service = app_state.service.clone();
 
-            let menu = cx.new(|cx| Menu::new(false, cx));
-            let toolbar = cx.new(|_| Toolbar::new());
+            let menu_bar = AppMenuBar::new(cx);
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
             let entry_list = cx.new(|cx| ArchiveFileList::new(window, cx));
-            let preview_panel = cx.new(|_| PreviewPanel::new());
-            let status_bar = cx.new(|_| StatusBar::default());
 
             let deferred_open = open_path.map(|path| {
                 let pw = open_password.clone();
@@ -63,100 +61,6 @@ impl RootView {
                     this.handle_open_archive(std::path::Path::new(&p), pw, cx);
                 }
             });
-
-            cx.subscribe::<Toolbar, ToolbarIntent>(&toolbar, {
-                move |this: &mut RootView, _emitter, intent: &ToolbarIntent, cx| {
-                    match intent {
-                        ToolbarIntent::OpenArchive => {
-                            if let Some(path) = bit7z_infra_platform::pick_archive_file() {
-                                this.handle_open_archive(&path, None, cx);
-                            }
-                        }
-                        ToolbarIntent::CreateArchive => {
-                            cx.spawn(async move |_, cx| {
-                                bit7z_pres_dialogs::create::CreateArchiveDialog::open(cx, vec![]);
-                            }).detach();
-                        }
-                        ToolbarIntent::AddFiles => {
-                            if let Some(ref handle) = this.state.archive {
-                                let repo = this.controller.service();
-                                let h = handle.clone();
-                                cx.spawn(async move |_, cx| {
-                                    bit7z_pres_dialogs::add_files::AddFilesDialog::open(cx, bit7z_domain::archive::ArchiveFormat::SevenZip, Some(h), Some(repo), false);
-                                }).detach();
-                            }
-                        }
-                        ToolbarIntent::ExtractSelected => {
-                            let (indices, entries) = this.selected_entries_data();
-                            if !entries.is_empty() {
-                                if let Some(ref handle) = this.state.archive {
-                                    let handle = handle.clone();
-                                    let controller = this.controller.clone();
-                                    let busy = indices.clone();
-                                    cx.spawn(async move |_, cx| {
-                                        let rx = bit7z_pres_dialogs::extract::ExtractDialog::open(entries, cx);
-                                        use crossbeam_channel::TryRecvError;
-                                        loop {
-                                            match rx.try_recv() {
-                                                Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
-                                                    let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
-                                                    let cancel = Arc::new(AtomicBool::new(false));
-                                                    let paused = Arc::new(AtomicBool::new(false));
-                                                    bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
-                                                    let ctrl = controller.clone();
-                                                    let h = handle.clone();
-                                                    let dest = destination.clone();
-                                                    let idx = busy.clone();
-                                                    cx.background_spawn(async move {
-                                                        let _ = ctrl.extract(&h, &idx, &dest, overwrite_mode, Some(tx), Some(cancel), Some(paused));
-                                                    }).detach();
-                                                    break;
-                                                }
-                                                Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::Canceled) => break,
-                                                Err(TryRecvError::Empty) => {
-                                                    cx.background_spawn(std::future::ready(())).await;
-                                                }
-                                                Err(TryRecvError::Disconnected) => break,
-                                            }
-                                        }
-                                    }).detach();
-                                }
-                            }
-                        }
-                        ToolbarIntent::TestArchive => {
-                            let indices = if this.state.selection.is_empty() {
-                                None
-                            } else {
-                                Some(this.state.selected_indices())
-                            };
-                            let handle = this.state.archive.clone();
-                            let repo = this.controller.service();
-                            cx.spawn(async move |_, cx| {
-                                if let Some(h) = handle {
-                                    bit7z_pres_dialogs::test::TestDialog::open_with_entries(cx, h, indices, repo);
-                                }
-                            }).detach();
-                        }
-                        ToolbarIntent::CloseArchive => {
-                            this.handle_close_archive(cx);
-                        }
-                        ToolbarIntent::SaveArchive => {
-                            this.handle_save_archive(cx);
-                        }
-                        ToolbarIntent::Undo => {
-                            this.handle_undo(cx);
-                        }
-                        ToolbarIntent::Redo => {
-                            this.handle_redo(cx);
-                        }
-                        ToolbarIntent::ShowSettings => {
-                            cx.spawn(async move |_, cx| {
-                                bit7z_pres_dialogs::settings::SettingsDialog::open(cx);
-                            }).detach();
-                        }
-                    }
-                }
-            }).detach();
 
             cx.subscribe::<ArchiveBrowser, BrowserIntent>(&archive_browser, {
                 move |this: &mut RootView, _emitter, intent: &BrowserIntent, cx| {
@@ -187,17 +91,31 @@ impl RootView {
                             if let Some(idx) = indices.first() {
                                 if let Some(ref archive) = this.state.archive {
                                     let repo = this.controller.service();
-                                    let panel = this.preview_panel.clone();
                                     let h = archive.clone();
                                     let idx = *idx;
-                                    cx.spawn(async move |this, cx| {
-                                        panel.update(cx, |p, _| p.set_loading());
+                                    let this_entity = cx.entity();
+                                    cx.spawn(async move |_, cx| {
+                                        this_entity.update(cx, |this, cx| {
+                                            this.preview_loading = true;
+                                            cx.notify();
+                                        });
                                         let uc = bit7z_app_preview::PreviewEntryUseCase::new(repo);
                                         match uc.execute(&h, idx, 1_048_576) {
-                                            Ok(data) => { panel.update(cx, |p, _| p.set_data(Some(data))); }
-                                            Err(_) => { panel.update(cx, |p, _| p.set_data(None)); }
+                                            Ok(data) => {
+                                                this_entity.update(cx, |this, cx| {
+                                                    this.preview_data = Some(Arc::new(data));
+                                                    this.preview_loading = false;
+                                                    cx.notify();
+                                                });
+                                            }
+                                            Err(_) => {
+                                                this_entity.update(cx, |this, cx| {
+                                                    this.preview_data = None;
+                                                    this.preview_loading = false;
+                                                    cx.notify();
+                                                });
+                                            }
                                         }
-                                        let _ = this.update(cx, |_, cx| cx.notify());
                                     }).detach();
                                 }
                             }
@@ -388,17 +306,25 @@ impl RootView {
 
             let focus_handle = cx.focus_handle();
 
-            let controller_service = service.clone();
             let mut root = Self {
                 app_state,
                 focus_handle,
-                menu, toolbar,
-                archive_browser, entry_list, preview_panel, status_bar,
+                menu_bar,
+                archive_browser,
+                entry_list,
+                preview_data: None,
+                preview_loading: false,
                 pending_password_path: None,
                 state: ArchiveState::new(),
-                controller: RootController::new(controller_service),
+                controller: RootController::new(service),
                 sidebar_collapsed: false,
             };
+
+            let menus = menu::build_menus(false, false, vec![]);
+            let owned: Vec<OwnedMenu> = menus.into_iter().map(|m| m.owned()).collect();
+            GlobalState::global_mut(cx).set_app_menus(owned);
+            root.menu_bar.update(cx, |bar, cx| bar.reload(cx));
+
             if let Some(cb) = deferred_open {
                 cb(&mut root, cx);
             }
@@ -434,31 +360,23 @@ impl RootView {
 
     fn sync_children(&mut self, cx: &mut Context<Self>) {
         let entries = self.state.displayed_entries().to_vec();
-        let _selection = self.state.selection.clone();
         let status = self.state.status.clone();
         let path = self.state.current_path.clone();
-        let is_ready = self.state.is_ready();
-        let has_sel = self.state.has_selection();
-        let single = self.state.selection.len() == 1;
         let is_open = self.state.archive.is_some();
+        let has_sel = self.state.has_selection();
         let subdirs = self.state.filtered_subdirs();
-        let status_text = self.state.status_text();
 
         self.entry_list
             .update(cx, |c, cx| c.set_state(entries, status, path, cx));
-        self.toolbar
-            .update(cx, |c, _| c.set_state(is_open, is_ready, has_sel));
-        self.menu.update(cx, |c, cx| {
-            c.set_sidebar_collapsed(self.sidebar_collapsed);
-            c.set_state(is_open, has_sel, single, cx);
-        });
         self.archive_browser.update(cx, |c, cx| {
             c.set_collapsed(self.sidebar_collapsed, cx);
             c.set_state(subdirs, vec![]);
         });
-        self.status_bar
-            .update(cx, |c, _| c.set_status(&status_text));
-        self.sync_edit_state(cx);
+
+        let menus = menu::build_menus(is_open, has_sel, vec![]);
+        let owned: Vec<OwnedMenu> = menus.into_iter().map(|m| m.owned()).collect();
+        GlobalState::global_mut(cx).set_app_menus(owned);
+        self.menu_bar.update(cx, |bar, cx| bar.reload(cx));
     }
 
     fn handle_open_archive(
@@ -560,7 +478,7 @@ impl RootView {
                 self.state.directory_cache.clear();
                 self.load_current_directory(cx);
             } else {
-                self.sync_edit_state(cx);
+                cx.notify();
             }
         }
     }
@@ -572,7 +490,7 @@ impl RootView {
                 self.state.directory_cache.clear();
                 self.load_current_directory(cx);
             } else {
-                self.sync_edit_state(cx);
+                cx.notify();
             }
         }
     }
@@ -588,16 +506,6 @@ impl RootView {
         self.controller.close_archive(h);
         self.state = ArchiveState::new();
         self.sync_children(cx);
-    }
-
-    fn sync_edit_state(&mut self, cx: &mut Context<Self>) {
-        if let Some(ref h) = self.state.archive {
-            let has_unsaved = self.controller.has_unsaved_changes(h);
-            let can_undo = self.controller.can_undo(h);
-            let can_redo = self.controller.can_redo(h);
-            self.toolbar
-                .update(cx, |t, _| t.set_edit_state(has_unsaved, can_undo, can_redo));
-        }
     }
 
     fn menu_checksum(&self, cx: &mut Context<Self>) {
@@ -623,6 +531,25 @@ impl Focusable for RootView {
 
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let is_open = self.state.archive.is_some();
+        let is_ready = self.state.is_ready();
+        let has_sel = self.state.has_selection();
+        let status_text = self.state.status_text();
+
+        let (has_unsaved, can_undo, can_redo) = self
+            .state
+            .archive
+            .as_ref()
+            .map(|h| {
+                (
+                    self.controller.has_unsaved_changes(h),
+                    self.controller.can_undo(h),
+                    self.controller.can_redo(h),
+                )
+            })
+            .unwrap_or((false, false, false));
+        let compact = window.bounds().size.width < px(640.0);
+
         let dialog_layer = Root::render_dialog_layer(window, cx);
 
         if let Some(path) = self.pending_password_path.take() {
@@ -906,8 +833,136 @@ impl Render for RootView {
                 this.sync_children(cx);
                 cx.notify();
             }))
-            .child(self.menu.clone())
-            .child(self.toolbar.clone())
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::SaveArchive, _window, cx| {
+                this.handle_save_archive(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::UndoArchive, _window, cx| {
+                this.handle_undo(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::RedoArchive, _window, cx| {
+                this.handle_redo(cx);
+            }))
+            .on_action(cx.listener(|this: &mut RootView, _: &menu::ExtractArchive, _window, cx| {
+                let (indices, entries) = this.selected_entries_data();
+                if !entries.is_empty() {
+                    if let Some(ref handle) = this.state.archive {
+                        let handle = handle.clone();
+                        let controller = this.controller.clone();
+                        let busy = indices.clone();
+                        cx.spawn(async move |_, cx| {
+                            let rx = bit7z_pres_dialogs::extract::ExtractDialog::open(entries, cx);
+                            use crossbeam_channel::TryRecvError;
+                            loop {
+                                match rx.try_recv() {
+                                    Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
+                                        let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
+                                        let cancel = Arc::new(AtomicBool::new(false));
+                                        let paused = Arc::new(AtomicBool::new(false));
+                                        bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
+                                        let ctrl = controller.clone();
+                                        let h = handle.clone();
+                                        let dest = destination.clone();
+                                        let idx = busy.clone();
+                                        cx.background_spawn(async move {
+                                            let _ = ctrl.extract(&h, &idx, &dest, overwrite_mode, Some(tx), Some(cancel), Some(paused));
+                                        }).detach();
+                                        break;
+                                    }
+                                    Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::Canceled) => break,
+                                    Err(TryRecvError::Empty) => {
+                                        cx.background_spawn(std::future::ready(())).await;
+                                    }
+                                    Err(TryRecvError::Disconnected) => break,
+                                }
+                            }
+                        }).detach();
+                    }
+                }
+            }))
+            .child(MenuView::new(self.menu_bar.clone(), self.sidebar_collapsed))
+            .child(
+                h_flex().gap_2().p_2().w_full()
+                    .child(
+                        Button::new("open")
+                            .icon(IconName::FolderOpen)
+                            .tooltip("Open archive (Ctrl+O)")
+                            .when(!compact, |b| b.label("Open"))
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::OpenArchive), cx))
+                    )
+                    .child(
+                        Button::new("create")
+                            .icon(IconName::Plus)
+                            .tooltip("Create new archive (Ctrl+N)")
+                            .when(!compact, |b| b.label("Create"))
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::CreateArchive), cx))
+                    )
+                    .child(
+                        Button::new("add")
+                            .icon(IconName::Plus)
+                            .tooltip("Add files to archive")
+                            .when(!compact, |b| b.label("Add"))
+                            .disabled(!is_open)
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::AddFiles), cx))
+                    )
+                    .child(
+                        Button::new("extract")
+                            .icon(IconName::ChevronDown)
+                            .tooltip("Extract selected files (Ctrl+E)")
+                            .when(!compact, |b| b.label("Extract"))
+                            .disabled(!is_ready || !has_sel)
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::ExtractArchive), cx))
+                    )
+                    .child(
+                        Button::new("test")
+                            .icon(IconName::PanelRightClose)
+                            .tooltip("Test archive integrity (Ctrl+T)")
+                            .when(!compact, |b| b.label("Test"))
+                            .disabled(!is_open)
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::TestAll), cx))
+                    )
+                    .child(
+                        Button::new("close")
+                            .icon(IconName::Close)
+                            .tooltip("Close archive")
+                            .when(!compact, |b| b.label("Close"))
+                            .disabled(!is_open)
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::CloseArchive), cx))
+                    )
+                    .when(is_open, |row| {
+                        row.child(div().w(px(4.)))
+                            .child(
+                                Button::new("save")
+                                    .icon(IconName::Check)
+                                    .tooltip("Save changes (Ctrl+S)")
+                                    .when(!compact, |b| b.label("Save"))
+                                    .disabled(!has_unsaved)
+                                    .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::SaveArchive), cx))
+                            )
+                            .child(
+                                Button::new("undo")
+                                    .icon(IconName::Undo2)
+                                    .tooltip("Undo (Ctrl+Z)")
+                                    .when(!compact, |b| b.label("Undo"))
+                                    .disabled(!can_undo)
+                                    .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::UndoArchive), cx))
+                            )
+                            .child(
+                                Button::new("redo")
+                                    .icon(IconName::Redo2)
+                                    .tooltip("Redo (Ctrl+Y)")
+                                    .when(!compact, |b| b.label("Redo"))
+                                    .disabled(!can_redo)
+                                    .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::RedoArchive), cx))
+                            )
+                    })
+                    .child(div().flex_1())
+                    .child(
+                        Button::new("settings")
+                            .icon(IconName::Settings)
+                            .tooltip("Settings")
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::ShowSettings), cx))
+                    )
+            )
             .child(div().flex_1().child(
                 h_resizable("main-hz")
                     .child(
@@ -929,11 +984,11 @@ impl Render for RootView {
                                 resizable_panel()
                                     .size(px(200.))
                                     .size_range(px(100.)..px(500.))
-                                    .child(self.preview_panel.clone())
+                                    .child(PreviewPanelView::new(self.preview_data.clone(), self.preview_loading))
                             )
                     )
             ))
-            .child(self.status_bar.clone())
+            .child(StatusBarView::new(status_text))
             .children(dialog_layer)
     }
 }

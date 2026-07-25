@@ -3,36 +3,22 @@ use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::separator::Separator;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable};
 
-pub struct StatusBar {
-    status_text: String,
-    show_preview: bool,
+#[derive(IntoElement)]
+pub struct StatusBarView {
+    status_text: SharedString,
 }
 
-impl StatusBar {
-    pub fn new(status_text: String, show_preview: bool) -> Self {
-        Self {
-            status_text,
-            show_preview,
-        }
-    }
-
-    pub fn default() -> Self {
-        Self {
-            status_text: String::new(),
-            show_preview: false,
-        }
-    }
-
-    pub fn set_status(&mut self, text: &str) {
-        self.status_text = text.to_string();
+impl StatusBarView {
+    pub fn new(status_text: impl Into<SharedString>) -> Self {
+        Self { status_text: status_text.into() }
     }
 }
 
-impl Render for StatusBar {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl RenderOnce for StatusBarView {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         gpui_component::status_bar::StatusBar::new()
             .child(Icon::new(IconName::GalleryVerticalEnd).xsmall())
-            .child(self.status_text.clone())
+            .child(self.status_text)
             .child(Separator::vertical())
             .right(cx.theme().theme_name().clone())
             .right(format!("v{}", env!("CARGO_PKG_VERSION")))
@@ -41,7 +27,6 @@ impl Render for StatusBar {
                     .ghost()
                     .xsmall()
                     .icon(IconName::Github)
-                    .tooltip("GPUI Component GitHub repository")
                     .on_click(|_, _, cx| {
                         cx.open_url("https://github.com/longbridge/gpui-component")
                     }),
