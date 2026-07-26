@@ -12,6 +12,7 @@ pub mod open;
 pub mod open_entry;
 pub mod rename;
 pub mod runtime_service;
+pub mod token;
 pub mod validator;
 pub mod validators;
 pub mod vfs_util;
