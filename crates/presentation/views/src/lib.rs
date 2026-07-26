@@ -4,6 +4,5 @@ pub mod menu;
 pub mod notifications;
 pub mod preview_panel;
 pub mod root;
-pub mod root_controller;
 pub mod status_bar;
 pub mod utils;
