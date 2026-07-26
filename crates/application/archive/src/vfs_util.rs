@@ -41,10 +41,16 @@ fn collect_descendants(vfs: &OverlayVfs, dir_idx: u32, out: &mut Vec<u32>) {
         return;
     };
 
+    let prefix = if dir_path.ends_with('/') {
+        dir_path.to_string()
+    } else {
+        format!("{}/", dir_path)
+    };
+
     let children: Vec<_> = page
         .items
         .iter()
-        .filter(|e| e.path.starts_with(dir_path) && e.original_index != dir_idx)
+        .filter(|e| e.path.starts_with(&prefix) && e.original_index != dir_idx)
         .cloned()
         .collect();
 
@@ -118,5 +124,56 @@ mod tests {
 
         let result = expand_directory_entries(&session_manager, 1, &[0]).unwrap();
         assert_eq!(result, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_expand_directory_entries_does_not_match_sibling_prefix() {
+        let dir = ArchiveEntry {
+            name: "dir".into(),
+            path: "dir".into(),
+            original_index: 0,
+            is_directory: true,
+            ..ArchiveEntry::default()
+        };
+        let sibling = ArchiveEntry {
+            name: "dir_extras".into(),
+            path: "dir_extras".into(),
+            original_index: 1,
+            is_directory: true,
+            ..ArchiveEntry::default()
+        };
+        let child = ArchiveEntry {
+            name: "a.txt".into(),
+            path: "dir/a.txt".into(),
+            original_index: 2,
+            ..ArchiveEntry::default()
+        };
+        let sibling_child = ArchiveEntry {
+            name: "b.txt".into(),
+            path: "dir_extras/b.txt".into(),
+            original_index: 3,
+            ..ArchiveEntry::default()
+        };
+
+        let vfs = OverlayVfs::build(
+            PathBuf::from("test.zip"),
+            Some(ArchiveFormat::Zip),
+            &[dir, sibling, child, sibling_child],
+        );
+
+        let session = ArchiveSession::new(PathBuf::from("test.zip"), ArchiveFormat::Zip);
+        let store = Arc::new(MockSessionStore {
+            state: Mutex::new(Some(SessionState {
+                session,
+                vfs,
+                dirty_tree: Default::default(),
+                edit_queue: Default::default(),
+                metadata_cache: Default::default(),
+            })),
+        });
+        let session_manager = bit7z_runtime::session::DefaultSessionManager::new(store);
+
+        let result = expand_directory_entries(&session_manager, 1, &[0]).unwrap();
+        assert_eq!(result, vec![2]); // only "dir/a.txt", not "dir_extras/b.txt"
     }
 }
