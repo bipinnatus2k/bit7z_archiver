@@ -34,7 +34,8 @@ impl LocalExecutor {
                     session_id,
                     indices,
                     destination,
-                } => extract(ctx, session_id, indices, destination).await,
+                    overwrite_mode,
+                } => extract(ctx, session_id, indices, destination, overwrite_mode).await,
                 JobKind::Test { session_id } => test(ctx, session_id).await,
                 JobKind::Preview { session_id, index } => preview(ctx, session_id, index).await,
             }

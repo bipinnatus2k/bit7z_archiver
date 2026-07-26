@@ -95,10 +95,12 @@ impl DefaultJobManager {
                 session_id,
                 indices,
                 destination,
+                overwrite_mode,
             } => JobKind::Extract {
                 session_id,
                 indices,
                 destination,
+                overwrite_mode,
             },
             crate::job::OperationKind::Test { session_id } => JobKind::Test { session_id },
             crate::job::OperationKind::Preview { session_id, index } => {
