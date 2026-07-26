@@ -23,6 +23,10 @@ impl CancellationToken {
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
+
+    pub fn as_atomic(&self) -> Arc<AtomicBool> {
+        self.cancelled.clone()
+    }
 }
 
 impl Default for CancellationToken {
