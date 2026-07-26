@@ -3,6 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use bit7z_domain::archive::Password;
 use crate::executor::{ExecutionContext, Executor};
 use crate::job::{Job, JobKind, JobResult};
@@ -134,6 +135,7 @@ async fn extract(
     session_id: bit7z_domain::archive::SessionId,
     indices: Vec<u32>,
     destination: std::path::PathBuf,
+    overwrite_mode: bit7z_domain::archive::OverwriteMode,
 ) -> JobResult {
     let state = match ctx.ports.session_store.get(session_id) {
         Some(s) => s,
@@ -143,10 +145,10 @@ async fn extract(
     };
 
     let options = bit7z_domain::repository::ExtractOptions {
-        overwrite_mode: bit7z_domain::archive::OverwriteMode::Overwrite,
-        cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        paused: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        notifier: Arc::new(NoopNotifier),
+        overwrite_mode,
+        cancel: ctx.cancellation.as_atomic(),
+        paused: Arc::new(AtomicBool::new(false)),
+        notifier: Arc::new(crate::ProgressBridge(ctx.progress)),
     };
 
     match ctx
@@ -191,8 +193,4 @@ async fn preview(
     }
 }
 
-struct NoopNotifier;
 
-impl bit7z_domain::repository::ProgressNotifier for NoopNotifier {
-    fn notify(&self, _update: &bit7z_domain::repository::ProgressUpdate) {}
-}
