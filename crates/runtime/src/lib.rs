@@ -15,11 +15,13 @@ pub mod executor_impl;
 pub mod job;
 pub mod manager;
 pub mod progress;
+pub mod progress_bridge;
 pub mod resource;
 pub mod scheduler;
 pub mod session;
 
 pub use builder::RuntimeBuilder;
+pub use progress_bridge::ProgressBridge;
 pub use cancel::CancellationToken;
 pub use executor::{ExecutionContext, Executor, PortSet};
 pub use executor_impl::LocalExecutor;
