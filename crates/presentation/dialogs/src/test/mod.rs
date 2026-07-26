@@ -28,7 +28,7 @@ impl TestDialog {
                     .map(|p| p.files_count as usize)
                     .unwrap_or(0)
             },
-            |v| count_expanded(&service, &handle, v),
+            |v| service.count_expanded_entries(&handle, v).unwrap_or(v.len()),
         );
 
         open_window_dialog_async(
@@ -230,49 +230,4 @@ impl Render for TestErrorContent {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers (from old view.rs)
-// ---------------------------------------------------------------------------
 
-fn count_files_recursive(
-    service: &Arc<ArchiveService>,
-    archive: &ArchiveHandle,
-    dir_path: &str,
-) -> usize {
-    let path = if dir_path.ends_with('/') {
-        dir_path.to_string()
-    } else {
-        format!("{}/", dir_path)
-    };
-    let mut count = 0;
-    if let Ok(children) = service.list_directory(archive, &path) {
-        for child in &children {
-            if child.is_directory {
-                count += count_files_recursive(service, archive, &child.path);
-            } else {
-                count += 1;
-            }
-        }
-    }
-    count
-}
-
-fn count_expanded(
-    service: &Arc<ArchiveService>,
-    archive: &ArchiveHandle,
-    indices: &[u32],
-) -> usize {
-    let mut count = 0;
-    for &idx in indices {
-        if let Ok(page) = service.list_page(archive, idx as usize, 1) {
-            if let Some(entry) = page.items.first() {
-                if entry.is_directory {
-                    count += count_files_recursive(service, archive, &entry.path);
-                    continue;
-                }
-            }
-        }
-        count += 1;
-    }
-    count
-}

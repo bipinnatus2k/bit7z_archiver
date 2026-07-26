@@ -3,18 +3,20 @@ use crate::archive_file_list::{ArchiveFileList, FileListIntent};
 use crate::menu::{self, MenuView};
 use crate::preview_panel::PreviewPanelView;
 use crate::status_bar::StatusBarView;
+use bit7z_app_archive::commands::ExtractArchive;
+use bit7z_app_archive::executor::CommandExecutor;
 use bit7z_app_archive::runtime_service::ArchiveService;
 use bit7z_app_preview::PreviewData;
-use bit7z_domain::archive::{ArchiveHandle, OverwriteMode, Password};
-use bit7z_domain::repository::{ArchiveError, ExtractOptions, ProgressNotifier, ProgressUpdate};
+use bit7z_domain::repository::{ArchiveError, ProgressUpdate};
 use bit7z_infra_events::ArchiveVmEvent;
-use bit7z_infra_progress::{CrossbeamNotifier, ProgressSender};
 use bit7z_pres_dialogs::password::PasswordDialog;
 use bit7z_pres_settings::SettingsStore;
 use bit7z_pres_view_models::archive_state::{ArchiveState, ViewStatus};
 use bit7z_rt_app_state::AppState;
 use bit7z_rt_ipc::GuiCommand;
+use bit7z_runtime::{JobResult, OperationEvent};
 use crossbeam_channel::unbounded;
+use futures::StreamExt;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::Button;
@@ -23,7 +25,7 @@ use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_component::{Disableable, GlobalState, IconName, Root, h_flex, v_flex};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct RootView {
     pub app_state: Arc<AppState>,
@@ -36,6 +38,7 @@ pub struct RootView {
     pending_password_path: Option<String>,
     state: ArchiveState,
     service: Arc<ArchiveService>,
+    executor: Arc<CommandExecutor>,
     sidebar_collapsed: bool,
 }
 
@@ -51,6 +54,10 @@ impl RootView {
     ) -> Entity<Self> {
         cx.new(|cx| {
             let service = app_state.service.clone();
+            let executor = Arc::new(CommandExecutor::new(
+                service.clone(),
+                service.runtime().clone(),
+            ));
 
             let menu_bar = AppMenuBar::new(cx);
             let archive_browser = cx.new(|cx| ArchiveBrowser::new(window, cx));
@@ -176,7 +183,7 @@ impl RootView {
                             if !entries.is_empty() {
                                 if let Some(ref handle) = this.state.archive {
                                     let handle = handle.clone();
-                                    let service = this.service.clone();
+                                    let executor = this.executor.clone();
                                     let busy = indices.clone();
                                     cx.spawn(async move |_, cx| {
                                         let rx = bit7z_pres_dialogs::extract::ExtractDialog::open(entries, cx);
@@ -184,17 +191,54 @@ impl RootView {
                                         loop {
                                             match rx.try_recv() {
                                                 Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
-                                                    let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
-                                                    let cancel = Arc::new(AtomicBool::new(false));
-                                                    let paused = Arc::new(AtomicBool::new(false));
-                                                    bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
-                                                    let svc = service.clone();
-                                                    let h = handle.clone();
-                                                    let dest = destination.clone();
-                                                    let idx = busy.clone();
-                                                    cx.background_spawn(async move {
-                                                        let _ = extract_with_progress(svc, &h, &idx, &dest, overwrite_mode, tx, cancel, paused);
-                                                    }).detach();
+                                                    let cmd = ExtractArchive {
+                                                        handle: handle.clone(),
+                                                        entry_indices: busy.clone(),
+                                                        destination: destination.clone(),
+                                                        overwrite_mode,
+                                                    };
+                                                    match executor.execute_extract(cmd) {
+                                                        Ok(token) => {
+                                                            let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
+                                                            let cancel = Arc::new(AtomicBool::new(false));
+                                                            bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), None);
+                                                            let cancel_clone = cancel.clone();
+                                                            cx.background_spawn(async move {
+                                                                let mut stream = token.subscribe();
+                                                                while let Some(event) = stream.next().await {
+                                                                    match event {
+                                                                        OperationEvent::Progress { percent, .. } => {
+                                                                            let _ = tx.send(ProgressUpdate {
+                                                                                bytes_done: percent as u64,
+                                                                                bytes_total: 100,
+                                                                                ..Default::default()
+                                                                            });
+                                                                        }
+                                                                        OperationEvent::Completed { result, .. } => {
+                                                                            match result {
+                                                                                JobResult::Failed(msg) => {
+                                                                                    let _ = tx.send(ProgressUpdate {
+                                                                                        error: Some(msg),
+                                                                                        ..Default::default()
+                                                                                    });
+                                                                                }
+                                                                                _ => {}
+                                                                            }
+                                                                            break;
+                                                                        }
+                                                                        _ => {}
+                                                                    }
+                                                                    if cancel_clone.load(Ordering::Relaxed) {
+                                                                        let _ = token.cancel();
+                                                                    }
+                                                                }
+                                                                drop(tx);
+                                                            }).detach();
+                                                        }
+                                                        Err(e) => {
+                                                            log::error!("Extract pre-flight failed: {}", e);
+                                                        }
+                                                    }
                                                     break;
                                                 }
                                                 Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::Canceled) => break,
@@ -319,6 +363,7 @@ impl RootView {
                 pending_password_path: None,
                 state: ArchiveState::new(),
                 service,
+                executor,
                 sidebar_collapsed: false,
             };
 
@@ -571,27 +616,64 @@ impl Render for RootView {
                         if !entries.is_empty() {
                             if let Some(ref handle) = this.state.archive {
                                 let handle = handle.clone();
-                                let service = this.service.clone();
+                                let executor = this.executor.clone();
                                 let busy = indices.clone();
                                 cx.spawn(async move |_, cx| {
                                     let rx = bit7z_pres_dialogs::extract::ExtractDialog::open(entries, cx);
                                     use crossbeam_channel::TryRecvError;
                                     loop {
                                         match rx.try_recv() {
-                                                Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
-                                                    let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
-                                                    let cancel = Arc::new(AtomicBool::new(false));
-                                                    let paused = Arc::new(AtomicBool::new(false));
-                                                    bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
-                                                    let svc = service.clone();
-                                                    let h = handle.clone();
-                                                    let dest = destination.clone();
-                                                    let idx = busy.clone();
-                                                    cx.background_spawn(async move {
-                                                        let _ = extract_with_progress(svc, &h, &idx, &dest, overwrite_mode, tx, cancel, paused);
-                                                    }).detach();
-                                                    break;
+                                            Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
+                                                let cmd = ExtractArchive {
+                                                    handle: handle.clone(),
+                                                    entry_indices: busy.clone(),
+                                                    destination: destination.clone(),
+                                                    overwrite_mode,
+                                                };
+                                                match executor.execute_extract(cmd) {
+                                                    Ok(token) => {
+                                                        let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
+                                                        let cancel = Arc::new(AtomicBool::new(false));
+                                                        bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), None);
+                                                        let cancel_clone = cancel.clone();
+                                                        cx.background_spawn(async move {
+                                                            let mut stream = token.subscribe();
+                                                            while let Some(event) = stream.next().await {
+                                                                match event {
+                                                                    OperationEvent::Progress { percent, .. } => {
+                                                                        let _ = tx.send(ProgressUpdate {
+                                                                            bytes_done: percent as u64,
+                                                                            bytes_total: 100,
+                                                                            ..Default::default()
+                                                                        });
+                                                                    }
+                                                                    OperationEvent::Completed { result, .. } => {
+                                                                        match result {
+                                                                            JobResult::Failed(msg) => {
+                                                                                let _ = tx.send(ProgressUpdate {
+                                                                                    error: Some(msg),
+                                                                                    ..Default::default()
+                                                                                });
+                                                                            }
+                                                                            _ => {}
+                                                                        }
+                                                                        break;
+                                                                    }
+                                                                    _ => {}
+                                                                }
+                                                                if cancel_clone.load(Ordering::Relaxed) {
+                                                                    let _ = token.cancel();
+                                                                }
+                                                            }
+                                                            drop(tx);
+                                                        }).detach();
+                                                    }
+                                                    Err(e) => {
+                                                        log::error!("Extract pre-flight failed: {}", e);
+                                                    }
                                                 }
+                                                break;
+                                            }
                                             Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::Canceled) => break,
                                             Err(TryRecvError::Empty) => {
                                                 cx.background_spawn(std::future::ready(())).await;
@@ -783,7 +865,7 @@ impl Render for RootView {
                 if !entries.is_empty() {
                     if let Some(ref handle) = this.state.archive {
                         let handle = handle.clone();
-                        let service = this.service.clone();
+                        let executor = this.executor.clone();
                         let busy = indices.clone();
                         cx.spawn(async move |_, cx| {
                             let rx = bit7z_pres_dialogs::extract::ExtractDialog::open(entries, cx);
@@ -791,17 +873,54 @@ impl Render for RootView {
                             loop {
                                 match rx.try_recv() {
                                     Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::ExtractRequested { destination, overwrite_mode, .. }) => {
-                                        let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
-                                        let cancel = Arc::new(AtomicBool::new(false));
-                                        let paused = Arc::new(AtomicBool::new(false));
-                                        bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
-                                        let svc = service.clone();
-                                        let h = handle.clone();
-                                        let dest = destination.clone();
-                                        let idx = busy.clone();
-                                        cx.background_spawn(async move {
-                                            let _ = extract_with_progress(svc, &h, &idx, &dest, overwrite_mode, tx, cancel, paused);
-                                        }).detach();
+                                        let cmd = ExtractArchive {
+                                            handle: handle.clone(),
+                                            entry_indices: busy.clone(),
+                                            destination: destination.clone(),
+                                            overwrite_mode,
+                                        };
+                                        match executor.execute_extract(cmd) {
+                                            Ok(token) => {
+                                                let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
+                                                let cancel = Arc::new(AtomicBool::new(false));
+                                                bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), None);
+                                                let cancel_clone = cancel.clone();
+                                                cx.background_spawn(async move {
+                                                    let mut stream = token.subscribe();
+                                                    while let Some(event) = stream.next().await {
+                                                        match event {
+                                                            OperationEvent::Progress { percent, .. } => {
+                                                                let _ = tx.send(ProgressUpdate {
+                                                                    bytes_done: percent as u64,
+                                                                    bytes_total: 100,
+                                                                    ..Default::default()
+                                                                });
+                                                            }
+                                                            OperationEvent::Completed { result, .. } => {
+                                                                match result {
+                                                                    JobResult::Failed(msg) => {
+                                                                        let _ = tx.send(ProgressUpdate {
+                                                                            error: Some(msg),
+                                                                            ..Default::default()
+                                                                        });
+                                                                    }
+                                                                    _ => {}
+                                                                }
+                                                                break;
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                        if cancel_clone.load(Ordering::Relaxed) {
+                                                            let _ = token.cancel();
+                                                        }
+                                                    }
+                                                    drop(tx);
+                                                }).detach();
+                                            }
+                                            Err(e) => {
+                                                log::error!("Extract pre-flight failed: {}", e);
+                                            }
+                                        }
                                         break;
                                     }
                                     Ok(bit7z_pres_dialogs::extract::ExtractDialogEvent::Canceled) => break,
@@ -902,108 +1021,4 @@ impl Render for RootView {
     }
 }
 
-fn expand_indices(
-    service: &ArchiveService,
-    archive: &ArchiveHandle,
-    indices: &[u32],
-) -> Result<Vec<u32>, ArchiveError> {
-    let mut expanded = Vec::new();
-    let all = service.list_page(archive, 0, usize::MAX)?.items;
-    for &idx in indices {
-        if let Some(entry) = all.iter().find(|e| e.original_index == idx) {
-            if entry.is_directory {
-                collect_directory(service, archive, &entry.path, &mut expanded)?;
-                continue;
-            }
-        }
-        expanded.push(idx);
-    }
-    Ok(expanded)
-}
 
-fn collect_directory(
-    service: &ArchiveService,
-    archive: &ArchiveHandle,
-    dir_path: &str,
-    expanded: &mut Vec<u32>,
-) -> Result<(), ArchiveError> {
-    let path = if dir_path.ends_with('/') {
-        dir_path.to_string()
-    } else {
-        format!("{}/", dir_path)
-    };
-    if let Ok(children) = service.list_directory(archive, &path) {
-        for child in &children {
-            if child.is_directory {
-                collect_directory(service, archive, &child.path, expanded)?;
-            } else {
-                expanded.push(child.original_index);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn extract_with_progress(
-    service: Arc<ArchiveService>,
-    archive: &ArchiveHandle,
-    indices: &[u32],
-    dest: &Path,
-    overwrite_mode: OverwriteMode,
-    progress_tx: ProgressSender,
-    cancel: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
-) -> Result<(), ArchiveError> {
-    let expanded = expand_indices(&service, archive, indices)?;
-
-    let tx_start = progress_tx.clone();
-    let _ = tx_start.send(ProgressUpdate {
-        file_current: 0,
-        file_total: expanded.len() as u64,
-        current_file: Some(format!(
-            "Extracting {} items to {}",
-            expanded.len(),
-            dest.display()
-        )),
-        items_done: 0,
-        items_total: expanded.len() as u64,
-        bytes_done: 0,
-        bytes_total: 100,
-        error: None,
-    });
-
-    let notifier: Arc<dyn ProgressNotifier> = Arc::new(CrossbeamNotifier(progress_tx.clone()));
-    let options = ExtractOptions {
-        overwrite_mode,
-        cancel,
-        paused,
-        notifier,
-    };
-
-    let result = service.extract(archive, &expanded, dest, &options);
-
-    let err_str = result.as_ref().err().map(|e| {
-        format!(
-            "Extract error (id={}, dest={}): {}",
-            archive.id,
-            dest.display(),
-            e
-        )
-    });
-    let _ = progress_tx.send(ProgressUpdate {
-        file_current: 0,
-        file_total: 0,
-        current_file: None,
-        items_done: if result.is_ok() {
-            expanded.len() as u64
-        } else {
-            0
-        },
-        items_total: expanded.len() as u64,
-        bytes_done: 100,
-        bytes_total: 100,
-        error: err_str,
-    });
-
-    result
-}

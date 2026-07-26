@@ -199,6 +199,24 @@ impl ArchiveService {
             .ok_or_else(|| ArchiveError::Internal("runtime disappeared".into()))
     }
 
+    pub fn runtime(&self) -> &Arc<Runtime> {
+        &self.runtime
+    }
+
+    pub fn count_expanded_entries(
+        &self,
+        handle: &ArchiveHandle,
+        indices: &[u32],
+    ) -> Result<usize, ArchiveError> {
+        let session = self.lookup_session(handle)?;
+        let expanded = crate::vfs_util::expand_directory_entries(
+            self.runtime.session_manager.as_ref(),
+            session.id,
+            indices,
+        )?;
+        Ok(expanded.len())
+    }
+
     pub fn resolve_capability(
         &self,
         kind: ArchiveOpKind,

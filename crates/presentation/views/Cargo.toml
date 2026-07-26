@@ -19,6 +19,8 @@ bit7z-infra-events = { path = "../../infrastructure/events" }
 bit7z-infra-platform = { path = "../../infrastructure/platform" }
 bit7z-infra-progress = { path = "../../infrastructure/progress" }
 bit7z-rt-ipc = { path = "../../runtime/ipc" }
+bit7z-runtime = { path = "../../runtime" }
+futures = { workspace = true }
 gpui = { workspace = true }
 gpui-component = { workspace = true }
 gpui-component-assets = { workspace = true }
