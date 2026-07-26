@@ -9,8 +9,8 @@ use bit7z_runtime::{
 /// The holder can cancel the operation, poll its state, subscribe to
 /// progress events, or block until it completes.
 pub struct OperationToken {
-    pub handle: OperationHandle,
-    pub runtime: Arc<Runtime>,
+    pub(crate) handle: OperationHandle,
+    pub(crate) runtime: Arc<Runtime>,
 }
 
 impl OperationToken {

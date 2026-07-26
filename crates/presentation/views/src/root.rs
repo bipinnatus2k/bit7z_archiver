@@ -5,6 +5,7 @@ use crate::preview_panel::PreviewPanelView;
 use crate::status_bar::StatusBarView;
 use bit7z_app_archive::commands::ExtractArchive;
 use bit7z_app_archive::executor::CommandExecutor;
+use bit7z_app_archive::token::OperationToken;
 use bit7z_app_archive::runtime_service::ArchiveService;
 use bit7z_app_preview::PreviewData;
 use bit7z_domain::repository::{ArchiveError, ProgressUpdate};
@@ -634,39 +635,9 @@ impl Render for RootView {
                                                     Ok(token) => {
                                                         let (tx, progress_rx) = bit7z_infra_progress::progress_channel();
                                                         let cancel = Arc::new(AtomicBool::new(false));
-                                                        bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), None);
-                                                        let cancel_clone = cancel.clone();
-                                                        cx.background_spawn(async move {
-                                                            let mut stream = token.subscribe();
-                                                            while let Some(event) = stream.next().await {
-                                                                match event {
-                                                                    OperationEvent::Progress { percent, .. } => {
-                                                                        let _ = tx.send(ProgressUpdate {
-                                                                            bytes_done: percent as u64,
-                                                                            bytes_total: 100,
-                                                                            ..Default::default()
-                                                                        });
-                                                                    }
-                                                                    OperationEvent::Completed { result, .. } => {
-                                                                        match result {
-                                                                            JobResult::Failed(msg) => {
-                                                                                let _ = tx.send(ProgressUpdate {
-                                                                                    error: Some(msg),
-                                                                                    ..Default::default()
-                                                                                });
-                                                                            }
-                                                                            _ => {}
-                                                                        }
-                                                                        break;
-                                                                    }
-                                                                    _ => {}
-                                                                }
-                                                                if cancel_clone.load(Ordering::Relaxed) {
-                                                                    let _ = token.cancel();
-                                                                }
-                                                            }
-                                                            drop(tx);
-                                                        }).detach();
+                                                        let paused = Arc::new(AtomicBool::new(false));
+                                                        bit7z_pres_dialogs::progress::ProgressDialog::open(cx, format!("Extracting..."), progress_rx, Some(cancel.clone()), Some(paused.clone()));
+                                                        spawn_extract_progress(token, tx, cancel, cx);
                                                     }
                                                     Err(e) => {
                                                         log::error!("Extract pre-flight failed: {}", e);
@@ -1019,6 +990,48 @@ impl Render for RootView {
             .child(StatusBarView::new(status_text))
             .children(dialog_layer)
     }
+}
+
+fn spawn_extract_progress(
+    token: OperationToken,
+    tx: crossbeam_channel::Sender<ProgressUpdate>,
+    cancel: Arc<AtomicBool>,
+    cx: &mut AsyncApp,
+) {
+    cx.background_spawn(async move {
+        let mut stream = token.subscribe();
+        while let Some(event) = stream.next().await {
+            match event {
+                OperationEvent::Progress { percent, .. } => {
+                    if cancel.load(Ordering::Relaxed) {
+                        let _ = token.cancel();
+                        break;
+                    }
+                    let _ = tx.send(ProgressUpdate {
+                        bytes_done: percent as u64,
+                        bytes_total: 100,
+                        ..Default::default()
+                    });
+                }
+                OperationEvent::Completed { result, .. } => {
+                    match result {
+                        JobResult::Ok => {}
+                        JobResult::Cancelled => {}
+                        JobResult::Failed(msg) => {
+                            let _ = tx.send(ProgressUpdate {
+                                error: Some(msg),
+                                ..Default::default()
+                            });
+                        }
+                        _ => {}
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+        drop(tx);
+    }).detach();
 }
 
 
