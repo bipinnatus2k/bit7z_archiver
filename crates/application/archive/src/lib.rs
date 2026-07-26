@@ -3,6 +3,7 @@ pub mod auto_format;
 pub mod capability;
 pub mod commands;
 pub mod create;
+pub mod executor;
 pub mod delete;
 pub mod extract;
 pub mod modify;
