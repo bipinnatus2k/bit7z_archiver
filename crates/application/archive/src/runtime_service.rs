@@ -199,7 +199,19 @@ impl ArchiveService {
             .ok_or_else(|| ArchiveError::Internal("runtime disappeared".into()))
     }
 
-    fn lookup_session(&self, archive: &ArchiveHandle) -> Result<ArchiveSession, ArchiveError> {
+    pub fn resolve_capability(
+        &self,
+        kind: ArchiveOpKind,
+        format: ArchiveFormat,
+        session_id: Option<u64>,
+    ) -> Result<ExecutionDescriptor, ArchiveError> {
+        self.resolve(kind, format, session_id)
+    }
+
+    pub(crate) fn lookup_session(
+        &self,
+        archive: &ArchiveHandle,
+    ) -> Result<ArchiveSession, ArchiveError> {
         self.sessions
             .lock()
             .unwrap()
@@ -349,7 +361,7 @@ impl ArchiveService {
         archive: &ArchiveHandle,
         indices: &[u32],
         dest: &Path,
-        _options: &ExtractOptions,
+        options: &ExtractOptions,
     ) -> Result<(), ArchiveError> {
         let session = self.lookup_session(archive)?;
         let descriptor = self.resolve(ArchiveOpKind::Extract, session.format, Some(session.id))?;
@@ -359,6 +371,7 @@ impl ArchiveService {
                 session_id: session.id,
                 indices: indices.to_vec(),
                 destination: dest.to_path_buf(),
+                overwrite_mode: options.overwrite_mode,
             },
             descriptor,
             priority: Priority::User,
