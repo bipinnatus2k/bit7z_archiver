@@ -13,3 +13,4 @@ pub mod rename;
 pub mod runtime_service;
 pub mod validator;
 pub mod validators;
+pub mod vfs_util;
