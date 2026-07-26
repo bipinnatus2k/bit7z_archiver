@@ -1,7 +1,7 @@
 //! Job types and operation request model.
 
 use bit7z_capability::ExecutionDescriptor;
-use bit7z_domain::archive::{ArchiveFormat, Password, SessionId, TestResult};
+use bit7z_domain::archive::{ArchiveFormat, OverwriteMode, Password, SessionId, TestResult};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -40,6 +40,7 @@ pub enum OperationKind {
         session_id: SessionId,
         indices: Vec<u32>,
         destination: PathBuf,
+        overwrite_mode: OverwriteMode,
     },
     Test {
         session_id: SessionId,
@@ -94,6 +95,7 @@ pub enum JobKind {
         session_id: SessionId,
         indices: Vec<u32>,
         destination: PathBuf,
+        overwrite_mode: OverwriteMode,
     },
     Test {
         session_id: SessionId,
