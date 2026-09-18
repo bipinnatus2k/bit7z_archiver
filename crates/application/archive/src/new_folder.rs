@@ -1,8 +1,10 @@
 use crate::runtime_service::ArchiveService;
-use bit7z_domain::archive::{ArchiveHandle, ChangeSet, Password};
-use bit7z_domain::repository::{ArchiveError, NoopNotifier, WriteOptions};
+use bit7z_domain::archive::{ArchiveHandle, ChangeSet};
+use bit7z_domain::archive::progress::{NoopNotifier, WriteOptions};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use bit7z_domain::archive::error::ArchiveError;
+use bit7z_domain::password::Password;
 
 pub fn new_folder(
     service: Arc<ArchiveService>,

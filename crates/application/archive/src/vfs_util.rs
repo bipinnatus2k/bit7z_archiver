@@ -1,5 +1,5 @@
 use bit7z_domain::archive::SessionId;
-use bit7z_domain::repository::ArchiveError;
+use bit7z_domain::archive::progress::ArchiveError;
 use bit7z_domain::vfs::OverlayVfs;
 use bit7z_runtime::session::SessionManager;
 

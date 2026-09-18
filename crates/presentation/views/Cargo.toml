@@ -6,19 +6,11 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-bit7z-rt-app-state = { path = "../../runtime/app-state" }
-bit7z-pres-view-models = { path = "../view-models" }
 bit7z-pres-components = { path = "../components" }
 bit7z-pres-settings = { path = "../settings" }
 bit7z-pres-dialogs = { path = "../dialogs" }
 bit7z-app-archive = { path = "../../application/archive" }
-bit7z-app-preview = { path = "../../application/preview" }
-bit7z-app-test = { path = "../../application/test" }
-bit7z-app-checksum = { path = "../../application/checksum" }
-bit7z-infra-events = { path = "../../infrastructure/events" }
 bit7z-infra-platform = { path = "../../infrastructure/platform" }
-bit7z-infra-progress = { path = "../../infrastructure/progress" }
-bit7z-rt-ipc = { path = "../../runtime/ipc" }
 gpui = { workspace = true }
 gpui-component = { workspace = true }
 gpui-component-assets = { workspace = true }

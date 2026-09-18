@@ -1,7 +1,7 @@
 //! Session storage port.
 
 use std::sync::Arc;
-
+use bit7z_domain::archive::session::SessionState;
 use bit7z_domain::vfs::SessionState;
 
 /// Opaque reference to a session state.

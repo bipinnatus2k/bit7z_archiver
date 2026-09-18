@@ -10,3 +10,5 @@ gpui-component = { workspace = true }
 gpui-component-assets = { workspace = true }
 serde = { workspace = true }
 smallvec = { workspace = true }
+ui_macros.workspace = true
+component.workspace = true

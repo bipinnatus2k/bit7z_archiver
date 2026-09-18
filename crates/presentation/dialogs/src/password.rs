@@ -1,11 +1,13 @@
-use bit7z_domain::archive::Password;
+
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui::private::schemars::_private::NoSerialize;
 use gpui_component::ActiveTheme;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{h_flex, v_flex};
+use bit7z_domain::password::Password;
 
 #[derive(Debug, Clone)]
 pub enum PasswordDialogEvent {
@@ -16,15 +18,17 @@ pub enum PasswordDialogEvent {
 impl EventEmitter<PasswordDialogEvent> for PasswordDialog {}
 
 pub enum PasswordResult {
-    Submitted(String),
+    Submitted(Password),
     Canceled,
 }
+
+const CONTEXT_KEY: &str = "password_dialog";
 
 pub struct PasswordDialog {
     archive_name: String,
     password: Password,
     input_state: Entity<InputState>,
-    pub error: Option<String>,
+    error: Option<String>,
     _subscription: Subscription,
     result_tx: Option<Sender<PasswordResult>>,
 }
@@ -87,7 +91,7 @@ impl PasswordDialog {
     fn submit(&mut self) {
         if let Some(tx) = self.result_tx.take() {
             let _ = tx.send(PasswordResult::Submitted(
-                self.password.as_str().parse().unwrap(),
+                self.password,
             ));
         }
     }
@@ -116,6 +120,7 @@ impl Render for PasswordDialog {
         let err = self.error.clone();
 
         v_flex()
+            .key_context(CONTEXT_KEY)
             .p_4()
             .gap_4()
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, _cx| {

@@ -144,7 +144,7 @@ async fn extract(
         }
     };
 
-    let options = bit7z_domain::repository::ExtractOptions {
+    let options = bit7z_domain::archive::progress::ExtractOptions {
         overwrite_mode,
         cancel: ctx.cancellation.as_atomic(),
         paused: Arc::new(AtomicBool::new(false)),

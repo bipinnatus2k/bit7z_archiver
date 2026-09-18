@@ -9,4 +9,3 @@ pub mod progress;
 pub mod properties;
 pub mod settings;
 pub mod test;
-pub mod test_results;

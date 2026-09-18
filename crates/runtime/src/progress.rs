@@ -1,6 +1,6 @@
 //! Progress reporter that forwards backend updates to the runtime event stream.
 
-use bit7z_domain::repository::ProgressUpdate;
+use bit7z_domain::archive::progress::ProgressUpdate;
 use bit7z_ports::progress::ProgressReporter;
 
 use crate::{DefaultJobManager, OperationHandle};

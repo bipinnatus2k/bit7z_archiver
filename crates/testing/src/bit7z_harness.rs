@@ -4,7 +4,7 @@ use std::sync::Arc;
 use bit7z_app_archive::runtime_service::ArchiveService;
 use bit7z_domain::archive::{Password, ArchiveHandle};
 use bit7z_domain::vfs::SessionState;
-use bit7z_domain::repository::ArchiveError;
+use bit7z_domain::archive::progress::ArchiveError;
 
 use crate::harness::{TestHarness, TestIntegrity};
 
@@ -68,9 +68,9 @@ impl TestHarness for Bit7zHarness {
             })
             .collect();
 
-        use bit7z_app_archive::extract::ExtractEntriesUseCase;
+        use bit7z_app_archive::use_case::extract::ExtractEntriesUseCase;
         use bit7z_domain::archive::OverwriteMode;
-        use bit7z_domain::repository::{ExtractOptions, NoopNotifier};
+        use bit7z_domain::archive::progress::{ExtractOptions, NoopNotifier};
         use std::sync::atomic::AtomicBool;
 
         let usecase = ExtractEntriesUseCase::new(self.service.clone());

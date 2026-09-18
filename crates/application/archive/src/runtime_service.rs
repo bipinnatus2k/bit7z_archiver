@@ -10,12 +10,15 @@ use std::sync::Arc;
 use bit7z_capability::{
     CapabilityRegistry, CapabilityResolver, ExecutionDescriptor, LockKey, Request,
 };
-use bit7z_domain::archive::{
-    ArchiveEntry, ArchiveFormat, ArchiveHandle, ArchiveSession, ChangeSet, EncryptionConfig, Page,
-    Password, TestResult,
-};
-use bit7z_domain::repository::{ArchiveError, ArchiveProperties, ExtractOptions, WriteOptions};
-use bit7z_domain::vfs::SessionState;
+use bit7z_domain::archive::{ArchiveEntry, ArchiveFormat, ArchiveHandle, ArchiveProperties, ArchiveSession, ChangeSet, OverwriteMode};
+use bit7z_domain::archive::encryption::EncryptionConfig;
+use bit7z_domain::archive::error::ArchiveError;
+use bit7z_domain::archive::progress::{ExtractOptions, WriteOptions};
+use bit7z_domain::archive::session::SessionState;
+use bit7z_domain::archive::test::TestResult;
+use bit7z_domain::paging::Page;
+use bit7z_domain::password::Password;
+use bit7z_infra_bit7z::library::Library;
 use bit7z_infra_persistence::adapters::{
     Bit7zReaderAdapter, Bit7zWriterAdapter, InMemorySessionStore,
 };
@@ -28,7 +31,7 @@ use bit7z_runtime::{
 
 use bit7z_runtime::job::Priority;
 
-use crate::auto_format::AutoFormat;
+use crate::format_detector::auto_format::AutoFormat;
 use crate::capability::{
     ArchiveCapMeta, ArchiveCapabilityResolver, ArchiveOpKind, bit7z_formats,
     register_archive_capabilities,
@@ -41,7 +44,7 @@ const BIT7Z_BACKEND_ID: u64 = 1;
 /// This is the production wiring function. Callers that need a different set of
 /// ports (e.g. for tests) should use [`RuntimeBuilder`] directly.
 pub fn build_bit7z_runtime(
-    lib: bit7z_infra_bit7z::Library,
+    lib: Library,
 ) -> (
     Arc<Runtime>,
     Arc<dyn CapabilityResolver<ArchiveCapMeta>>,
@@ -359,6 +362,7 @@ impl ArchiveService {
                 session_id: session.id,
                 indices: indices.to_vec(),
                 destination: dest.to_path_buf(),
+                overwrite_mode: OverwriteMode::Ask
             },
             descriptor,
             priority: Priority::User,
@@ -571,7 +575,7 @@ mod tests {
             overwrite_mode: bit7z_domain::archive::OverwriteMode::Overwrite,
             cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             paused: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            notifier: Arc::new(bit7z_domain::repository::NoopNotifier),
+            notifier: Arc::new(bit7z_domain::archive::progress::NoopNotifier),
         };
 
         service

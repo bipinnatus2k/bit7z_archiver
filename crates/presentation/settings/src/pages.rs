@@ -1,6 +1,6 @@
 use bit7z_domain::archive::ArchiveFormat;
 use bit7z_domain::preferences::DarkMode;
-use gpui::{App, SharedString};
+use gpui::App;
 use gpui_component::setting::*;
 
 use crate::backend::store::SettingsStore;

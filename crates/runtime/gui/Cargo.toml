@@ -6,8 +6,6 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-bit7z-rt-app-state = { path = "../app-state" }
-bit7z-pres-progress = { path = "../../presentation/progress" }
 bit7z-pres-settings = { path = "../../presentation/settings" }
 bit7z-pres-views = { path = "../../presentation/views" }
 bit7z-pres-components = { path = "../../presentation/components" }
@@ -16,9 +14,6 @@ bit7z-infra-bit7z = { path = "../../infrastructure/bit7z" }
 bit7z-infra-persistence = { path = "../../infrastructure/persistence" }
 bit7z-app-archive = { path = "../../application/archive" }
 bit7z-infra-platform = { path = "../../infrastructure/platform" }
-bit7z-infra-tray = { path = "../../infrastructure/tray" }
-bit7z-infra-events = { path = "../../infrastructure/events" }
-bit7z-rt-ipc = { path = "../ipc" }
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
 gpui-component = { workspace = true }

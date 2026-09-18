@@ -1,12 +1,12 @@
-use bit7z_app_archive::add_to::AddToArchiveUseCase;
-use bit7z_app_archive::create::{CreateArchiveInput, CreateArchiveUseCase};
+use bit7z_app_archive::use_case::add_to::AddToArchiveUseCase;
+use bit7z_app_archive::use_case::create::{CreateArchiveInput, CreateArchiveUseCase};
 use bit7z_app_archive::runtime_service::ArchiveService;
 use bit7z_app_checksum::{CalculateChecksumUseCase, ChecksumAlgorithm};
 use bit7z_app_preview::PreviewEntryUseCase;
 use bit7z_domain::archive::{
     ArchiveFormat, ArchiveHandle, EncryptionConfig, EncryptionMethod, OverwriteMode, Password,
 };
-use bit7z_domain::repository::{ArchiveError, ArchiveProperties, ExtractOptions, NoopNotifier};
+use bit7z_domain::archive::progress::{ArchiveError, ArchiveProperties, ExtractOptions, NoopNotifier};
 use bit7z_infra_shell::ShellIntegration;
 use clap::{Parser, Subcommand};
 use humansize::{BINARY, format_size};
@@ -367,7 +367,7 @@ pub fn run_cli(service: Arc<ArchiveService>, cli: &Cli) {
                     return;
                 }
             };
-            let uc = bit7z_app_archive::delete::DeleteEntriesUseCase::new(service.clone());
+            let uc = bit7z_app_archive::use_case::delete::DeleteEntriesUseCase::new(service.clone());
             match uc.execute(&mut handle, indices, None) {
                 Ok(()) => println!("Deleted {} entries from {}", indices.len(), path),
                 Err(e) => eprintln!("Delete error: {}", e),
@@ -388,7 +388,7 @@ pub fn run_cli(service: Arc<ArchiveService>, cli: &Cli) {
                     return;
                 }
             };
-            let uc = bit7z_app_archive::rename::RenameEntryUseCase::new(service.clone());
+            let uc = bit7z_app_archive::use_case::rename::RenameEntryUseCase::new(service.clone());
             match uc.execute(&mut handle, *index, name) {
                 Ok(()) => println!("Renamed entry {} to '{}'", index, name),
                 Err(e) => eprintln!("Rename error: {}", e),

@@ -1,6 +1,6 @@
 use bit7z_app_archive::runtime_service::ArchiveService;
 use bit7z_domain::archive::{
-    ArchiveFormat, ArchiveHandle, EncryptionConfig, EncryptionMethod, Password,
+    ArchiveFormat, ArchiveHandle
 };
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::prelude::FluentBuilder as _;
@@ -12,6 +12,8 @@ use gpui_component::form::{field, v_form};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{h_flex, v_flex};
 use std::sync::{Arc, Mutex};
+use bit7z_domain::archive::encryption::{EncryptionConfig, EncryptionMethod};
+use bit7z_domain::password::Password;
 
 type SharedSender<T> = Arc<Mutex<Option<Sender<T>>>>;
 
@@ -367,7 +369,7 @@ impl Render for AddFilesDialog {
                                     if let (Some(handle), Some(service)) = (&this.archive, &this.service) {
                                         let files = this.file_list.clone();
                                         let encryption = this.build_encryption();
-                                        let uc = bit7z_app_archive::add_to::AddToArchiveUseCase::new(service.clone());
+                                        let uc = bit7z_app_archive::use_case::add_to::AddToArchiveUseCase::new(service.clone());
                                         let (_tx, rx) = bit7z_infra_progress::progress_channel();
                                         cx.update_global::<bit7z_pres_progress::ProgressState, _>(|state, _cx| {
                                             state.is_active = true;

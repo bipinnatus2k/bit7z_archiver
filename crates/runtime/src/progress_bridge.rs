@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use bit7z_domain::repository::{ProgressNotifier, ProgressUpdate};
+use bit7z_domain::archive::progress::{ProgressNotifier, ProgressUpdate};
 use bit7z_ports::progress::ProgressReporter;
 
 /// Bridge that forwards ProgressNotifier::notify() calls to a ProgressReporter.
@@ -14,7 +14,7 @@ impl ProgressNotifier for ProgressBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bit7z_domain::repository::{ProgressNotifier, ProgressUpdate};
+    use bit7z_domain::archive::progress::{ProgressNotifier, ProgressUpdate};
     use bit7z_ports::progress::ProgressReporter;
     use std::sync::{Arc, Mutex};
 

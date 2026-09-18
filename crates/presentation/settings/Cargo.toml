@@ -7,7 +7,6 @@ license.workspace = true
 [dependencies]
 bit7z-domain = { path = "../../domain" }
 bit7z-infra-persistence = { path = "../../infrastructure/persistence" }
-fs = { path = "../../application/fs" }
 gpui = { workspace = true }
 gpui-component = { workspace = true }
 serde = { workspace = true }

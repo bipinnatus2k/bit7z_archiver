@@ -1,3 +1,4 @@
+
 //! Archive-specific capability types and resolver.
 //!
 //! This module bridges the generic capability framework to the archive domain.

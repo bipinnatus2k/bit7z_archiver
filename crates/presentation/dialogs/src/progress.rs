@@ -1,4 +1,4 @@
-use bit7z_domain::repository::ProgressUpdate;
+use bit7z_domain::archive::progress::ProgressUpdate;
 use bit7z_infra_progress::ProgressReceiver;
 use bit7z_infra_tray::{TrayCommand, TrayGlobal, TrayManager};
 use bit7z_pres_components::window_dialog::{

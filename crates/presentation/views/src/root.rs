@@ -6,7 +6,7 @@ use crate::status_bar::StatusBarView;
 use bit7z_app_archive::runtime_service::ArchiveService;
 use bit7z_app_preview::PreviewData;
 use bit7z_domain::archive::{ArchiveHandle, OverwriteMode, Password};
-use bit7z_domain::repository::{ArchiveError, ExtractOptions, ProgressNotifier, ProgressUpdate};
+use bit7z_domain::archive::progress::{ArchiveError, ExtractOptions, ProgressNotifier, ProgressUpdate};
 use bit7z_infra_events::ArchiveVmEvent;
 use bit7z_infra_progress::{CrossbeamNotifier, ProgressSender};
 use bit7z_pres_dialogs::password::PasswordDialog;
@@ -39,7 +39,6 @@ pub struct RootView {
     sidebar_collapsed: bool,
 }
 
-impl EventEmitter<ArchiveVmEvent> for RootView {}
 
 impl RootView {
     pub fn new(
@@ -162,7 +161,7 @@ impl RootView {
                                         let repo = this.service.clone();
                                         let handle = h.clone();
                                         cx.background_spawn(async move {
-                                            let uc = bit7z_app_archive::open_entry::OpenEntryUseCase::new(repo);
+                                            let uc = bit7z_app_archive::use_case::open_entry::OpenEntryUseCase::new(repo);
                                             let _ = uc.execute(&handle, idx);
                                         }).detach();
                                     }
@@ -394,7 +393,7 @@ impl RootView {
         let service = self.service.clone();
         let path_buf = path.to_path_buf();
         let path_string = path.to_string_lossy().to_string();
-        let use_case = bit7z_app_archive::open::OpenArchiveUseCase::new(service);
+        let use_case = bit7z_app_archive::use_case::open::OpenArchiveUseCase::new(service);
         let pw = password.map(|s| bit7z_domain::archive::Password::new(s));
         let pw_clone = pw.clone();
 

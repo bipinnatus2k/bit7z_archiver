@@ -212,7 +212,7 @@ impl VirtualList {
     fn scroll_to_deferred_item(
         &self,
         scroll_offset: Point<Pixels>,
-        items_bounds: &[Bounds<gpui::Pixels>],
+        items_bounds: &[Bounds<Pixels>],
         content_bounds: &Bounds<Pixels>,
         scroll_to_item: DeferredScrollToItem,
     ) -> Point<Pixels> {

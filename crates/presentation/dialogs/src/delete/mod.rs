@@ -1,7 +1,7 @@
-use bit7z_app_archive::delete::DeleteEntriesUseCase;
+use bit7z_app_archive::use_case::delete::DeleteEntriesUseCase;
 use bit7z_app_archive::runtime_service::ArchiveService;
 use bit7z_domain::archive::ArchiveHandle;
-use bit7z_domain::repository::ProgressNotifier;
+use bit7z_domain::archive::progress::ProgressNotifier;
 use bit7z_infra_progress::progress_channel;
 use bit7z_pres_components::window_dialog::{
     CloseAction, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,

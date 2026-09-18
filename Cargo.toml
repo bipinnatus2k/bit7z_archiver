@@ -4,30 +4,22 @@ members = [
     "crates/domain",
     "crates/ports",
     "crates/capability",
+    "crates/collections",
+    "crates/component",
     "crates/runtime",
     "crates/application/archive",
-    "crates/application/checksum",
-    "crates/application/test",
-    "crates/application/preview",
-    "crates/application/fs",
     "crates/ffi",
     "crates/infrastructure/bit7z",
     "crates/infrastructure/persistence",
     "crates/infrastructure/platform",
-    "crates/infrastructure/shell",
-    "crates/infrastructure/tray",
-    "crates/infrastructure/events",
-    "crates/infrastructure/progress",
-    "crates/presentation/view-models",
+    "crates/presentation/components",
+    "crates/presentation/ui_macros",
     "crates/presentation/views",
     "crates/presentation/theme",
     "crates/runtime/app-bin",
-    "crates/runtime/app-state",
     "crates/runtime/cli",
     "crates/runtime/gui",
     "crates/runtime/instance",
-    "crates/runtime/ipc",
-    "crates/runtime/worker",
     "crates/testing",
 ]
 
@@ -35,6 +27,9 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+publish = false
+repository = ""
+
 
 [workspace.dependencies]
 anyhow = "1"
@@ -53,19 +48,25 @@ crossbeam-channel = "0.5"
 dunce = "1.0"
 futures = "0.3.32"
 futures-concurrency = "7.7.1"
+indexmap = { version = "2", features = ["serde"] }
 futures-lite = "1.13"
 futures-util = "0.3.32"
-gpui = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe" }
+gpui = { git = "https://github.com/zed-industries/zed" }
 gpui-component = { git = "https://github.com/longbridge/gpui-component" }
 gpui-component-assets = { path = "crates/assets" }
 gpui-macros = { git = "https://github.com/longbridge/gpui-component" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee39d381ac101b7cf49d3d22451ac1093fe", features = ["runtime_shaders"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["runtime_shaders"] }
 humansize = "2"
 ignore = "0.4.22"
+component = { path = "crates/component", version = "0.1.0", package = "boltz-component" }
+collections = { path = "crates/collections", version = "0.1.0", package = "boltz-collections" }
+ui_macros = { path = "crates/presentation/ui_macros", version = "0.1.0", package = "ui-macros" }
 image = "0.25.1"
+inventory = "0.3"
 libc = "0.2"
 log = "0.4"
 parking_lot = "0.12.1"
+rustc-hash = "2"
 reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662463bda39148ba154100dd44d3fba5873a4", default-features = false, features = [
     "charset",
     "http2",
@@ -76,8 +77,10 @@ reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662
     "stream",
 ], package = "zed-reqwest", version = "0.12.15-zed" }
 rust-i18n = { version = "4.1.0" }
+quote = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+syn = { version = "2", features = ["full", "extra-traits", "visit-mut"] }
 smallvec = { version = "1", features = ["union", "const_new"] }
 smol = "2.0"
 strum = { version = "0.26", features = ["derive"] }
@@ -170,7 +173,7 @@ todo = "deny"
 type_complexity = "allow"
 # Temporarily allow this until we can migrate to the new APIs.
 # https://github.com/longbridge/gpui-component/pull/2149
-useless_conversion = "allow"
+#useless_conversion = "allow"
 
 [patch."https://github.com/longbridge/gpui-component"]
 gpui-component-assets = { path = "crates/assets" }

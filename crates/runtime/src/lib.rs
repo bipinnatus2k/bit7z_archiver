@@ -83,7 +83,7 @@ impl Runtime {
     pub fn wait_async(
         &self,
         handle: OperationHandle,
-    ) -> impl std::future::Future<Output = Option<JobResult>> + '_ {
+    ) -> impl Future<Output = Option<JobResult>> + '_ {
         use futures::StreamExt;
 
         let mut rx_events = {

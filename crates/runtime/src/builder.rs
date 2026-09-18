@@ -121,7 +121,7 @@ mod tests {
         ArchiveEntry, ArchiveFormat, ArchiveSession, ChangeSet, EncryptionConfig, Password,
         SessionId, TestResult,
     };
-    use bit7z_domain::repository::{ArchiveError, ExtractOptions};
+    use bit7z_domain::archive::progress::{ArchiveError, ExtractOptions};
     use bit7z_domain::vfs::{SessionState, VfsMetadata};
     use bit7z_ports::fs::{FileSystem, FsError, TempError, TempStorage};
     use bit7z_ports::session::{SessionRef, SessionStore};

@@ -9,7 +9,7 @@ use std::path::Path;
 use bit7z_domain::archive::{
     ArchiveEntry, ArchiveFormat, ArchiveSession, ChangeSet, EncryptionConfig, Password, TestResult,
 };
-use bit7z_domain::repository::{ArchiveError, ArchiveProperties, ExtractOptions};
+use bit7z_domain::archive::progress::{ArchiveError, ArchiveProperties, ExtractOptions};
 use bit7z_domain::vfs::VfsMetadata;
 
 pub mod detection;
@@ -118,6 +118,6 @@ pub enum CryptoError {
 pub trait ArchivePropertiesProvider: Send + Sync {
     fn properties(
         &self,
-        session: &bit7z_domain::archive::ArchiveSession,
+        session: &ArchiveSession,
     ) -> Result<ArchiveProperties, ArchiveError>;
 }

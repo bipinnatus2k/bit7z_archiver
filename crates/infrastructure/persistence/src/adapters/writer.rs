@@ -7,7 +7,7 @@ use bit7z_domain::archive::{
     ArchiveEntry, ArchiveFormat, ArchiveSession, ChangeSet, EncryptionConfig, SessionId,
 };
 use bit7z_domain::plan::{ExecutionPlan, plan_changes};
-use bit7z_domain::repository::ArchiveError;
+use bit7z_domain::archive::progress::ArchiveError;
 use bit7z_ports::ArchiveWriter;
 
 use bit7z_infra_bit7z as bit7z;

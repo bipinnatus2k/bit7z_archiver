@@ -14,7 +14,6 @@ use gpui::*;
 use gpui_component_assets::Assets;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use gpui_component::theme;
 
 pub fn run_gui() {
     run_gui_with_path(None, None);

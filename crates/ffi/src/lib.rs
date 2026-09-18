@@ -12,24 +12,6 @@ include_cpp! {
     generate!("bit7z_create_library")
     generate!("bit7z_destroy_library")
 
-    generate!("bit7z_reader_open")
-    generate!("bit7z_reader_close")
-    generate!("bit7z_reader_item_count")
-
-    generate!("bit7z_item_path")
-    generate!("bit7z_item_name")
-    generate!("bit7z_item_size")
-    generate!("bit7z_item_packed_size")
-    generate!("bit7z_item_is_dir")
-    generate!("bit7z_item_is_encrypted")
-    generate!("bit7z_item_crc")
-    generate!("bit7z_item_from_reader")
-
-    generate!("bit7z_reader_extract_to")
-    generate!("bit7z_reader_extract_item_size")
-    generate!("bit7z_reader_extract_item_data")
-    generate!("bit7z_reader_free_buffer")
-
     // Directory listing (opaque handle)
     generate!("bit7z_reader_list_directory")
     generate!("bit7z_item_list_count")
@@ -60,6 +42,14 @@ include_cpp! {
     generate!("bit7z_reader_has_encrypted_items")
 
     // Item property accessors (direct BitArchiveItem pointer)
+    generate!("bit7z_item_path")
+    generate!("bit7z_item_name")
+    generate!("bit7z_item_size")
+    generate!("bit7z_item_packed_size")
+    generate!("bit7z_item_is_dir")
+    generate!("bit7z_item_is_encrypted")
+    generate!("bit7z_item_crc")
+    generate!("bit7z_item_from_reader")
     generate!("bit7z_item_mtime")
     generate!("bit7z_item_ctime")
     generate!("bit7z_item_atime")
@@ -75,6 +65,13 @@ include_cpp! {
     generate!("bit7z_item_hardlink")
 
     // Reader archive-level properties
+    generate!("bit7z_reader_open")
+    generate!("bit7z_reader_close")
+    generate!("bit7z_reader_item_count")
+    generate!("bit7z_reader_extract_to")
+    generate!("bit7z_reader_extract_item_size")
+    generate!("bit7z_reader_extract_item_data")
+    generate!("bit7z_reader_free_buffer")
     generate!("bit7z_reader_is_solid")
     generate!("bit7z_reader_is_multi_volume")
     generate!("bit7z_reader_volumes_count")

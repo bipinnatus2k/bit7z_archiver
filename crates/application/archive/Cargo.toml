@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 bit7z-domain = { path = "../../domain" }
-bit7z-ffi = { path = "../../ffi" }
 bit7z-ports = { path = "../../ports" }
 bit7z-capability = { path = "../../capability" }
 bit7z-runtime = { path = "../../runtime" }
@@ -15,8 +14,7 @@ bit7z-infra-bit7z = { path = "../../infrastructure/bit7z" }
 async-trait = { workspace = true }
 smol = { workspace = true }
 futures = { workspace = true }
-file-format = "0.26"
-nom = "7"
+file-format = { version = "0.29", features = ["reader"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]

@@ -1,4 +1,4 @@
-use bit7z_app_archive::auto_format::AutoFormat;
+use bit7z_app_archive::format_detector::auto_format::AutoFormat;
 use bit7z_domain::archive::ArchiveFormat;
 
 fn gzip_header() -> Vec<u8> {

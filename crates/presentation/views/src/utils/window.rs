@@ -1,10 +1,8 @@
-use crate::root::RootView;
 use gpui::{
-    AnyView, App, AppContext, Bounds, Focusable, Pixels, SharedString, Size, Window, WindowBounds,
-    WindowKind, WindowOptions, px, size,
+    px, size, AnyView, App, AppContext, Bounds, Pixels, SharedString, Size,
+    Window, WindowBounds, WindowKind, WindowOptions,
 };
 use gpui_component::{Root, TitleBar};
-use std::path::Path;
 
 pub fn create_new_window<F, E>(title: &str, crate_view_fn: F, cx: &mut App)
 where

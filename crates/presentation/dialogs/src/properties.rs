@@ -1,5 +1,5 @@
 use bit7z_domain::archive::ArchiveEntry;
-use bit7z_domain::repository::ArchiveProperties;
+use bit7z_domain::archive::progress::ArchiveProperties;
 use bit7z_pres_components::window_dialog::{
     CloseAction, DialogContent, DialogFooter, DialogHeader, DialogTitle, WindowDialogOptions,
     open_window_dialog_async,

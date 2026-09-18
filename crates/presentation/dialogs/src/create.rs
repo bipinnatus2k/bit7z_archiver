@@ -677,7 +677,7 @@ impl Render for CreateArchiveDialog {
                                             Ok(h) => h,
                                             Err(e) => {
                                                 let _ = tx.send(
-                                                    bit7z_domain::repository::ProgressUpdate {
+                                                    bit7z_domain::archive::progress::ProgressUpdate {
                                                         file_current: 0,
                                                         file_total: 0,
                                                         current_file: None,
@@ -693,11 +693,11 @@ impl Render for CreateArchiveDialog {
                                         };
                                     if !files.is_empty() {
                                         let uc =
-                                            bit7z_app_archive::add_to::AddToArchiveUseCase::new(
+                                            bit7z_app_archive::use_case::add_to::AddToArchiveUseCase::new(
                                                 service.clone(),
                                             );
                                         let notifier: Option<
-                                            Arc<dyn bit7z_domain::repository::ProgressNotifier>,
+                                            Arc<dyn bit7z_domain::archive::progress::ProgressNotifier>,
                                         > = Some(Arc::new(
                                             bit7z_infra_progress::CrossbeamNotifier(tx),
                                         ));

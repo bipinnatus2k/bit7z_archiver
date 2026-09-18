@@ -6,20 +6,19 @@ use bit7z_domain::archive::{
     ArchiveEntry, ArchiveFormat, ArchiveSession, Password, SessionId, TestFailure,
     TestFailureReason, TestResult,
 };
-use bit7z_domain::repository::{ArchiveError, ExtractOptions};
+use bit7z_domain::archive::progress::{ExtractOptions};
 use bit7z_domain::vfs::VfsMetadata;
 use bit7z_ports::ArchiveReader;
 
 use bit7z_infra_bit7z as bit7z;
-use bit7z_infra_progress::ProgressSender;
-
+use bit7z_infra_bit7z::library::Library;
 use crate::adapters::ffi_util::{
     detect_writer_format, read_all_entries, writer_format_to_archive_format,
 };
 
 /// FFI-backed reader adapter.
 pub struct Bit7zReaderAdapter {
-    lib: Arc<bit7z::Library>,
+    lib: Arc<Library>,
     handles: Mutex<HashMap<SessionId, bit7z::FfiHandle>>,
 }
 
@@ -100,7 +99,7 @@ impl Bit7zReaderAdapter {
                 .unwrap_or_default();
             let file = if file.is_empty() { None } else { Some(file) };
             let _file_total = ctx.current_file_size.load(Ordering::Relaxed);
-            let _ = ctx.progress.send(bit7z_domain::repository::ProgressUpdate {
+            let _ = ctx.progress.send(bit7z_domain::archive::progress::ProgressUpdate {
                 file_current: processed,
                 file_total: total,
                 current_file: file,

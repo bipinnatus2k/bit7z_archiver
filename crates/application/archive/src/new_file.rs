@@ -1,7 +1,7 @@
-use crate::add_to::AddToArchiveUseCase;
+use crate::use_case::add_to::AddToArchiveUseCase;
 use crate::runtime_service::ArchiveService;
 use bit7z_domain::archive::{ArchiveHandle, Password};
-use bit7z_domain::repository::ArchiveError;
+use bit7z_domain::archive::progress::ArchiveError;
 use std::sync::Arc;
 
 pub fn new_file_and_add(

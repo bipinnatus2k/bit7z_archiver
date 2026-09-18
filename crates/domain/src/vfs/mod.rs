@@ -71,17 +71,3 @@ pub mod tree;
 pub use overlay::OverlayVfs;
 pub use queue::{EditOperation, EditQueue, EditTransaction};
 pub use tree::{DirtyEntry, DirtyTree, DirtyType, Tree};
-
-use std::collections::HashMap;
-
-use crate::archive::ArchiveSession;
-
-/// Complete in-memory state for an archive editing session.
-#[derive(Debug, Clone)]
-pub struct SessionState {
-    pub session: ArchiveSession,
-    pub vfs: OverlayVfs,
-    pub dirty_tree: DirtyTree,
-    pub edit_queue: EditQueue,
-    pub metadata_cache: HashMap<VfsNodeId, VfsMetadata>,
-}

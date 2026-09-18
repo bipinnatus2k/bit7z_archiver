@@ -1,6 +1,6 @@
 //! Progress reporting port.
 
-use bit7z_domain::repository::ProgressUpdate;
+use bit7z_domain::archive::progress::ProgressUpdate;
 
 /// Receives progress updates from long-running backend operations.
 pub trait ProgressReporter: Send + Sync {

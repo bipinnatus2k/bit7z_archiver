@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-use crate::archive::{ArchiveEntry, ArchiveFormat, ChangeSet, Page};
-use crate::repository::{ArchiveError, ArchiveProperties};
+use crate::archive::{ArchiveEntry, ArchiveFormat, ChangeSet};
+use crate::archive::archive_properties::ArchiveProperties;
+use crate::archive::error::ArchiveError;
+use crate::paging::Page;
 use crate::vfs::{
     DirtyTree, DirtyType, EditOperation, EditQueue, EditTransaction, Tree, VfsMetadata, VfsNode,
     VfsNodeId, next_vfs_id,
@@ -505,8 +506,9 @@ fn parent_dir(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::archive::ArchiveEntry;
+    use std::path::PathBuf;
+    use crate::archive::archive_entry::ArchiveEntry;
+    use crate::vfs::{EditOperation, EditTransaction, OverlayVfs};
 
     fn sample_entries() -> Vec<ArchiveEntry> {
         vec![
